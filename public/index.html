@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>ADA</title>
+  <meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ADA">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Login -->
+  <main id="login" class="login" hidden>
+    <div class="login-card">
+      <div class="marca">ADA</div>
+      <p class="lema">Lo que piensas, lo que quieres hacer y lo que logras.</p>
+      <form id="login-form">
+        <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password" required>
+        <button type="submit">Entrar</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </div>
+  </main>
+
+  <!-- App -->
+  <div id="app" class="app" hidden>
+    <header class="barra">
+      <div class="marca-chica">ADA</div>
+      <div id="estado" class="estado" aria-live="polite"></div>
+    </header>
+
+    <section id="chat" class="chat" aria-live="polite"></section>
+
+    <footer class="pie">
+      <div class="atajos" role="toolbar" aria-label="Atajos">
+        <button type="button" data-accion="foco">Estoy con…</button>
+        <button type="button" data-texto="¿Qué me falta?">¿Qué me falta?</button>
+        <button type="button" data-texto="Terminé por ahora, cierra el foco.">Terminé</button>
+        <button type="button" data-texto="Hazme la revisión semanal.">Revisión semanal</button>
+      </div>
+      <form id="form" class="entrada">
+        <textarea id="mensaje" rows="1" placeholder="Cuéntale a ADA qué decidiste, avanzaste o prometiste…" enterkeyhint="send"></textarea>
+        <button id="enviar" type="submit" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 12h14M12 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </form>
+    </footer>
+
+    <!-- Selector de proyecto -->
+    <div id="hoja" class="hoja" hidden>
+      <div class="hoja-fondo" data-cerrar></div>
+      <div class="hoja-panel" role="dialog" aria-label="¿En qué proyecto estás?">
+        <h2>¿En qué estás?</h2>
+        <div id="hoja-proyectos" class="hoja-proyectos"></div>
+        <button type="button" class="hoja-cancelar" data-cerrar>Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "ada",
+  "version": "1.0.0",
+  "description": "ADA — asistente personal de Cristian. Reduce la distancia entre lo que piensa, lo que quiere hacer y lo que logra.",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0",
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5"
+  }
+}
