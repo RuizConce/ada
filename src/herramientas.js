@@ -201,6 +201,13 @@ async function datosInforme(a = {}) {
     minutosPorProyecto[k] = (minutosPorProyecto[k] || 0) + F.minutosEntre(f.inicio, fin);
   }
   const [{ n: alertas }] = await q('SELECT COUNT(*) AS n FROM alertas WHERE creado_en BETWEEN ? AND ?', [desde, hasta]);
+  const encargos = await q(
+    `SELECT e.id, e.titulo, e.estado, e.resultado, e.siguiente_paso, c.nombre AS contacto,
+       (SELECT COUNT(*) FROM acciones a WHERE a.encargo_id = e.id AND a.estado = 'ejecutada') AS mensajes_enviados
+     FROM encargos e LEFT JOIN contactos c ON c.id = e.contacto_id
+     WHERE e.creado_en BETWEEN ? AND ? OR e.actualizado_en BETWEEN ? AND ? ORDER BY e.id`,
+    [desde, hasta, desde, hasta]
+  ).catch(() => []);
   return {
     periodo: { desde: F.fmt(desde), hasta: F.fmt(hasta) },
     decisiones: decisiones.map(itemPublico),
@@ -210,6 +217,7 @@ async function datosInforme(a = {}) {
     ideas_nuevas: ideas.map(itemPublico),
     tiempo_de_foco_minutos_por_proyecto: minutosPorProyecto,
     advertencias_hechas: alertas,
+    encargos_delegados: encargos,
   };
 }
 
@@ -320,6 +328,12 @@ const IMPLEMENTACIONES = {
   datos_informe: datosInforme,
 };
 
+// Permite que otros módulos (encargos, calendario…) agreguen herramientas.
+function registrar(definiciones, implementaciones) {
+  DEFINICIONES.push(...definiciones);
+  Object.assign(IMPLEMENTACIONES, implementaciones);
+}
+
 async function ejecutar(nombre, input) {
   const fn = IMPLEMENTACIONES[nombre];
   if (!fn) return { error: `Herramienta desconocida: ${nombre}` };
@@ -333,6 +347,8 @@ async function ejecutar(nombre, input) {
 module.exports = {
   DEFINICIONES,
   ejecutar,
+  registrar,
+  resolverProyecto,
   focoActual,
   compromisosProximos,
   alertasHoy,

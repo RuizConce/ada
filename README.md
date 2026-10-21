@@ -20,6 +20,23 @@ ADA registra decisiones, avances, pendientes, compromisos e ideas a partir de no
 | `iniciar_foco` / `cerrar_foco` | Registrar en qué estás trabajando |
 | `registrar_alerta` | Dejar constancia de cada cuestionamiento (con tope diario) |
 | `datos_informe` | Datos para la revisión semanal |
+| `guardar_contacto` / `buscar_contactos` | Memoria de personas: rol, organización, teléfono, correo, notas |
+| `crear_encargo` / `actualizar_encargo` / `listar_encargos` / `ver_encargo` | Cosas delegadas, con estado, siguiente paso, fecha de revisión y bitácora |
+| `proponer_mensaje` | Prepara un WhatsApp, correo o guion de llamada. **No envía nada** |
+
+### Encargos y autorización
+
+ADA propone; el backend guarda; **solo un botón de Cristian ejecuta**. El modelo no tiene ninguna herramienta que envíe mensajes.
+
+1. "Reagenda la reunión con Paola" → ADA crea el encargo y propone el mensaje.
+2. En la app aparece una tarjeta **Por autorizar**: se puede editar el texto, enviarlo (abre WhatsApp o el correo con el texto listo), copiarlo o descartarlo.
+3. Al enviarlo, el encargo pasa a *esperando respuesta* y se programa una revisión (24 h por defecto, `ADA_HORAS_SEGUIMIENTO`).
+4. Cuando vence la revisión, ADA lo menciona y propone insistir, esperar o escalar.
+5. Le cuentas la respuesta → ADA actualiza la bitácora y cierra el encargo cuando se cumple el objetivo.
+
+Estados: `en_curso` → `esperando_autorizacion` → `esperando_respuesta` → `necesita_decision` → `resuelto` / `cancelado`.
+
+**Próximas etapas**: Google Calendar y Gmail (leer disponibilidad, enviar con autorización), notificaciones push para el seguimiento, WhatsApp Business.
 
 Las tablas (`proyectos`, `items`, `foco`, `alertas`, `mensajes`) se crean solas al arrancar, y se siembran los proyectos iniciales.
 

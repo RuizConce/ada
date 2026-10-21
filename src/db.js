@@ -73,6 +73,59 @@ const ESQUEMA = [
     creado_en DATETIME NOT NULL,
     INDEX idx_creado (creado_en)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS contactos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(160) NOT NULL,
+    relacion VARCHAR(200) NULL,
+    organizacion VARCHAR(200) NULL,
+    email VARCHAR(200) NULL,
+    telefono VARCHAR(40) NULL,
+    notas TEXT NULL,
+    creado_en DATETIME NOT NULL,
+    actualizado_en DATETIME NOT NULL,
+    INDEX idx_nombre (nombre)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS encargos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(300) NOT NULL,
+    objetivo TEXT NULL,
+    contacto_id INT NULL,
+    proyecto_id INT NULL,
+    estado ENUM('en_curso','esperando_autorizacion','esperando_respuesta','necesita_decision','resuelto','cancelado')
+      NOT NULL DEFAULT 'en_curso',
+    siguiente_paso TEXT NULL,
+    revisar_en DATETIME NULL,
+    resultado TEXT NULL,
+    creado_en DATETIME NOT NULL,
+    actualizado_en DATETIME NOT NULL,
+    INDEX idx_estado (estado),
+    INDEX idx_revisar (revisar_en),
+    FOREIGN KEY (contacto_id) REFERENCES contactos(id) ON DELETE SET NULL,
+    FOREIGN KEY (proyecto_id) REFERENCES proyectos(id) ON DELETE SET NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS acciones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    encargo_id INT NULL,
+    canal ENUM('whatsapp','correo','llamada','otro') NOT NULL DEFAULT 'whatsapp',
+    destinatario VARCHAR(200) NULL,
+    contacto_id INT NULL,
+    asunto VARCHAR(300) NULL,
+    contenido TEXT NOT NULL,
+    estado ENUM('propuesta','ejecutada','rechazada') NOT NULL DEFAULT 'propuesta',
+    creado_en DATETIME NOT NULL,
+    resuelto_en DATETIME NULL,
+    INDEX idx_estado (estado),
+    FOREIGN KEY (encargo_id) REFERENCES encargos(id) ON DELETE CASCADE,
+    FOREIGN KEY (contacto_id) REFERENCES contactos(id) ON DELETE SET NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS bitacora (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    encargo_id INT NOT NULL,
+    texto TEXT NOT NULL,
+    creado_en DATETIME NOT NULL,
+    INDEX idx_encargo (encargo_id),
+    FOREIGN KEY (encargo_id) REFERENCES encargos(id) ON DELETE CASCADE
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS mensajes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     rol ENUM('user','assistant') NOT NULL,

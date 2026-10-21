@@ -3,6 +3,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { q } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
+const E = require('./encargos'); // registra las herramientas de contactos y encargos
 
 const MODELO = () => process.env.ADA_MODEL || 'claude-sonnet-5-5';
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
@@ -29,7 +30,18 @@ QUÉ HACES
 3. Ordenar el día. Si el contexto indica que es el primer mensaje del día, saluda breve y propone máximo 3 prioridades basadas en compromisos vencidos o próximos y pendientes abiertos (consulta con listar_items). Luego atiende lo que dijo.
 4. Responder con datos. Para "¿qué me falta?", "¿qué le prometí a X?", "¿qué decidí sobre Y?" usa listar_items. Nunca inventes items, fechas ni personas: si no está registrado, dilo.
 5. Revisión. Cuando pida el informe o la revisión semanal, usa datos_informe y entrega:
-   **Decisiones tomadas** (con su razón) · **Lo que avanzó** · **Lo que quedó pendiente** (vencidos primero) · **Dónde se fue el tiempo** (foco por proyecto, y si coincide con lo urgente) · **Las 3 acciones más importantes para continuar**, concretas y con fecha sugerida. Cierra con una observación honesta de la semana, en una o dos frases.
+   **Decisiones tomadas** (con su razón) · **Lo que avanzó** · **Encargos que me delegaste** (resueltos, en curso, trabados) · **Lo que quedó pendiente** (vencidos primero) · **Dónde se fue el tiempo** (foco por proyecto, y si coincide con lo urgente) · **Las 3 acciones más importantes para continuar**, concretas y con fecha sugerida. Cierra con una observación honesta de la semana, en una o dos frases.
+
+ENCARGOS: COSAS QUE CRISTIAN TE DELEGA
+Tu rol aquí es hacerte cargo, no solo conversar. Cuando diga "encárgate", "coordina", "reagenda", "consígueme", "hazle seguimiento":
+- Crea un encargo con crear_encargo: objetivo claro (qué significa resuelto), siguiente paso y fecha de revisión. Desde ese momento lo llevas tú hasta cerrarlo.
+- Para escribirle a alguien usa proponer_mensaje con el texto completo, listo para enviar, en el tono de Cristian. NUNCA digas que enviaste algo: Cristian lo autoriza con un botón en la app. Basta con decir "Te dejé el mensaje para autorizar".
+- Cuando Cristian te cuente una respuesta ("Paola dice que el jueves 11"), actualiza el encargo con una nota y propón el siguiente paso. Si se cumplió el objetivo, márcalo resuelto con el resultado y ofrece registrar lo que corresponda (por ejemplo, el nuevo compromiso con su fecha).
+- Si algo depende de una decisión de Cristian, márcalo necesita_decision y plantéale la decisión con opciones concretas.
+- Si el contexto trae encargos_para_revisar_ahora, menciónalos en una línea (en el saludo del día o al final de tu respuesta) y propone qué hacer: insistir con un mensaje, esperar o escalar.
+- Si hay mensajes_esperando_tu_autorizacion de hace rato, recuérdalo en una línea.
+- Todavía no tienes acceso al calendario ni puedes enviar mensajes por tu cuenta: si hay que agendar, pregúntale a Cristian su disponibilidad y propone horarios con base en lo que te diga.
+- Guarda o completa contactos con guardar_contacto cuando aparezcan datos útiles (teléfono, correo, rol, cómo tratarlos). Si para un mensaje falta el teléfono o correo, pídelo.
 
 CUESTIONAR CON CRITERIO
 Tu trabajo no es solo obedecer: también es cuestionar, sin imponerte ni interrumpir siempre.
@@ -47,13 +59,14 @@ Español chileno, cercano y profesional. Breve: normalmente 1 a 4 líneas. Confi
 
 async function construirContexto() {
   const ahora = new Date();
-  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta] = await Promise.all([
+  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta, encargos] = await Promise.all([
     H.focoActual(),
     H.compromisosProximos(48),
     H.alertasHoy(),
     H.listarProyectos(),
     q("SELECT COUNT(*) AS n FROM mensajes WHERE rol = 'user' AND creado_en >= ?", [F.inicioDelDia()]),
     q('SELECT creado_en FROM alertas ORDER BY creado_en DESC LIMIT 1'),
+    E.resumenParaContexto(),
   ]);
 
   const minutosFoco = foco ? F.minutosEntre(foco.inicio, ahora) : 0;
@@ -85,6 +98,7 @@ async function construirContexto() {
     momento_para_cuestionar: cuestionar,
     motivo,
     proyectos_activos: proyectos.map((p) => p.nombre),
+    ...encargos,
   };
 }
 
@@ -112,6 +126,10 @@ const ETIQUETAS = {
   iniciar_foco: (i, r) => r.foco ? `Foco: ${r.foco.proyecto || r.foco.descripcion}` : null,
   cerrar_foco: (i, r) => r.cerrado ? `Foco cerrado (${r.cerrado.minutos} min)` : null,
   registrar_alerta: (i, r) => r.ok ? 'Cuestionamiento' : null,
+  guardar_contacto: (i, r) => r.contacto ? `Contacto: ${r.contacto.nombre}` : null,
+  crear_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}` : null,
+  actualizar_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}: ${r.encargo.estado.replace(/_/g, ' ')}` : null,
+  proponer_mensaje: (i, r) => r.ok ? 'Mensaje para autorizar' : null,
 };
 
 function nombreTipo(t) {

@@ -132,6 +132,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .entrada button:disabled { opacity: 0.45; }
 
+/* ---------- Por autorizar ---------- */
+.autorizaciones { max-height: 46dvh; overflow-y: auto; display: grid; gap: 10px; margin-bottom: 10px; }
+.tarjeta {
+  background: var(--superficie); border: 1px solid var(--acento); border-radius: 16px; padding: 12px;
+}
+.tarjeta-cab { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--texto-suave); margin-bottom: 8px; }
+.tarjeta-cab strong { color: var(--texto); font-weight: 600; }
+.tarjeta-canal { color: var(--acento); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; }
+.tarjeta textarea {
+  width: 100%; font: inherit; font-size: 15px; line-height: 1.45; resize: vertical; min-height: 84px;
+  border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; background: var(--fondo); color: var(--texto);
+}
+.tarjeta .asunto { width: 100%; font: inherit; font-size: 14px; margin-bottom: 6px; border: 1px solid var(--borde); border-radius: 10px; padding: 6px 10px; background: var(--fondo); color: var(--texto); }
+.tarjeta-botones { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.tarjeta-botones button { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); font-size: 14px; }
+.tarjeta-botones .principal { background: var(--acento); color: var(--acento-texto); border-color: var(--acento); font-weight: 600; flex: 1; }
+.tarjeta-botones .descartar { color: var(--texto-suave); }
+.tarjeta-aviso { font-size: 12px; color: var(--aviso); margin-top: 6px; }
+.pastilla.encargos { background: var(--superficie-2); color: var(--texto); }
+.pastilla.autorizar { background: var(--acento); color: var(--acento-texto); }
+
 /* ---------- Hoja de proyectos ---------- */
 .hoja { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: center; }
 .hoja-fondo { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.35); }

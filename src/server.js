@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { q, initDb } = require('./db');
 const { conversar, construirContexto } = require('./ada');
+const E = require('./encargos');
 
 const app = express();
 app.set('trust proxy', 1); // Railway está detrás de un proxy
@@ -78,6 +79,32 @@ app.get('/api/historial', auth, async (req, res) => {
   }
 });
 
+// Mensajes que ADA propuso y esperan el botón de Cristian.
+app.get('/api/autorizaciones', auth, async (req, res) => {
+  try {
+    res.json(await E.autorizacionesPendientes());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/acciones/:id', auth, async (req, res) => {
+  const { decision, contenido } = req.body || {};
+  try {
+    res.json(await E.resolverAccion(parseInt(req.params.id, 10), decision, contenido));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/encargos', auth, async (req, res) => {
+  try {
+    res.json(await E.listarEncargos({ incluir_cerrados: req.query.todos === '1' }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/estado', auth, async (req, res) => {
   try {
     const c = await construirContexto();
@@ -86,6 +113,9 @@ app.get('/api/estado', auth, async (req, res) => {
       urgentes: c.compromisos_urgentes_48h,
       alertas_hoy: c.alertas_hoy,
       proyectos: c.proyectos_activos,
+      encargos_activos: c.encargos_activos.length,
+      encargos_por_revisar: c.encargos_para_revisar_ahora.length,
+      por_autorizar: c.mensajes_esperando_tu_autorizacion,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
