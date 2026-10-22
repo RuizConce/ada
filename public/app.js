@@ -293,6 +293,12 @@
       }
       actualizarEstado();
       if ((r.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
+      // Fuera del modo conversación (texto o dictado del teclado), ADA también responde en voz.
+      if (!opciones.voz && !silenciada) {
+        ocupado = false;
+        setFase('hablando');
+        hablar(r.respuesta).then(() => { if (!conversando && orbe.dataset.fase === 'hablando') setFase('reposo'); });
+      }
       return r.respuesta;
     } catch (e) {
       mostrarAda('');
@@ -300,10 +306,28 @@
       return null;
     } finally {
       ocupado = false;
-      if (!conversando) setFase('reposo');
+      if (!conversando && orbe.dataset.fase !== 'hablando') setFase('reposo');
       pintarControles();
     }
   }
+
+  // ---------- Silenciar ----------
+  let silenciada = false;
+  try { silenciada = localStorage.getItem('ada_silencio') === '1'; } catch (_) {}
+  const btnSilencio = $('#silencio');
+  function pintarSilencio() {
+    btnSilencio.setAttribute('aria-pressed', silenciada ? 'true' : 'false');
+    btnSilencio.title = silenciada ? 'ADA está en silencio: toca para que hable' : 'Silenciar a ADA';
+  }
+  pintarSilencio();
+  btnSilencio.addEventListener('click', () => {
+    silenciada = !silenciada;
+    try { localStorage.setItem('ada_silencio', silenciada ? '1' : '0'); } catch (_) {}
+    pintarSilencio();
+    desbloquearVoz();
+    if (silenciada) { detenerHabla(); if (!conversando) setFase('reposo'); }
+    aviso(silenciada ? 'ADA en silencio: solo responde escrito.' : 'ADA vuelve a hablar.');
+  });
 
   // ---------- Conversación por voz ----------
   const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -444,10 +468,50 @@
 
   function elegirVoz() {
     const voces = sintesis ? sintesis.getVoices() : [];
-    return voces.find((v) => v.lang === 'es-CL')
-      || voces.find((v) => /^es[-_](419|MX|US|AR|CO)/i.test(v.lang))
-      || voces.find((v) => /^es/i.test(v.lang))
+    const es = (v) => /^es([-_]|$)/i.test(v.lang);
+    return voces.find((v) => /^es[-_]CL/i.test(v.lang))
+      || voces.find((v) => /^es[-_](419|US|MX|AR|CO)/i.test(v.lang) && v.localService)
+      || voces.find((v) => /^es[-_](419|US|MX|AR|CO)/i.test(v.lang))
+      || voces.find((v) => es(v) && v.localService)
+      || voces.find(es)
       || null;
+  }
+
+  // En Android las voces cargan con retraso: espera un poco a que aparezcan.
+  function esperarVoces() {
+    return new Promise((resolve) => {
+      if (!sintesis || sintesis.getVoices().length) { resolve(); return; }
+      const listo = () => { clearTimeout(t); sintesis.removeEventListener('voiceschanged', listo); resolve(); };
+      const t = setTimeout(listo, 1500);
+      sintesis.addEventListener('voiceschanged', listo);
+    });
+  }
+
+  const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Divide en frases cortas: Chrome corta o ignora textos largos.
+  function enFrases(texto) {
+    const partes = texto.match(/[^.!?¿¡\n]+[.!?]*|[¿¡][^?!]+[?!]/g) || [texto];
+    const out = [];
+    let actual = '';
+    for (const p of partes.map((s) => s.trim()).filter(Boolean)) {
+      if ((actual + ' ' + p).length > 180 && actual) { out.push(actual); actual = p; }
+      else actual = actual ? `${actual} ${p}` : p;
+    }
+    if (actual) out.push(actual);
+    return out;
+  }
+
+  let avisoVozMostrado = false;
+  function avisarFalloVoz(error) {
+    if (avisoVozMostrado) return;
+    avisoVozMostrado = true;
+    const motivo = error === 'not-allowed'
+      ? 'el navegador bloqueó el audio: toca la pantalla una vez y vuelve a intentar'
+      : error === 'language-unavailable' || error === 'voice-unavailable'
+        ? 'tu teléfono no tiene voz en español. Instálala en Ajustes → Texto a voz'
+        : `el teléfono no pudo reproducir la voz (${error})`;
+    aviso(`ADA no pudo hablar: ${motivo}.`, true);
   }
 
   function textoParaHablar(t) {
@@ -461,45 +525,64 @@
       .trim();
   }
 
-  let terminarHablaActual = null;
-  function hablar(texto) {
+  // Habla frase por frase. Devuelve una promesa que se cumple al terminar (o al interrumpir).
+  let interrumpido = false;
+  let terminarFraseActual = null;
+
+  function decirFrase(frase, voz) {
     return new Promise((resolve) => {
-      if (!sintesis || !texto) { resolve(); return; }
-      if (terminarHablaActual) terminarHablaActual();
-      sintesis.cancel();
-      const limpio = textoParaHablar(texto);
-      const u = new SpeechSynthesisUtterance(limpio);
-      const v = elegirVoz();
-      if (v) u.voice = v;
-      u.lang = v ? v.lang : 'es-CL';
+      const u = new SpeechSynthesisUtterance(frase);
+      if (voz) u.voice = voz;
+      u.lang = voz ? voz.lang : 'es-US';
       u.rate = 1.05;
       let listo = false;
-      const respaldo = setTimeout(() => fin(), 4000 + limpio.length * 90);
-      function fin() {
+      const fin = (error) => {
         if (listo) return;
         listo = true;
         clearTimeout(respaldo);
-        terminarHablaActual = null;
-        resolve();
-      }
-      terminarHablaActual = fin;
-      u.onend = fin;
-      u.onerror = fin;
+        clearInterval(despertador);
+        terminarFraseActual = null;
+        resolve(error || null);
+      };
+      // Respaldo por si el navegador nunca avisa que terminó.
+      const respaldo = setTimeout(() => fin(), 3000 + frase.length * 110);
+      // Chrome a veces se "duerme" a mitad de frase: un resume() periódico lo despierta.
+      const despertador = setInterval(() => { if (sintesis.paused) sintesis.resume(); }, 2000);
+      terminarFraseActual = () => fin();
+      u.onend = () => fin();
+      u.onerror = (e) => fin(e.error === 'interrupted' || e.error === 'canceled' ? null : (e.error || 'error'));
       sintesis.speak(u);
     });
   }
 
+  async function hablar(texto) {
+    if (!sintesis || !texto) return;
+    interrumpido = false;
+    await esperarVoces();
+    // Cancelar y hablar de inmediato hace que Chrome en Android ignore la nueva voz.
+    if (sintesis.speaking || sintesis.pending) { sintesis.cancel(); await pausa(200); }
+    const voz = elegirVoz();
+    for (const frase of enFrases(textoParaHablar(texto))) {
+      if (interrumpido) break;
+      const error = await decirFrase(frase, voz);
+      if (error) { avisarFalloVoz(error); break; }
+    }
+  }
+
   function detenerHabla() {
+    interrumpido = true;
     if (sintesis) sintesis.cancel();
-    if (terminarHablaActual) terminarHablaActual();
+    if (terminarFraseActual) terminarFraseActual();
   }
 
   // iOS solo permite hablar si antes hubo un toque del usuario.
   let vozDesbloqueada = false;
   function desbloquearVoz() {
     if (vozDesbloqueada || !sintesis) return;
-    const u = new SpeechSynthesisUtterance(' ');
+    sintesis.getVoices(); // dispara la carga de voces en Android
+    const u = new SpeechSynthesisUtterance('.');
     u.volume = 0;
+    u.rate = 2;
     sintesis.speak(u);
     vozDesbloqueada = true;
   }
@@ -554,6 +637,7 @@
   }
   $('#form').addEventListener('submit', (e) => {
     e.preventDefault();
+    desbloquearVoz();
     const t = input.value;
     input.value = '';
     ajustar();

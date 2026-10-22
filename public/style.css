@@ -122,6 +122,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 }
 .icono:active, .icono[aria-pressed="true"] { color: var(--verde); border-color: var(--borde-verde); }
 .icono.redondo { width: 52px; height: 52px; border-radius: 50%; }
+#silencio .mute { display: none; }
+#silencio[aria-pressed="true"] { color: var(--peligro); border-color: transparent; background: var(--peligro-fondo); }
+#silencio[aria-pressed="true"] .mute { display: inline; }
+#silencio[aria-pressed="true"] .ondas-sonido { display: none; }
 
 /* ---------- Vista de voz ---------- */
 .vista-voz { overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 12px; display: flex; flex-direction: column; }
