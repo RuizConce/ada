@@ -97,7 +97,7 @@
         b.type = 'button';
         b.className = 'escuchar';
         b.textContent = '▶ Escuchar';
-        b.addEventListener('click', () => hablar(texto, true));
+        b.addEventListener('click', () => { desbloquearVoz(); hablar(texto); });
         div.appendChild(b);
       }
     } else if (opciones.voz) {
@@ -270,7 +270,7 @@
   // ---------- Enviar ----------
   async function enviar(texto, opciones = {}) {
     texto = (texto || '').trim();
-    if (!texto || ocupado) return;
+    if (!texto || ocupado) return null;
     ocupado = true;
     btnEnviar.disabled = true;
     burbuja('user', texto, [], opciones);
@@ -278,18 +278,23 @@
     ajustar();
     const pensando = escribiendo();
     try {
-      const r = await api('/api/chat', { method: 'POST', body: JSON.stringify({ mensaje: texto }) });
+      const r = await api('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({ mensaje: texto, voz: !!opciones.conversacion }),
+      });
       pensando.remove();
       burbuja('assistant', r.respuesta, r.acciones || []);
-      // Si le hablaste, responde hablando (o siempre, si activaste la voz).
-      if (opciones.voz || vozSalida) hablar(r.respuesta);
+      // En modo conversación, el ciclo de voz se encarga de hablar.
+      if (!opciones.conversacion && (opciones.voz || vozSalida)) hablar(r.respuesta);
       actualizarEstado();
       if ((r.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
+      return r.respuesta;
     } catch (e) {
       pensando.remove();
       const d = burbuja('error', `${e.message}. Tu mensaje no se perdió: tócalo para reintentar.`);
       d.style.cursor = 'pointer';
       d.addEventListener('click', () => { d.remove(); input.value = texto; ajustar(); input.focus(); });
+      return null;
     } finally {
       ocupado = false;
       btnEnviar.disabled = false;
@@ -311,47 +316,71 @@
     }
   });
 
-  // ---------- Voz: hablarle a ADA (dictado) ----------
+  // ---------- Modo conversación por voz ----------
+  // Un toque al micrófono abre la conversación: ADA escucha, detecta cuándo terminaste
+  // de hablar, responde en voz alta y vuelve a escuchar sola, hasta que digas "chao" o toques Terminar.
   const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
   const btnMic = $('#microfono');
   const panelEscucha = $('#escucha');
   const txtTranscripcion = $('#transcripcion');
+  const ondaEscucha = panelEscucha.querySelector('.onda');
+  const SILENCIO_MS = 1400;           // pausa que se considera "terminé de hablar"
+  const DESPEDIDA = /\b(chao|chau|adi[oó]s|hasta luego|nos vemos|eso es todo|terminamos|termina la conversaci[oó]n)\b/i;
+
+  let conversando = false;
   let rec = null;
   let textoFinal = '';
   let textoParcial = '';
-  let cancelado = false;
+  let timerSilencio = null;
+  let silenciosSeguidos = 0;
 
-  function mostrarTranscripcion() {
-    const t = (textoFinal + ' ' + textoParcial).trim();
-    txtTranscripcion.textContent = t || 'Escuchando…';
-    txtTranscripcion.classList.toggle('vacia', !t);
+  function estadoPanel(fase, texto) {
+    // fase: escuchando | pensando | hablando
+    panelEscucha.dataset.fase = fase;
+    ondaEscucha.classList.toggle('quieta', fase !== 'escuchando');
+    txtTranscripcion.textContent = texto;
+    txtTranscripcion.classList.toggle('vacia', fase !== 'escuchando' || !textoFinal.trim() && !textoParcial.trim());
+    $('#escucha-listo').textContent = fase === 'hablando' ? 'Interrumpir' : 'Listo, envía';
+    $('#escucha-listo').hidden = fase === 'pensando';
   }
 
-  function terminarEscucha() {
-    panelEscucha.hidden = true;
-    btnMic.classList.remove('activo');
-    const t = (textoFinal + ' ' + textoParcial).trim();
-    rec = null;
-    if (!cancelado && t) enviar(t, { voz: true });
-  }
+  function textoActual() { return (textoFinal + ' ' + textoParcial).replace(/\s+/g, ' ').trim(); }
 
-  function escuchar() {
+  function iniciarConversacion() {
     if (ocupado) return;
-    if (rec) { rec.stop(); return; }
+    if (conversando) { terminarConversacion(); return; }
     desbloquearVoz();
     if (!Reconocimiento) {
-      burbuja('error', 'Este navegador no permite dictado. Usa Safari o Chrome, o el micrófono del teclado.');
+      burbuja('error', 'Este navegador no permite conversar por voz. Usa Chrome o Safari, o el micrófono del teclado.');
       return;
     }
+    conversando = true;
+    silenciosSeguidos = 0;
+    panelEscucha.hidden = false;
+    btnMic.classList.add('activo');
+    escucharTurno();
+  }
+
+  function terminarConversacion() {
+    conversando = false;
+    clearTimeout(timerSilencio);
+    if (rec) { try { rec.abort(); } catch (_) {} rec = null; }
     detenerHabla();
+    panelEscucha.hidden = true;
+    btnMic.classList.remove('activo');
+  }
+
+  function escucharTurno() {
+    if (!conversando) return;
+    textoFinal = '';
+    textoParcial = '';
+    estadoPanel('escuchando', 'Te escucho…');
     rec = new Reconocimiento();
     rec.lang = 'es-CL';
     rec.interimResults = true;
     rec.continuous = true;
     rec.maxAlternatives = 1;
-    textoFinal = '';
-    textoParcial = '';
-    cancelado = false;
+
     rec.onresult = (e) => {
       textoParcial = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -359,30 +388,55 @@
         if (r.isFinal) textoFinal += ' ' + r[0].transcript;
         else textoParcial += r[0].transcript;
       }
-      mostrarTranscripcion();
+      estadoPanel('escuchando', textoActual() || 'Te escucho…');
+      // Cada vez que llega voz, reinicia la cuenta de silencio.
+      clearTimeout(timerSilencio);
+      timerSilencio = setTimeout(() => { if (rec) rec.stop(); }, SILENCIO_MS);
     };
     rec.onerror = (e) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        cancelado = true;
         burbuja('error', 'ADA no tiene permiso para usar el micrófono. Actívalo en los ajustes del navegador.');
-      } else if (e.error === 'no-speech') {
-        cancelado = true;
+        terminarConversacion();
       }
     };
-    rec.onend = terminarEscucha;
-    try {
-      rec.start();
-      panelEscucha.hidden = false;
-      btnMic.classList.add('activo');
-      mostrarTranscripcion();
-    } catch (_) {
+    rec.onend = () => {
+      clearTimeout(timerSilencio);
       rec = null;
-    }
+      if (!conversando) return;
+      const t = textoActual();
+      if (!t) {
+        // Nadie habló: vuelve a escuchar un par de veces y luego descansa.
+        silenciosSeguidos += 1;
+        if (silenciosSeguidos >= 3) { terminarConversacion(); return; }
+        escucharTurno();
+        return;
+      }
+      silenciosSeguidos = 0;
+      turnoDeAda(t);
+    };
+    try { rec.start(); } catch (_) { terminarConversacion(); }
   }
 
-  btnMic.addEventListener('click', escuchar);
-  $('#escucha-listo').addEventListener('click', () => { if (rec) rec.stop(); });
-  $('#escucha-cancelar').addEventListener('click', () => { cancelado = true; if (rec) rec.abort(); });
+  async function turnoDeAda(texto) {
+    estadoPanel('pensando', 'ADA está pensando…');
+    const respuesta = await enviar(texto, { voz: true, conversacion: true });
+    if (!conversando) return;
+    if (!respuesta) { terminarConversacion(); return; }
+    estadoPanel('hablando', 'ADA está hablando… toca para interrumpir');
+    await hablar(respuesta);
+    if (!conversando) return;
+    if (DESPEDIDA.test(texto)) { terminarConversacion(); return; }
+    escucharTurno();
+  }
+
+  btnMic.addEventListener('click', iniciarConversacion);
+  $('#escucha-listo').addEventListener('click', () => {
+    if (panelEscucha.dataset.fase === 'hablando') { detenerHabla(); return; } // la promesa de hablar() continúa el ciclo
+    if (rec) rec.stop();
+  });
+  ondaEscucha.addEventListener('click', () => { if (panelEscucha.dataset.fase === 'hablando') detenerHabla(); });
+  $('#escucha-cancelar').addEventListener('click', terminarConversacion);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && conversando) terminarConversacion(); });
 
   // ---------- Voz: ADA responde hablando ----------
   const sintesis = window.speechSynthesis;
@@ -411,18 +465,40 @@
       .trim();
   }
 
-  function hablar(texto, forzar = false) {
-    if (!sintesis || (!forzar && !texto)) return;
-    sintesis.cancel();
-    const u = new SpeechSynthesisUtterance(textoParaHablar(texto));
-    const v = elegirVoz();
-    if (v) u.voice = v;
-    u.lang = v ? v.lang : 'es-CL';
-    u.rate = 1.05;
-    sintesis.speak(u);
+  // Devuelve una promesa que se cumple cuando ADA termina de hablar (o la interrumpes).
+  let terminarHablaActual = null;
+  function hablar(texto) {
+    return new Promise((resolve) => {
+      if (!sintesis || !texto) { resolve(); return; }
+      if (terminarHablaActual) terminarHablaActual();
+      sintesis.cancel();
+      const limpio = textoParaHablar(texto);
+      const u = new SpeechSynthesisUtterance(limpio);
+      const v = elegirVoz();
+      if (v) u.voice = v;
+      u.lang = v ? v.lang : 'es-CL';
+      u.rate = 1.05;
+      let listo = false;
+      // Respaldo: algunos navegadores no avisan cuando terminan de hablar.
+      const respaldo = setTimeout(() => fin(), 4000 + limpio.length * 90);
+      function fin() {
+        if (listo) return;
+        listo = true;
+        clearTimeout(respaldo);
+        terminarHablaActual = null;
+        resolve();
+      }
+      terminarHablaActual = fin;
+      u.onend = fin;
+      u.onerror = fin;
+      sintesis.speak(u);
+    });
   }
 
-  function detenerHabla() { if (sintesis) sintesis.cancel(); }
+  function detenerHabla() {
+    if (sintesis) sintesis.cancel();
+    if (terminarHablaActual) terminarHablaActual();
+  }
 
   // iOS solo permite hablar si antes hubo un toque del usuario.
   let vozDesbloqueada = false;

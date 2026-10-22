@@ -62,7 +62,7 @@ app.post('/api/chat', auth, async (req, res) => {
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
   if (texto.length > 8000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
   try {
-    res.json(await conversar(texto));
+    res.json(await conversar(texto, { voz: req.body.voz === true }));
   } catch (e) {
     console.error('Error en /api/chat:', e);
     const status = e.status === 529 || e.status === 503 ? 503 : 500;

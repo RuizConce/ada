@@ -144,7 +144,16 @@ function nombreTipo(t) {
   return { decision: 'Decisión', avance: 'Avance', pendiente: 'Pendiente', compromiso: 'Compromiso', idea: 'Idea' }[t] || t;
 }
 
-async function conversar(textoUsuario) {
+const MODO_VOZ = `MODO CONVERSACIÓN POR VOZ (activo ahora)
+Cristian te está hablando en voz alta y tu respuesta se leerá en voz alta. Conversa como una persona:
+- Responde en 1 o 2 frases cortas, naturales. Máximo unas 35 palabras.
+- Nada de markdown, listas, viñetas, emojis ni enlaces. Las fechas y horas dilas como se hablan ("mañana a las doce").
+- Si hay mucha información (una lista, un informe), di lo esencial y ofrece "te lo dejo en pantalla" o pregunta si quiere el detalle.
+- Termina con una pregunta corta solo si hace falta para avanzar. Si es un saludo, saluda breve y pregunta en qué lo ayudas.
+- Sigue usando tus herramientas igual que siempre: registrar, encargos, foco.
+- Si se despide ("chao", "eso es todo"), despídete en una frase.`;
+
+async function conversar(textoUsuario, opciones = {}) {
   const contexto = await construirContexto();
   const historial = await historialParaClaude(20);
 
@@ -162,6 +171,7 @@ async function conversar(textoUsuario) {
     { type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } },
     { type: 'text', text: `CONTEXTO ACTUAL (calculado por el sistema, confiable):\n${JSON.stringify(contexto, null, 2)}` },
   ];
+  if (opciones.voz) system.push({ type: 'text', text: MODO_VOZ });
 
   const acciones = [];
   let respuestaFinal = '';
