@@ -319,6 +319,21 @@
 
   const textoActual = () => (textoFinal + ' ' + textoParcial).replace(/\s+/g, ' ').trim();
 
+  // Algunos teléfonos entregan cada frase acumulada ("hola", "hola Ada", "hola Ada cómo estás"):
+  // si una frase contiene a la anterior, se queda solo con la más completa.
+  function quitarRepeticiones(frases) {
+    const out = [];
+    for (const f of frases) {
+      if (!f) continue;
+      const prev = out[out.length - 1];
+      const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').trim();
+      if (prev && norm(f).startsWith(norm(prev))) out[out.length - 1] = f;
+      else if (prev && norm(prev).startsWith(norm(f))) continue;
+      else out.push(f);
+    }
+    return out.join(' ');
+  }
+
   function iniciarConversacion() {
     if (ocupado || conversando) return;
     desbloquearVoz();
@@ -370,15 +385,21 @@
     rec = new Reconocimiento();
     rec.lang = 'es-CL';
     rec.interimResults = true;
-    rec.continuous = true;
+    // Modo no continuo: el navegador corta solo al detectar la pausa. En Android el modo
+    // continuo reenvía lo ya dicho en cada resultado y duplica las palabras.
+    rec.continuous = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e) => {
-      textoParcial = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      // Se reconstruye el texto completo en cada evento, en vez de ir sumando.
+      const finales = [];
+      let parcial = '';
+      for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i];
-        if (r.isFinal) textoFinal += ' ' + r[0].transcript;
-        else textoParcial += r[0].transcript;
+        if (r.isFinal) finales.push(r[0].transcript.trim());
+        else parcial = r[0].transcript.trim();
       }
+      textoFinal = quitarRepeticiones(finales);
+      textoParcial = parcial && !textoFinal.endsWith(parcial) ? parcial : '';
       mostrarYo(textoActual());
       clearTimeout(timerSilencio);
       timerSilencio = setTimeout(() => { if (rec) rec.stop(); }, SILENCIO_MS);
