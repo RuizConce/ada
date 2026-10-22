@@ -112,7 +112,7 @@ app.get('/api/estado', auth, async (req, res) => {
       foco: c.foco_actual,
       urgentes: c.compromisos_urgentes_48h,
       alertas_hoy: c.alertas_hoy,
-      proyectos: c.proyectos_activos,
+      proyectos: c.proyectos_activos.map((p) => p.replace(/(: .*| \(sin descripción\))$/, '')),
       encargos_activos: c.encargos_activos.length,
       encargos_por_revisar: c.encargos_para_revisar_ahora.length,
       por_autorizar: c.mensajes_esperando_tu_autorizacion,

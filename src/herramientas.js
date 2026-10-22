@@ -23,7 +23,42 @@ async function resolverProyecto(nombre, { crear = true } = {}) {
 }
 
 async function listarProyectos() {
-  return q("SELECT id, nombre, estado FROM proyectos WHERE estado <> 'cerrado' ORDER BY nombre");
+  return q("SELECT id, nombre, estado, descripcion FROM proyectos WHERE estado <> 'cerrado' ORDER BY nombre");
+}
+
+// Memoria de proyectos: qué es cada uno y hechos clave que Cristian le cuenta a ADA.
+async function guardarProyecto(a) {
+  if (!a.nombre || !String(a.nombre).trim()) throw new Error('nombre es obligatorio');
+  const p = await resolverProyecto(a.nombre);
+  if (a.nuevo_nombre) await q('UPDATE proyectos SET nombre = ? WHERE id = ?', [a.nuevo_nombre.trim().slice(0, 120), p.id]);
+  if (a.descripcion !== undefined) await q('UPDATE proyectos SET descripcion = ? WHERE id = ?', [a.descripcion, p.id]);
+  if (a.estado) {
+    if (!['activo', 'pausado', 'cerrado'].includes(a.estado)) throw new Error('estado debe ser activo, pausado o cerrado');
+    await q('UPDATE proyectos SET estado = ? WHERE id = ?', [a.estado, p.id]);
+  }
+  if (a.dato) await q('INSERT INTO proyecto_notas (proyecto_id, texto, creado_en) VALUES (?, ?, ?)', [p.id, a.dato, new Date()]);
+  return verProyecto({ nombre: a.nuevo_nombre || p.nombre });
+}
+
+async function verProyecto(a) {
+  const p = await resolverProyecto(a.nombre, { crear: false });
+  if (!p) return { error: `No conozco un proyecto llamado "${a.nombre}". Pregúntale a Cristian qué es y guárdalo con guardar_proyecto.` };
+  const [[info], notas, abiertos, recientes, encargos] = await Promise.all([
+    q('SELECT nombre, estado, descripcion FROM proyectos WHERE id = ?', [p.id]),
+    q('SELECT texto, creado_en FROM proyecto_notas WHERE proyecto_id = ? ORDER BY id DESC LIMIT 30', [p.id]),
+    q(`${SELECT_ITEMS} WHERE i.proyecto_id = ? AND i.estado = 'abierto' ORDER BY i.fecha_limite IS NULL, i.fecha_limite LIMIT 20`, [p.id]),
+    q(`${SELECT_ITEMS} WHERE i.proyecto_id = ? AND i.tipo IN ('decision','avance') ORDER BY i.creado_en DESC LIMIT 10`, [p.id]),
+    q(`SELECT e.id, e.titulo, e.estado FROM encargos e WHERE e.proyecto_id = ? AND e.estado NOT IN ('resuelto','cancelado')`, [p.id]).catch(() => []),
+  ]);
+  return {
+    proyecto: info.nombre,
+    estado: info.estado,
+    descripcion: info.descripcion || '(sin descripción: pregúntale a Cristian de qué se trata)',
+    datos_clave: notas.reverse().map((n) => `${F.fmt(n.creado_en).slice(0, 10)}: ${n.texto}`),
+    abiertos: abiertos.map(itemPublico),
+    decisiones_y_avances_recientes: recientes.map(itemPublico),
+    encargos_activos: encargos,
+  };
 }
 
 // ---------- Items ----------
@@ -318,7 +353,32 @@ const DEFINICIONES = [
   },
 ];
 
+DEFINICIONES.push(
+  {
+    name: 'guardar_proyecto',
+    description: 'Memoria de proyectos. Crea o actualiza un proyecto: qué es (descripcion), su estado, o agrega un dato clave (socio, cliente, precio, plazo, contexto). Úsala cuando Cristian explique de qué se trata un proyecto o cuente un hecho duradero sobre él. Los datos se acumulan.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nombre: { type: 'string' },
+        descripcion: { type: 'string', description: 'Qué es el proyecto, en 1–3 frases. Reemplaza la anterior: integra lo que ya había.' },
+        dato: { type: 'string', description: 'Un hecho clave para recordar' },
+        estado: { type: 'string', enum: ['activo', 'pausado', 'cerrado'] },
+        nuevo_nombre: { type: 'string', description: 'Para renombrar' },
+      },
+      required: ['nombre'],
+    },
+  },
+  {
+    name: 'ver_proyecto',
+    description: 'Todo lo que se sabe de un proyecto: descripción, datos clave, pendientes abiertos, decisiones y avances recientes, encargos activos. Úsala cuando Cristian pregunte por un proyecto ("¿sabes lo de X?", "¿cómo va Y?").',
+    input_schema: { type: 'object', properties: { nombre: { type: 'string' } }, required: ['nombre'] },
+  }
+);
+
 const IMPLEMENTACIONES = {
+  guardar_proyecto: guardarProyecto,
+  ver_proyecto: verProyecto,
   registrar_item: registrarItem,
   actualizar_item: actualizarItem,
   listar_items: listarItems,

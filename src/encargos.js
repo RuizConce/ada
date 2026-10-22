@@ -147,7 +147,14 @@ async function actualizarEncargo(a) {
   if (a.contacto !== undefined) {
     const c = await resolverContacto(a.contacto, { crear: true });
     sets.push('contacto_id = ?'); params.push(c ? c.id : null);
+    cambios.push(`contacto: ${c ? c.nombre : 'ninguno'}`);
   }
+  if (a.proyecto !== undefined) {
+    const p = await H.resolverProyecto(a.proyecto);
+    sets.push('proyecto_id = ?'); params.push(p ? p.id : null);
+    cambios.push(`proyecto: ${p ? p.nombre : 'ninguno'}`);
+  }
+  if (a.objetivo !== undefined) { sets.push('objetivo = ?'); params.push(a.objetivo); }
   if (sets.length) {
     sets.push('actualizado_en = ?'); params.push(new Date());
     params.push(a.id);
@@ -352,7 +359,9 @@ const DEFINICIONES = [
         resultado: { type: 'string' },
         nota: { type: 'string', description: 'Qué pasó (ej: "Paola respondió que puede el jueves 11:00")' },
         titulo: { type: 'string' },
+        objetivo: { type: 'string' },
         contacto: { type: 'string' },
+        proyecto: { type: 'string' },
       },
       required: ['id'],
     },

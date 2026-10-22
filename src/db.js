@@ -41,6 +41,14 @@ const ESQUEMA = [
     estado ENUM('activo','pausado','cerrado') NOT NULL DEFAULT 'activo',
     creado_en DATETIME NOT NULL
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS proyecto_notas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    proyecto_id INT NOT NULL,
+    texto TEXT NOT NULL,
+    creado_en DATETIME NOT NULL,
+    INDEX idx_proyecto (proyecto_id),
+    FOREIGN KEY (proyecto_id) REFERENCES proyectos(id) ON DELETE CASCADE
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tipo ENUM('decision','avance','pendiente','compromiso','idea') NOT NULL,
@@ -135,8 +143,20 @@ const ESQUEMA = [
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 
+// Cambios sobre tablas ya existentes en producción (idempotentes).
+const MIGRACIONES = [
+  ['proyectos', 'descripcion', 'ALTER TABLE proyectos ADD COLUMN descripcion TEXT NULL'],
+];
+
 async function initDb() {
   for (const sql of ESQUEMA) await q(sql);
+  for (const [tabla, columna, sql] of MIGRACIONES) {
+    const [{ n }] = await q(
+      'SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+      [tabla, columna]
+    );
+    if (n === 0) await q(sql);
+  }
   const [{ n }] = await q('SELECT COUNT(*) AS n FROM proyectos');
   if (n === 0) {
     const ahora = new Date();

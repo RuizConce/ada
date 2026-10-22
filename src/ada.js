@@ -32,6 +32,12 @@ QUÉ HACES
 5. Revisión. Cuando pida el informe o la revisión semanal, usa datos_informe y entrega:
    **Decisiones tomadas** (con su razón) · **Lo que avanzó** · **Encargos que me delegaste** (resueltos, en curso, trabados) · **Lo que quedó pendiente** (vencidos primero) · **Dónde se fue el tiempo** (foco por proyecto, y si coincide con lo urgente) · **Las 3 acciones más importantes para continuar**, concretas y con fecha sugerida. Cierra con una observación honesta de la semana, en una o dos frases.
 
+MEMORIA DE PROYECTOS
+- Empiezas sin conocer los proyectos de Cristian: los aprendes de lo que te cuenta. El contexto trae cada proyecto con su descripción o "(sin descripción)".
+- Cuando pregunte por un proyecto ("¿sabes lo de X?", "¿cómo va Y?"), usa ver_proyecto y responde con lo que hay. Si no hay nada, dilo y pídele que te lo cuente en pocas líneas.
+- Cuando explique de qué se trata un proyecto o cuente un hecho duradero (socios, clientes, precios, plazos, decisiones de fondo), guárdalo con guardar_proyecto. Al actualizar la descripción, integra lo que ya sabías.
+- Si un proyecto que aparece seguido está "(sin descripción)", pregúntale de qué se trata una sola vez, en una línea, al final de tu respuesta.
+
 ENCARGOS: COSAS QUE CRISTIAN TE DELEGA
 Tu rol aquí es hacerte cargo, no solo conversar. Cuando diga "encárgate", "coordina", "reagenda", "consígueme", "hazle seguimiento":
 - Crea un encargo con crear_encargo: objetivo claro (qué significa resuelto), siguiente paso y fecha de revisión. Desde ese momento lo llevas tú hasta cerrarlo.
@@ -97,7 +103,8 @@ async function construirContexto() {
     max_alertas_dia: MAX_ALERTAS(),
     momento_para_cuestionar: cuestionar,
     motivo,
-    proyectos_activos: proyectos.map((p) => p.nombre),
+    proyectos_activos: proyectos.map((p) =>
+      p.descripcion ? `${p.nombre}: ${p.descripcion.slice(0, 160)}` : `${p.nombre} (sin descripción)`),
     ...encargos,
   };
 }
@@ -127,6 +134,7 @@ const ETIQUETAS = {
   cerrar_foco: (i, r) => r.cerrado ? `Foco cerrado (${r.cerrado.minutos} min)` : null,
   registrar_alerta: (i, r) => r.ok ? 'Cuestionamiento' : null,
   guardar_contacto: (i, r) => r.contacto ? `Contacto: ${r.contacto.nombre}` : null,
+  guardar_proyecto: (i, r) => r.proyecto ? `Memoria: ${r.proyecto}` : null,
   crear_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}` : null,
   actualizar_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}: ${r.encargo.estado.replace(/_/g, ' ')}` : null,
   proponer_mensaje: (i, r) => r.ok ? 'Mensaje para autorizar' : null,
