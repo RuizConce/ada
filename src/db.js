@@ -134,6 +134,11 @@ const ESQUEMA = [
     INDEX idx_encargo (encargo_id),
     FOREIGN KEY (encargo_id) REFERENCES encargos(id) ON DELETE CASCADE
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS integraciones (
+    nombre VARCHAR(40) PRIMARY KEY,
+    datos TEXT NOT NULL,
+    actualizado_en DATETIME NOT NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS conversaciones (
     id INT AUTO_INCREMENT PRIMARY KEY,
     titulo VARCHAR(200) NULL,

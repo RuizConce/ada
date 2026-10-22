@@ -8,6 +8,8 @@ const { q, initDb } = require('./db');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
 const C = require('./conversaciones');
+const Voz = require('./voz');
+const G = require('./google');
 
 const app = express();
 app.set('trust proxy', 1); // Railway está detrás de un proxy
@@ -74,6 +76,52 @@ app.post('/api/chat', auth, async (req, res) => {
   }
 });
 
+// Respuesta en tiempo real (Server-Sent Events): texto a medida que se genera, estados y documentos.
+app.post('/api/chat/stream', auth, async (req, res) => {
+  const texto = String((req.body && req.body.mensaje) || '').trim();
+  if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
+  if (texto.length > 8000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
+  res.set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no',
+    Connection: 'keep-alive',
+  });
+  res.flushHeaders();
+  const enviarEvento = (tipo, datos) => res.write(`event: ${tipo}\ndata: ${JSON.stringify(datos)}\n\n`);
+  // Mantiene viva la conexión mientras ADA piensa o busca.
+  const latido = setInterval(() => res.write(': latido\n\n'), 15000);
+  try {
+    const r = await conversar(texto, {
+      voz: req.body.voz === true,
+      conversacionId: parseInt(req.body.conversacion_id, 10) || null,
+    }, enviarEvento);
+    enviarEvento('fin', r);
+  } catch (e) {
+    console.error('Error en /api/chat/stream:', e);
+    const saturado = e.status === 529 || e.status === 503;
+    enviarEvento('error', { error: saturado ? 'Claude está saturado, intenta en un momento.' : `Error: ${e.message}` });
+  } finally {
+    clearInterval(latido);
+    res.end();
+  }
+});
+
+// Audio de una frase con la voz neuronal configurada. 204 = usar la voz del teléfono.
+app.post('/api/voz', auth, async (req, res) => {
+  const texto = String((req.body && req.body.texto) || '').trim();
+  if (!texto) return res.status(400).json({ error: 'Texto vacío' });
+  try {
+    const audio = await Voz.sintetizar(texto);
+    if (!audio) return res.status(204).end();
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
+    res.send(audio);
+  } catch (e) {
+    console.error('Error en /api/voz:', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
 app.get('/api/historial', auth, async (req, res) => {
   try {
     const rows = await q('SELECT id, rol, contenido, creado_en FROM mensajes ORDER BY id DESC LIMIT 60');
@@ -121,6 +169,38 @@ app.post('/api/conversaciones/:id/cerrar', auth, envolver((req) => C.cerrar(pars
 app.post('/api/conversaciones/:id/proyecto', auth,
   envolver((req) => C.moverConversacion(parseInt(req.params.id, 10), (req.body || {}).proyecto || null)));
 app.get('/api/documentos/:id', auth, envolver((req) => C.obtenerDocumento(parseInt(req.params.id, 10))));
+
+// ---------- Ajustes y Google Calendar ----------
+
+app.get('/api/ajustes', auth, envolver(async (req) => ({
+  google: { ...(await G.estado()), redirect_uri: G.redirectUri(req) },
+  voz: { proveedor: Voz.proveedor() },
+  internet: process.env.ADA_INTERNET !== 'no',
+  modelo: process.env.ADA_MODEL || 'claude-sonnet-5-5',
+})));
+
+app.post('/api/google/enlace', auth, envolver(async (req) => {
+  if (!G.configurado()) throw new Error('Faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en Railway');
+  return { url: G.crearEnlace(req) };
+}));
+
+app.get('/api/google/conectar', (req, res) => {
+  const url = G.configurado() ? G.urlAutorizacion(req, String(req.query.n || '')) : null;
+  if (!url) return res.redirect('/?google=error&motivo=enlace');
+  res.redirect(url);
+});
+
+app.get('/api/google/callback', async (req, res) => {
+  try {
+    await G.recibirCallback(req);
+    res.redirect('/?google=ok');
+  } catch (e) {
+    console.error('Google callback:', e.message);
+    res.redirect(`/?google=error&motivo=${encodeURIComponent(e.message)}`);
+  }
+});
+
+app.post('/api/google/desconectar', auth, envolver(() => G.desconectar()));
 
 app.get('/api/encargos', auth, async (req, res) => {
   try {

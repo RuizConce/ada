@@ -292,6 +292,23 @@ button:disabled { opacity: 0.45; cursor: default; }
 .mover { display: flex; align-items: center; gap: 10px; color: var(--texto-suave); font-size: 14px; }
 .mover select { flex: 1; font: inherit; padding: 10px; border-radius: 12px; border: 1px solid var(--borde); background: var(--fondo-2); color: var(--texto); }
 
+/* ---------- Ajustes ---------- */
+.ajustes { display: grid; gap: 14px; align-content: start; }
+.ajuste { padding: 16px; border-radius: 16px; border: 1px solid var(--borde); background: var(--vidrio); }
+.ajuste h3 { margin: 0 0 4px; font-size: 16px; }
+.ajuste .meta { margin: 0 0 12px; }
+.ajuste-botones { display: flex; gap: 8px; flex-wrap: wrap; }
+.ajuste-botones button, .secundario { padding: 11px 16px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio-fuerte); font-weight: 600; }
+.ajuste-botones .principal { border: 0; }
+.secundario { width: 100%; color: var(--texto-suave); }
+.estado-ok { color: var(--verde); }
+.ayuda { margin-top: 12px; font-size: 14px; color: var(--texto-suave); }
+.ayuda ol { padding-left: 20px; margin: 6px 0; }
+.ayuda code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: var(--fondo); color: var(--texto); font-size: 12px; word-break: break-all; }
+.interruptor { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.interruptor input { width: 22px; height: 22px; accent-color: var(--verde); flex: none; margin-top: 2px; }
+.interruptor small { display: block; color: var(--texto-suave); font-size: 13px; margin-top: 2px; }
+
 /* ---------- Hojas (documento y proyectos) ---------- */
 .hoja { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: center; }
 .hoja-fondo { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }

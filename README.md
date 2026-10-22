@@ -65,6 +65,33 @@ Las tablas (`proyectos`, `items`, `foco`, `alertas`, `mensajes`) se crean solas 
 | `ADA_MINUTOS_FOCO` | `60` | Minutos en un foco antes de poder cuestionar |
 | `ADA_MINUTOS_ENTRE_ALERTAS` | `90` | Espera mínima entre cuestionamientos |
 
+## Voz natural
+
+Sin configuración, ADA usa la voz del teléfono (suena robótica). Con una de estas claves en Railway, usa una voz neuronal:
+
+| Proveedor | Variables | Notas |
+|---|---|---|
+| Google Cloud TTS | `GOOGLE_TTS_API_KEY` · opcional `GOOGLE_TTS_VOZ` (por defecto `es-US-Chirp3-HD-Aoede`) | Mismo proyecto de Google Cloud que el calendario. Requiere facturación activa en el proyecto. |
+| ElevenLabs | `ELEVENLABS_API_KEY` · `ELEVENLABS_VOICE_ID` · opcional `ELEVENLABS_MODELO` | La más humana. Elige una voz en español en su biblioteca. |
+| OpenAI | `OPENAI_API_KEY` · opcional `OPENAI_VOZ`, `OPENAI_TTS_MODELO` | |
+
+Si hay varias, `VOZ_PROVEEDOR` decide (`google`, `elevenlabs`, `openai` o `navegador`).
+
+## Google Calendar
+
+1. En [Google Cloud Console](https://console.cloud.google.com) crea un proyecto y habilita **Google Calendar API** (y **Cloud Text-to-Speech API** si usarás esa voz).
+2. Configura la pantalla de consentimiento OAuth: tipo *Externo*, agrega tu Gmail como usuario de prueba. Para que la conexión no venza cada 7 días, publícala (*En producción*); el aviso de "app no verificada" es normal para uso personal.
+3. Credenciales → **ID de cliente OAuth** → *Aplicación web* → URI de redirección autorizada:
+   `https://TU-DOMINIO.up.railway.app/api/google/callback` (la app la muestra en Ajustes).
+4. En Railway: `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
+5. En ADA: ⚙ Ajustes → **Conectar Google Calendar**.
+
+ADA puede ver la agenda libremente; para crear, mover o eliminar eventos siempre pide confirmación.
+
+## Internet
+
+ADA busca en internet con la herramienta de búsqueda de la API de Claude (10 USD por cada 1.000 búsquedas, máximo 3 por respuesta: `ADA_MAX_BUSQUEDAS`). Se desactiva con `ADA_INTERNET=no`.
+
 ## Uso diario
 
 - **Al empezar**: escribe cualquier cosa; el primer mensaje del día trae tus 3 prioridades.

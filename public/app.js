@@ -114,7 +114,7 @@
     reposo: 'Toca para hablar con ADA',
     escuchando: 'Te escucho…',
     pensando: 'ADA está pensando…',
-    hablando: 'ADA está hablando · toca para interrumpir',
+    hablando: 'ADA está hablando · tócala o háblale para interrumpir',
   };
 
   function setFase(fase, texto) {
@@ -269,7 +269,314 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   });
 
-  // ---------- Hablar con el servidor ----------
+  // ---------- Voz de ADA ----------
+  // Prioridad: voz neuronal del servidor (natural). Respaldo: voz del teléfono.
+  const sintesis = window.speechSynthesis;
+  const reproductor = new Audio();
+  reproductor.preload = 'auto';
+  let vozServidor = false;          // se activa si /api/ajustes informa un proveedor
+  let fallosServidor = 0;
+
+  // Limpia el texto para que suene bien: sin markdown y con los montos en pesos.
+  function textoParaHablar(t) {
+    return t
+      .replace(/\*\*|__|`|#+\s*/g, '')
+      .replace(/^\s*[-•*]\s+/gm, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/US\$\s?(\d{1,3}(?:[.,]\d{3})*(?:,\d+)?|\d+)(\s+mill(?:ón|ones))?/g, (m, n, mill) => `${n}${mill || ''} ${mill ? 'de ' : ''}dólares`)
+      .replace(/\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+)(\s+mill(?:ón|ones))?(\s*CLP\b)?/g, (m, n, mill) => `${n}${mill || ''} ${mill ? 'de ' : ''}pesos`)
+      .replace(/(\d)\s*CLP\b/g, '$1 pesos')
+      .replace(/\bCLP\b/g, 'pesos')
+      .replace(/✓/g, '')
+      .replace(/\s*\n+\s*/g, '. ')
+      .replace(/\.\s*\./g, '.')
+      .trim();
+  }
+
+  function elegirVoz() {
+    const voces = sintesis ? sintesis.getVoices() : [];
+    const es = (v) => /^es([-_]|$)/i.test(v.lang);
+    return voces.find((v) => /^es[-_]CL/i.test(v.lang))
+      || voces.find((v) => /^es[-_](419|US|MX|AR|CO)/i.test(v.lang) && v.localService)
+      || voces.find((v) => /^es[-_](419|US|MX|AR|CO)/i.test(v.lang))
+      || voces.find((v) => es(v) && v.localService)
+      || voces.find(es)
+      || null;
+  }
+
+  let vocesEsperadas = false;
+  function esperarVoces() {
+    return new Promise((resolve) => {
+      if (!sintesis || vocesEsperadas || sintesis.getVoices().length) { resolve(); return; }
+      vocesEsperadas = true;
+      const listo = () => { clearTimeout(t); sintesis.removeEventListener('voiceschanged', listo); resolve(); };
+      const t = setTimeout(listo, 1500);
+      sintesis.addEventListener('voiceschanged', listo);
+    });
+  }
+
+  let avisoVozMostrado = false;
+  function avisarFalloVoz(error) {
+    if (avisoVozMostrado) return;
+    avisoVozMostrado = true;
+    const motivo = error === 'not-allowed'
+      ? 'el navegador bloqueó el audio: toca la pantalla y vuelve a intentar'
+      : error === 'language-unavailable' || error === 'voice-unavailable'
+        ? 'tu teléfono no tiene voz en español (Ajustes → Texto a voz)'
+        : `no se pudo reproducir la voz (${error})`;
+    aviso(`ADA no pudo hablar: ${motivo}.`, true);
+  }
+
+  // Una frase con la voz del teléfono.
+  function decirConNavegador(frase, cancelado) {
+    return new Promise(async (resolve) => {
+      if (!sintesis) { resolve(); return; }
+      await esperarVoces();
+      if (cancelado()) { resolve(); return; }
+      const u = new SpeechSynthesisUtterance(frase);
+      const voz = elegirVoz();
+      if (voz) u.voice = voz;
+      u.lang = voz ? voz.lang : 'es-US';
+      u.rate = 1.05;
+      let listo = false;
+      const fin = (error) => {
+        if (listo) return;
+        listo = true;
+        clearTimeout(respaldo);
+        clearInterval(despertador);
+        if (error) avisarFalloVoz(error);
+        resolve();
+      };
+      const respaldo = setTimeout(() => fin(), 3000 + frase.length * 110);
+      const despertador = setInterval(() => {
+        if (cancelado()) { sintesis.cancel(); fin(); }
+        else if (sintesis.paused) sintesis.resume();
+      }, 250);
+      u.onend = () => fin();
+      u.onerror = (e) => fin(e.error === 'interrupted' || e.error === 'canceled' ? null : (e.error || 'error'));
+      sintesis.speak(u);
+    });
+  }
+
+  // Pide el audio de una frase al servidor; devuelve una URL lista para reproducir o null.
+  function pedirAudio(frase, señal) {
+    return fetch('/api/voz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ texto: frase }),
+      signal: señal,
+    }).then(async (res) => {
+      if (res.status === 204) { vozServidor = false; return null; }
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `voz ${res.status}`);
+      fallosServidor = 0;
+      return URL.createObjectURL(await res.blob());
+    }).catch((e) => {
+      if (e.name === 'AbortError') return null;
+      fallosServidor += 1;
+      if (fallosServidor >= 2) {
+        vozServidor = false;
+        aviso('La voz natural falló; ADA usará la voz del teléfono por ahora.', true);
+        console.warn('Voz servidor:', e.message);
+      }
+      return null;
+    });
+  }
+
+  function reproducir(url, cancelado) {
+    return new Promise((resolve) => {
+      let listo = false;
+      const fin = () => {
+        if (listo) return;
+        listo = true;
+        clearInterval(vigia);
+        reproductor.onended = reproductor.onerror = null;
+        resolve();
+      };
+      const vigia = setInterval(() => { if (cancelado()) { reproductor.pause(); fin(); } }, 100);
+      reproductor.onended = fin;
+      reproductor.onerror = fin;
+      reproductor.src = url;
+      reproductor.play().catch((e) => { if (e.name === 'NotAllowedError') avisarFalloVoz('not-allowed'); fin(); });
+    });
+  }
+
+  // El locutor recibe frases a medida que llegan, precarga el audio y las dice en orden.
+  // detener() la calla de inmediato (para interrumpir).
+  let locutorActual = null;
+  function crearLocutor({ alEmpezar } = {}) {
+    const cola = [];
+    let cerrado = false;
+    let detenido = false;
+    let trabajando = false;
+    let empezo = false;
+    let resolverFin;
+    const fin = new Promise((r) => { resolverFin = r; });
+    const control = new AbortController();
+    const cancelado = () => detenido;
+
+    async function bombear() {
+      if (trabajando) return;
+      trabajando = true;
+      while (cola.length && !detenido) {
+        const item = cola.shift();
+        if (!empezo) { empezo = true; if (alEmpezar) alEmpezar(); }
+        const url = item.audio ? await item.audio : null;
+        if (detenido) { if (url) URL.revokeObjectURL(url); break; }
+        if (url) { await reproducir(url, cancelado); URL.revokeObjectURL(url); }
+        else await decirConNavegador(item.frase, cancelado);
+      }
+      trabajando = false;
+      if (detenido || (cerrado && !cola.length)) resolverFin();
+    }
+
+    const locutor = {
+      decir(texto) {
+        if (detenido || silenciada) return;
+        const frase = textoParaHablar(texto);
+        if (!frase || !/[\p{L}\p{N}]/u.test(frase)) return;
+        cola.push({ frase, audio: vozServidor ? pedirAudio(frase, control.signal) : null });
+        bombear();
+      },
+      cerrar() {
+        cerrado = true;
+        if (!trabajando && !cola.length) resolverFin();
+      },
+      detener() {
+        if (detenido) return;
+        detenido = true;
+        cola.length = 0;
+        control.abort();
+        reproductor.pause();
+        if (sintesis) sintesis.cancel();
+        resolverFin();
+      },
+      get hablando() { return empezo && !detenido; },
+      fin,
+    };
+    locutorActual = locutor;
+    fin.then(() => { if (locutorActual === locutor) locutorActual = null; });
+    return locutor;
+  }
+
+  function detenerHabla() {
+    if (locutorActual) locutorActual.detener();
+    if (sintesis) sintesis.cancel();
+    reproductor.pause();
+  }
+
+  // iOS y Android solo permiten sonido después de un toque: se "despierta" el audio en el primer toque.
+  let vozDesbloqueada = false;
+  const SILENCIO_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+  function desbloquearVoz() {
+    if (vozDesbloqueada) return;
+    vozDesbloqueada = true;
+    try { reproductor.src = SILENCIO_WAV; reproductor.play().catch(() => {}); } catch (_) {}
+    if (sintesis) {
+      sintesis.getVoices();
+      const u = new SpeechSynthesisUtterance('.');
+      u.volume = 0;
+      u.rate = 2;
+      sintesis.speak(u);
+    }
+  }
+  document.addEventListener('pointerdown', desbloquearVoz, { once: true, capture: true });
+
+  // Divide el texto que va llegando en frases completas para empezar a hablar cuanto antes.
+  function crearCortador(alFrase) {
+    let buffer = '';
+    const corte = /^([\s\S]*?[.!?…:;](?=\s)|[\s\S]*?\n)\s*/;
+    return {
+      agregar(delta) {
+        buffer += delta;
+        let m;
+        while ((m = buffer.match(corte))) {
+          const frase = m[1].trim();
+          // Junta frases muy cortas con la siguiente, salvo la primera (para empezar rápido).
+          if (frase.length < 12 && buffer.length - m[0].length < 40 && this.yaHablo) break;
+          buffer = buffer.slice(m[0].length);
+          if (frase) { alFrase(frase); this.yaHablo = true; }
+        }
+      },
+      terminar() {
+        const resto = buffer.trim();
+        buffer = '';
+        if (resto) alFrase(resto);
+      },
+      yaHablo: false,
+    };
+  }
+
+  // ---------- Interrumpir hablando ----------
+  // Mientras ADA habla, escucha el micrófono (con cancelación de eco). Si detecta tu voz, se calla.
+  let interrumpirHablando = true;
+  try { interrumpirHablando = localStorage.getItem('ada_interrumpir') !== '0'; } catch (_) {}
+
+  async function vigilarInterrupcion(alDetectar) {
+    if (!interrumpirHablando || !navigator.mediaDevices || !window.AudioContext && !window.webkitAudioContext) return () => {};
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+    } catch (_) {
+      return () => {};
+    }
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const fuente = ctx.createMediaStreamSource(stream);
+    const analizador = ctx.createAnalyser();
+    analizador.fftSize = 1024;
+    fuente.connect(analizador);
+    const datos = new Float32Array(analizador.fftSize);
+    let base = 0;
+    let muestras = 0;
+    let activo = 0;
+    let terminado = false;
+    const inicio = performance.now();
+    const intervalo = setInterval(() => {
+      analizador.getFloatTimeDomainData(datos);
+      let suma = 0;
+      for (const v of datos) suma += v * v;
+      const rms = Math.sqrt(suma / datos.length);
+      if (performance.now() - inicio < 500) { base += rms; muestras += 1; return; } // calibra con el eco de ADA
+      const umbral = Math.max(0.035, (base / Math.max(1, muestras)) * 3);
+      activo = rms > umbral ? activo + 1 : Math.max(0, activo - 1);
+      if (activo >= 6) { parar(); alDetectar(); } // ~300 ms de voz sostenida
+    }, 50);
+    function parar() {
+      if (terminado) return;
+      terminado = true;
+      clearInterval(intervalo);
+      stream.getTracks().forEach((t) => t.stop());
+      ctx.close().catch(() => {});
+    }
+    return parar;
+  }
+
+  // ---------- Hablar con el servidor (en tiempo real) ----------
+  // Lee la respuesta como un flujo de eventos: texto a medida que se escribe, estados y documentos.
+  async function leerFlujo(res, alEvento) {
+    const lector = res.body.getReader();
+    const decodificador = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await lector.read();
+      if (done) break;
+      buffer += decodificador.decode(value, { stream: true });
+      let corte;
+      while ((corte = buffer.indexOf('\n\n')) >= 0) {
+        const bloque = buffer.slice(0, corte);
+        buffer = buffer.slice(corte + 2);
+        let tipo = 'message';
+        let datos = '';
+        for (const linea of bloque.split('\n')) {
+          if (linea.startsWith('event: ')) tipo = linea.slice(7).trim();
+          else if (linea.startsWith('data: ')) datos += linea.slice(6);
+        }
+        if (datos) alEvento(tipo, JSON.parse(datos));
+      }
+    }
+  }
+
   async function enviar(texto, opciones = {}) {
     texto = (texto || '').trim();
     if (!texto || ocupado) return null;
@@ -277,37 +584,67 @@
     pintarControles();
     mostrarYo(texto);
     mostrarAda('');
-    if (!conversando) setFase('pensando');
+    setFase('pensando');
+
+    const hablar = !silenciada;
+    const locutor = hablar ? crearLocutor({ alEmpezar: () => setFase('hablando') }) : null;
+    const cortador = crearCortador((frase) => locutor && locutor.decir(frase));
+    let acumulado = '';
+    let resultado = null;
+    let errorFlujo = null;
+
     try {
-      const r = await api('/api/chat', {
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ mensaje: texto, voz: !!opciones.voz, conversacion_id: convId }),
       });
-      if (r.conversacion_id !== convId) docsActuales = [];
-      guardarConv(r.conversacion_id);
-      mostrarAda(r.respuesta);
-      if (r.documentos && r.documentos.length) {
-        docsActuales.push(...r.documentos);
-        pintarEntregas();
-        if (!opciones.voz) abrirDocumento(r.documentos[r.documentos.length - 1].id);
+      if (res.status === 401) { salir(); throw new Error('Sesión expirada'); }
+      if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
+      await leerFlujo(res, (tipo, d) => {
+        if (tipo === 'conversacion') {
+          if (d.conversacion_id !== convId) { docsActuales = []; pintarEntregas(); }
+          guardarConv(d.conversacion_id);
+        } else if (tipo === 'texto') {
+          acumulado += d.delta;
+          mostrarAda(acumulado);
+          cortador.agregar(d.delta);
+        } else if (tipo === 'estado') {
+          if (!locutor || !locutor.hablando) setFase('pensando', d.texto);
+        } else if (tipo === 'documento') {
+          docsActuales.push(d);
+          pintarEntregas();
+        } else if (tipo === 'fin') {
+          resultado = d;
+        } else if (tipo === 'error') {
+          errorFlujo = d.error;
+        }
+      });
+      if (errorFlujo) throw new Error(errorFlujo);
+      if (!resultado) throw new Error('La respuesta se cortó');
+      cortador.terminar();
+      if (locutor) locutor.cerrar();
+      mostrarAda(resultado.respuesta);
+      if (resultado.documentos && resultado.documentos.length && !opciones.voz) {
+        abrirDocumento(resultado.documentos[resultado.documentos.length - 1].id);
       }
       actualizarEstado();
-      if ((r.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
-      // Fuera del modo conversación (texto o dictado del teclado), ADA también responde en voz.
-      if (!opciones.voz && !silenciada) {
-        ocupado = false;
-        setFase('hablando');
-        hablar(r.respuesta).then(() => { if (!conversando && orbe.dataset.fase === 'hablando') setFase('reposo'); });
-      }
-      return r.respuesta;
+      if ((resultado.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
+      return { respuesta: resultado.respuesta, locutor };
     } catch (e) {
-      mostrarAda('');
+      if (locutor) locutor.detener();
       aviso(`${e.message}. Inténtalo de nuevo.`, true);
       return null;
     } finally {
       ocupado = false;
-      if (!conversando && orbe.dataset.fase !== 'hablando') setFase('reposo');
       pintarControles();
+      if (!conversando) {
+        if (locutor) {
+          locutor.fin.then(() => { if (!conversando && !ocupado) setFase('reposo'); });
+        } else {
+          setFase('reposo');
+        }
+      }
     }
   }
 
@@ -324,14 +661,13 @@
     silenciada = !silenciada;
     try { localStorage.setItem('ada_silencio', silenciada ? '1' : '0'); } catch (_) {}
     pintarSilencio();
-    desbloquearVoz();
-    if (silenciada) { detenerHabla(); if (!conversando) setFase('reposo'); }
+    if (silenciada) { detenerHabla(); if (!conversando && !ocupado) setFase('reposo'); }
     aviso(silenciada ? 'ADA en silencio: solo responde escrito.' : 'ADA vuelve a hablar.');
   });
 
   // ---------- Conversación por voz ----------
   const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const SILENCIO_MS = 1400;
+  const SILENCIO_MS = 1300;
   const DESPEDIDA = /\b(chao|chau|adi[oó]s|hasta luego|nos vemos|eso es todo|terminamos|termina la conversaci[oó]n)\b/i;
 
   let conversando = false;
@@ -366,6 +702,7 @@
       mostrarTeclado(true);
       return;
     }
+    detenerHabla();
     conversando = true;
     silenciosSeguidos = 0;
     pintarControles();
@@ -377,7 +714,7 @@
     clearTimeout(timerSilencio);
     if (rec) { try { rec.abort(); } catch (_) {} rec = null; }
     detenerHabla();
-    setFase('reposo');
+    if (!ocupado) setFase('reposo');
     pintarControles();
   }
 
@@ -414,7 +751,6 @@
     rec.continuous = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e) => {
-      // Se reconstruye el texto completo en cada evento, en vez de ir sumando.
       const finales = [];
       let parcial = '';
       for (let i = 0; i < e.results.length; i++) {
@@ -453,140 +789,27 @@
 
   async function turnoDeAda(texto) {
     setFase('pensando');
-    const respuesta = await enviar(texto, { voz: true });
+    const r = await enviar(texto, { voz: true });
     if (!conversando) return;
-    if (!respuesta) { detenerVoz(); return; }
-    setFase('hablando');
-    await hablar(respuesta);
+    if (!r) { detenerVoz(); return; }
+    if (r.locutor) {
+      // Mientras ADA habla, si Cristian habla encima, ella se calla y lo escucha.
+      let pararVigia = () => {};
+      const empezarVigia = async () => {
+        pararVigia = await vigilarInterrupcion(() => { if (r.locutor) r.locutor.detener(); });
+      };
+      if (r.locutor.hablando) empezarVigia();
+      else r.locutor.fin.then(() => {}); // si aún no empieza, igual espera el final
+      const vigiaTardio = setInterval(() => { if (r.locutor.hablando) { clearInterval(vigiaTardio); empezarVigia(); } }, 150);
+      await r.locutor.fin;
+      clearInterval(vigiaTardio);
+      pararVigia();
+      await new Promise((ok) => setTimeout(ok, 150)); // libera el micrófono antes de volver a escuchar
+    }
     if (!conversando) return;
     if (DESPEDIDA.test(texto)) { cerrarConversacion(); return; }
     escucharTurno();
   }
-
-  // ---------- Voz de ADA ----------
-  const sintesis = window.speechSynthesis;
-
-  function elegirVoz() {
-    const voces = sintesis ? sintesis.getVoices() : [];
-    const es = (v) => /^es([-_]|$)/i.test(v.lang);
-    return voces.find((v) => /^es[-_]CL/i.test(v.lang))
-      || voces.find((v) => /^es[-_](419|US|MX|AR|CO)/i.test(v.lang) && v.localService)
-      || voces.find((v) => /^es[-_](419|US|MX|AR|CO)/i.test(v.lang))
-      || voces.find((v) => es(v) && v.localService)
-      || voces.find(es)
-      || null;
-  }
-
-  // En Android las voces cargan con retraso: espera un poco a que aparezcan.
-  function esperarVoces() {
-    return new Promise((resolve) => {
-      if (!sintesis || sintesis.getVoices().length) { resolve(); return; }
-      const listo = () => { clearTimeout(t); sintesis.removeEventListener('voiceschanged', listo); resolve(); };
-      const t = setTimeout(listo, 1500);
-      sintesis.addEventListener('voiceschanged', listo);
-    });
-  }
-
-  const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  // Divide en frases cortas: Chrome corta o ignora textos largos.
-  function enFrases(texto) {
-    const partes = texto.match(/[^.!?¿¡\n]+[.!?]*|[¿¡][^?!]+[?!]/g) || [texto];
-    const out = [];
-    let actual = '';
-    for (const p of partes.map((s) => s.trim()).filter(Boolean)) {
-      if ((actual + ' ' + p).length > 180 && actual) { out.push(actual); actual = p; }
-      else actual = actual ? `${actual} ${p}` : p;
-    }
-    if (actual) out.push(actual);
-    return out;
-  }
-
-  let avisoVozMostrado = false;
-  function avisarFalloVoz(error) {
-    if (avisoVozMostrado) return;
-    avisoVozMostrado = true;
-    const motivo = error === 'not-allowed'
-      ? 'el navegador bloqueó el audio: toca la pantalla una vez y vuelve a intentar'
-      : error === 'language-unavailable' || error === 'voice-unavailable'
-        ? 'tu teléfono no tiene voz en español. Instálala en Ajustes → Texto a voz'
-        : `el teléfono no pudo reproducir la voz (${error})`;
-    aviso(`ADA no pudo hablar: ${motivo}.`, true);
-  }
-
-  function textoParaHablar(t) {
-    return t
-      .replace(/\*\*|__|`/g, '')
-      .replace(/^#+\s*/gm, '')
-      .replace(/^\s*[-•*]\s+/gm, '')
-      .replace(/✓/g, '')
-      .replace(/https?:\/\/\S+/g, 'el enlace')
-      .replace(/\n{2,}/g, '. ')
-      .trim();
-  }
-
-  // Habla frase por frase. Devuelve una promesa que se cumple al terminar (o al interrumpir).
-  let interrumpido = false;
-  let terminarFraseActual = null;
-
-  function decirFrase(frase, voz) {
-    return new Promise((resolve) => {
-      const u = new SpeechSynthesisUtterance(frase);
-      if (voz) u.voice = voz;
-      u.lang = voz ? voz.lang : 'es-US';
-      u.rate = 1.05;
-      let listo = false;
-      const fin = (error) => {
-        if (listo) return;
-        listo = true;
-        clearTimeout(respaldo);
-        clearInterval(despertador);
-        terminarFraseActual = null;
-        resolve(error || null);
-      };
-      // Respaldo por si el navegador nunca avisa que terminó.
-      const respaldo = setTimeout(() => fin(), 3000 + frase.length * 110);
-      // Chrome a veces se "duerme" a mitad de frase: un resume() periódico lo despierta.
-      const despertador = setInterval(() => { if (sintesis.paused) sintesis.resume(); }, 2000);
-      terminarFraseActual = () => fin();
-      u.onend = () => fin();
-      u.onerror = (e) => fin(e.error === 'interrupted' || e.error === 'canceled' ? null : (e.error || 'error'));
-      sintesis.speak(u);
-    });
-  }
-
-  async function hablar(texto) {
-    if (!sintesis || !texto) return;
-    interrumpido = false;
-    await esperarVoces();
-    // Cancelar y hablar de inmediato hace que Chrome en Android ignore la nueva voz.
-    if (sintesis.speaking || sintesis.pending) { sintesis.cancel(); await pausa(200); }
-    const voz = elegirVoz();
-    for (const frase of enFrases(textoParaHablar(texto))) {
-      if (interrumpido) break;
-      const error = await decirFrase(frase, voz);
-      if (error) { avisarFalloVoz(error); break; }
-    }
-  }
-
-  function detenerHabla() {
-    interrumpido = true;
-    if (sintesis) sintesis.cancel();
-    if (terminarFraseActual) terminarFraseActual();
-  }
-
-  // iOS solo permite hablar si antes hubo un toque del usuario.
-  let vozDesbloqueada = false;
-  function desbloquearVoz() {
-    if (vozDesbloqueada || !sintesis) return;
-    sintesis.getVoices(); // dispara la carga de voces en Android
-    const u = new SpeechSynthesisUtterance('.');
-    u.volume = 0;
-    u.rate = 2;
-    sintesis.speak(u);
-    vozDesbloqueada = true;
-  }
-  if (sintesis) sintesis.onvoiceschanged = () => {};
 
   // ---------- Controles ----------
   const btnHablar = $('#hablar');
@@ -604,9 +827,13 @@
     else iniciarConversacion();
   });
 
+  // Tocar cualquier parte del escenario mientras ADA habla la hace callar.
+  $('.escenario').addEventListener('click', (e) => {
+    if (orbe.dataset.fase === 'hablando' && e.target.id !== 'cerrar-conv') detenerHabla();
+  });
   orbe.addEventListener('click', () => {
     const fase = orbe.dataset.fase;
-    if (fase === 'hablando') { detenerHabla(); return; }      // interrumpir: vuelve a escuchar
+    if (fase === 'hablando') return;                            // ya lo maneja el escenario
     if (fase === 'escuchando') { if (rec) rec.stop(); return; } // ya terminé de hablar
     if (fase === 'reposo') iniciarConversacion();
   });
@@ -864,6 +1091,86 @@
     else abrirArchivo();
   });
 
+  // ---------- Ajustes ----------
+  const NOMBRE_VOZ = {
+    google: 'Voz natural de Google ✓',
+    elevenlabs: 'Voz natural de ElevenLabs ✓',
+    openai: 'Voz natural de OpenAI ✓',
+    navegador: 'Voz del teléfono (robótica). Para una voz natural, configura una clave de voz en Railway.',
+  };
+
+  async function cargarAjustes() {
+    try {
+      const a = await api('/api/ajustes');
+      vozServidor = a.voz.proveedor !== 'navegador';
+      return a;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function abrirAjustes() {
+    abrirPanel('#vista-ajustes');
+    $('#op-interrumpir').checked = interrumpirHablando;
+    const a = await cargarAjustes();
+    if (!a) return;
+    const g = a.google;
+    const estado = $('#google-estado');
+    const acciones = $('#google-acciones');
+    const ayuda = $('#google-ayuda');
+    acciones.innerHTML = '';
+    ayuda.hidden = true;
+    if (!g.configurado) {
+      estado.textContent = 'Falta configurarlo en el servidor.';
+      ayuda.hidden = false;
+      ayuda.innerHTML = `En Railway agrega <b>GOOGLE_CLIENT_ID</b> y <b>GOOGLE_CLIENT_SECRET</b>. En Google Cloud, la URI de redirección autorizada debe ser:<code></code>`;
+      ayuda.querySelector('code').textContent = g.redirect_uri;
+    } else if (g.conectado) {
+      estado.innerHTML = '<span class="estado-ok">Conectado</span>';
+      if (g.cuenta) estado.append(` · ${g.cuenta}`);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'Desconectar';
+      b.addEventListener('click', async () => {
+        await api('/api/google/desconectar', { method: 'POST' }).catch(() => {});
+        aviso('Google Calendar desconectado.');
+        abrirAjustes();
+      });
+      acciones.appendChild(b);
+    } else {
+      estado.textContent = 'No conectado.';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'principal';
+      b.textContent = 'Conectar Google Calendar';
+      b.addEventListener('click', async () => {
+        try {
+          const r = await api('/api/google/enlace', { method: 'POST' });
+          window.location.href = r.url;
+        } catch (e) { aviso(e.message, true); }
+      });
+      acciones.appendChild(b);
+    }
+    $('#voz-estado').textContent = NOMBRE_VOZ[a.voz.proveedor] || a.voz.proveedor;
+    $('#ia-estado').textContent = `Modelo: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
+  }
+
+  $('#abrir-ajustes').addEventListener('click', abrirAjustes);
+  $('#op-interrumpir').addEventListener('change', (e) => {
+    interrumpirHablando = e.target.checked;
+    try { localStorage.setItem('ada_interrumpir', interrumpirHablando ? '1' : '0'); } catch (_) {}
+  });
+  $('#cerrar-sesion').addEventListener('click', () => { $('#vista-ajustes').hidden = true; salir(); });
+
+  // Vuelta desde Google después de autorizar.
+  function revisarRetornoGoogle() {
+    const p = new URLSearchParams(window.location.search);
+    if (!p.has('google')) return;
+    if (p.get('google') === 'ok') aviso('Google Calendar conectado. ADA ya puede ver tu agenda.');
+    else aviso(`No se pudo conectar Google Calendar: ${p.get('motivo') || 'error'}`, true);
+    history.replaceState(null, '', '/');
+  }
+
   // ---------- Sesión ----------
   function salir() {
     token = null;
@@ -894,6 +1201,8 @@
     $('#app').hidden = false;
     setFase('reposo');
     pintarControles();
+    revisarRetornoGoogle();
+    cargarAjustes();
     await retomarConversacion();
     actualizarEstado();
     cargarAutorizaciones();

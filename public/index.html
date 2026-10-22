@@ -38,6 +38,9 @@
       <button id="silencio" class="icono" type="button" aria-pressed="false" aria-label="Silenciar a ADA" title="Silenciar a ADA">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path class="ondas-sonido" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="mute" d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
+      <button id="abrir-ajustes" class="icono" type="button" aria-label="Ajustes" title="Ajustes">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
       <button id="abrir-archivo" class="icono" type="button" aria-label="Archivo de conversaciones" title="Archivo">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
       </button>
@@ -116,6 +119,37 @@
         <div id="detalle-documentos" class="docs-lista"></div>
         <div id="detalle-mensajes" class="transcripcion-chat"></div>
         <div id="detalle-pie" class="detalle-pie"></div>
+      </div>
+    </section>
+
+    <!-- ============ Ajustes ============ -->
+    <section id="vista-ajustes" class="panel" hidden aria-label="Ajustes">
+      <header class="panel-cab">
+        <button class="volver" type="button" data-volver aria-label="Volver">‹</button>
+        <h2>Ajustes</h2>
+      </header>
+      <div class="panel-cuerpo ajustes">
+        <section class="ajuste">
+          <h3>Google Calendar</h3>
+          <p id="google-estado" class="meta">Revisando…</p>
+          <div id="google-acciones" class="ajuste-botones"></div>
+          <div id="google-ayuda" class="ayuda" hidden></div>
+        </section>
+        <section class="ajuste">
+          <h3>Voz de ADA</h3>
+          <p id="voz-estado" class="meta"></p>
+          <label class="interruptor">
+            <input id="op-interrumpir" type="checkbox">
+            <span>Interrumpirla hablándole <small>Mientras ADA habla, si le hablas se calla y te escucha. Si en tu teléfono baja el volumen, desactívalo.</small></span>
+          </label>
+        </section>
+        <section class="ajuste">
+          <h3>Inteligencia</h3>
+          <p id="ia-estado" class="meta"></p>
+        </section>
+        <section class="ajuste">
+          <button id="cerrar-sesion" type="button" class="secundario">Cerrar sesión</button>
+        </section>
       </div>
     </section>
 

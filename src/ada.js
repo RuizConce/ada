@@ -4,6 +4,7 @@ const F = require('./fechas');
 const H = require('./herramientas');
 const E = require('./encargos'); // registra las herramientas de contactos y encargos
 const C = require('./conversaciones'); // registra entregar_documento
+const G = require('./google'); // registra las herramientas de agenda
 const { claude, MODELO } = require('./claude');
 
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
@@ -24,6 +25,31 @@ QUÉ HACES
 6. Revisión. Cuando pida el informe o la revisión semanal, usa datos_informe y entrégala con entregar_documento, con estas secciones:
    **Decisiones tomadas** (con su razón) · **Lo que avanzó** · **Encargos que me delegaste** (resueltos, en curso, trabados) · **Lo que quedó pendiente** (vencidos primero) · **Dónde se fue el tiempo** (foco por proyecto, y si coincide con lo urgente) · **Las 3 acciones más importantes para continuar**, concretas y con fecha sugerida. Cierra con una observación honesta de la semana, en una o dos frases.
 
+AGENDA (GOOGLE CALENDAR)
+- El contexto trae "calendario" y, si está conectado, "agenda_proximas_36h". Úsala para ordenar el día y avisar de reuniones próximas.
+- Para ver otros días, si está libre o buscar un evento: ver_agenda.
+- Para agendar, mover o borrar: primero di exactamente qué harás ("¿Te agendo reunión con Paola el jueves a las 11, una hora?") y espera su sí. Solo con un sí explícito llamas a crear_evento / modificar_evento / eliminar_evento con confirmado: true. Si dice que sí de inmediato al pedirlo ("agéndame X el jueves a las 11"), eso ya cuenta como confirmación.
+- Para coordinar con otra persona: revisa la agenda, propone 2 o 3 horarios libres y redacta el mensaje con proponer_mensaje.
+- Si el calendario no está conectado, díselo una vez y sigue ayudando sin él.
+
+PENSAR CONTIGO
+Cristian no solo necesita que hagas cosas: también que lo ayudes a pensar. Cuando te pida opinión, estrategia, ideas o "ayúdame a pensar":
+- Opina de verdad, con criterio propio. No le des la razón por cortesía ni respondas con generalidades.
+- Ve paso a paso: primero entiende qué quiere lograr; si falta un dato clave, pregunta UNA cosa a la vez.
+- Aporta una idea concreta, adaptada a su realidad (Iquique, sus proyectos, sus números), y luego pregunta si la profundizan.
+- Revisa los números que te da: si algo no cuadra, dilo con el cálculo.
+- Si la idea tiene un riesgo o una debilidad, nómbrala con respeto.
+- Cuando la conversación llegue a algo útil (una estrategia, un plan, una lista de ideas), ofrece dejarlo como documento.
+
+INTERNET
+Puedes buscar en internet con web_search. Úsala cuando haga falta información actual o externa: precios, competencia, normas, noticias, datos de mercado, ejemplos de otros negocios, o cuando Cristian lo pida ("búscame…"). No busques lo que ya sabes o lo que está en tus registros. Al responder, di de dónde sacaste el dato (el nombre del sitio). En voz, no leas enlaces.
+
+DINERO Y CIFRAS
+Los montos son en pesos chilenos salvo que Cristian diga otra cosa. Escríbelos como "15.000 pesos" (nunca con el signo $, porque la voz lo lee como dólares). Para dólares escribe "dólares".
+
+FORMA DE RESPONDER CON HERRAMIENTAS
+Usa las herramientas en silencio y responde una sola vez al final. No escribas texto antes de registrar, anotar o actualizar algo. La única excepción: antes de buscar en internet o revisar la agenda puedes decir una frase muy corta como "Déjame revisar".
+
 MEMORIA DE PROYECTOS
 - Empiezas sin conocer los proyectos de Cristian: los aprendes de lo que te cuenta. El contexto trae cada proyecto con su descripción o "(sin descripción)".
 - Cuando pregunte por un proyecto ("¿sabes lo de X?", "¿cómo va Y?"), usa ver_proyecto y responde con lo que hay. Si no hay nada, dilo y pídele que te lo cuente en pocas líneas.
@@ -38,7 +64,7 @@ Tu rol aquí es hacerte cargo, no solo conversar. Cuando diga "encárgate", "coo
 - Si algo depende de una decisión de Cristian, márcalo necesita_decision y plantéale la decisión con opciones concretas.
 - Si el contexto trae encargos_para_revisar_ahora, menciónalos en una línea (en el saludo del día o al final de tu respuesta) y propone qué hacer: insistir con un mensaje, esperar o escalar.
 - Si hay mensajes_esperando_tu_autorizacion de hace rato, recuérdalo en una línea.
-- Todavía no tienes acceso al calendario ni puedes enviar mensajes por tu cuenta: si hay que agendar, pregúntale a Cristian su disponibilidad y propone horarios con base en lo que te diga.
+- No puedes enviar mensajes por tu cuenta: los propones y Cristian los autoriza.
 - Guarda o completa contactos con guardar_contacto cuando aparezcan datos útiles (teléfono, correo, rol, cómo tratarlos). Si para un mensaje falta el teléfono o correo, pídelo.
 
 CUESTIONAR CON CRITERIO
@@ -57,7 +83,7 @@ Español chileno, cercano y profesional. Breve: normalmente 1 a 4 líneas. Confi
 
 async function construirContexto() {
   const ahora = new Date();
-  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta, encargos] = await Promise.all([
+  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta, encargos, agenda] = await Promise.all([
     H.focoActual(),
     H.compromisosProximos(48),
     H.alertasHoy(),
@@ -65,6 +91,7 @@ async function construirContexto() {
     q("SELECT COUNT(*) AS n FROM mensajes WHERE rol = 'user' AND creado_en >= ?", [F.inicioDelDia()]),
     q('SELECT creado_en FROM alertas ORDER BY creado_en DESC LIMIT 1'),
     E.resumenParaContexto(),
+    G.agendaParaContexto(),
   ]);
 
   const minutosFoco = foco ? F.minutosEntre(foco.inicio, ahora) : 0;
@@ -98,6 +125,7 @@ async function construirContexto() {
     proyectos_activos: proyectos.map((p) =>
       p.descripcion ? `${p.nombre}: ${p.descripcion.slice(0, 160)}` : `${p.nombre} (sin descripción)`),
     ...encargos,
+    ...agenda,
   };
 }
 
@@ -138,6 +166,9 @@ const ETIQUETAS = {
   actualizar_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}: ${r.encargo.estado.replace(/_/g, ' ')}` : null,
   proponer_mensaje: (i, r) => r.ok ? 'Mensaje para autorizar' : null,
   entregar_documento: (i, r) => r.ok ? `Documento: ${i.titulo}` : null,
+  crear_evento: (i, r) => r.ok ? `Agendado: ${r.evento.titulo}` : null,
+  modificar_evento: (i, r) => r.ok ? `Evento movido: ${r.evento.titulo}` : null,
+  eliminar_evento: (i, r) => r.ok ? 'Evento eliminado' : null,
 };
 
 function nombreTipo(t) {
@@ -145,18 +176,72 @@ function nombreTipo(t) {
 }
 
 const MODO_VOZ = `MODO CONVERSACIÓN POR VOZ (activo ahora)
-Cristian te está hablando en voz alta y tu respuesta se leerá en voz alta. Conversa como una persona:
-- Responde en 1 o 2 frases cortas, naturales. Máximo unas 35 palabras.
-- Nada de markdown, listas, viñetas, emojis ni enlaces. Las fechas y horas dilas como se hablan ("mañana a las doce").
-- Si hay mucha información (una lista, un informe, un borrador) o te piden un documento, créalo con entregar_documento y di solo "te lo dejé en pantalla" con una frase sobre qué es.
-- Termina con una pregunta corta solo si hace falta para avanzar. Si es un saludo, saluda breve y pregunta en qué lo ayudas.
-- Sigue usando tus herramientas igual que siempre: registrar, encargos, foco.
+Cristian te está hablando y tu respuesta se escucha en voz alta. Habla como una persona cercana en una conversación, no como un informe:
+- MÁXIMO 2 frases cortas (unas 30 palabras). Es una regla estricta: si tienes más que decir, di lo más importante y pregunta si sigues.
+- Una idea por turno. Si te pide pensar algo, aporta UNA idea o UNA pregunta, no una lista.
+- Nada de markdown, listas, viñetas, emojis, símbolos ni enlaces. Montos como "15.000 pesos". Fechas y horas como se hablan ("mañana a las doce").
+- Si hace falta mucha información (lista, informe, borrador, plan) o te piden un documento, créalo con entregar_documento y di solo "te lo dejé en pantalla" con media frase sobre qué es.
+- No repitas lo que Cristian acaba de decir ni resumas lo ya conversado.
 - Si se despide ("chao", "eso es todo"), despídete en una frase.`;
 
-async function conversar(textoUsuario, opciones = {}) {
+// Qué mostrar en pantalla mientras ADA usa cada herramienta.
+const ESTADO_HERRAMIENTA = {
+  web_search: 'Buscando en internet…',
+  ver_agenda: 'Revisando tu agenda…',
+  crear_evento: 'Agendando…',
+  modificar_evento: 'Cambiando el evento…',
+  eliminar_evento: 'Quitando el evento…',
+  entregar_documento: 'Preparando el documento…',
+  datos_informe: 'Revisando tu semana…',
+  listar_items: 'Revisando tus pendientes…',
+  ver_proyecto: 'Revisando el proyecto…',
+  listar_encargos: 'Revisando tus encargos…',
+  ver_encargo: 'Revisando el encargo…',
+  proponer_mensaje: 'Redactando el mensaje…',
+  buscar_contactos: 'Buscando el contacto…',
+};
+
+function herramientasDisponibles() {
+  const tools = [...H.DEFINICIONES];
+  if (process.env.ADA_INTERNET !== 'no') {
+    tools.push({
+      type: 'web_search_20250305',
+      name: 'web_search',
+      max_uses: parseInt(process.env.ADA_MAX_BUSQUEDAS || '3', 10),
+      user_location: { type: 'approximate', city: 'Iquique', region: 'Tarapacá', country: 'CL', timezone: 'America/Santiago' },
+    });
+  }
+  return tools;
+}
+
+// Llama a Claude en modo streaming: va entregando el texto a medida que se genera.
+async function llamarClaude(params, alEvento) {
+  const cli = claude();
+  if (typeof cli.messages.stream !== 'function') {
+    const r = await cli.messages.create(params);
+    for (const b of r.content) {
+      if ((b.type === 'tool_use' || b.type === 'server_tool_use') && ESTADO_HERRAMIENTA[b.name]) alEvento('estado', { texto: ESTADO_HERRAMIENTA[b.name] });
+      if (b.type === 'text' && b.text) alEvento('texto', { delta: b.text });
+    }
+    return r;
+  }
+  const stream = cli.messages.stream(params);
+  stream.on('text', (delta) => alEvento('texto', { delta }));
+  stream.on('streamEvent', (ev) => {
+    if (ev.type === 'content_block_start') {
+      const b = ev.content_block;
+      if ((b.type === 'tool_use' || b.type === 'server_tool_use') && ESTADO_HERRAMIENTA[b.name]) {
+        alEvento('estado', { texto: ESTADO_HERRAMIENTA[b.name] });
+      }
+    }
+  });
+  return stream.finalMessage();
+}
+
+async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   const conversacionId = await C.asegurar(opciones.conversacionId, opciones.voz ? 'voz' : 'texto');
-  const contexto = await construirContexto();
-  const historial = await historialParaClaude(conversacionId);
+  alEvento('conversacion', { conversacion_id: conversacionId });
+  const [contexto, historial] = await Promise.all([construirContexto(), historialParaClaude(conversacionId)]);
 
   const ahora = new Date();
   await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('user', ?, ?, ?)",
@@ -174,24 +259,31 @@ async function conversar(textoUsuario, opciones = {}) {
     { type: 'text', text: `CONTEXTO ACTUAL (calculado por el sistema, confiable):\n${JSON.stringify(contexto, null, 2)}` },
   ];
   if (opciones.voz) system.push({ type: 'text', text: MODO_VOZ });
+  const tools = herramientasDisponibles();
 
   const acciones = [];
   const documentos = [];
-  let respuestaFinal = '';
-  for (let vuelta = 0; vuelta < 8; vuelta++) {
-    const resp = await claude().messages.create({
-      model: MODELO(),
-      max_tokens: 2000,
-      system,
-      tools: H.DEFINICIONES,
-      messages,
-    });
-
-    const textos = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-    if (resp.stop_reason !== 'tool_use') {
-      respuestaFinal = textos;
-      break;
+  const partes = [];      // todo lo que ADA dijo en el turno (incluye "déjame revisar…" antes de una herramienta)
+  let separar = false;    // separa el texto de vueltas distintas
+  const emitir = (tipo, datos) => {
+    if (tipo === 'texto') {
+      if (separar && partes.length) { partes.push(' '); alEvento('texto', { delta: ' ' }); }
+      separar = false;
+      partes.push(datos.delta);
     }
+    alEvento(tipo, datos);
+  };
+
+  for (let vuelta = 0; vuelta < 10; vuelta++) {
+    const resp = await llamarClaude({ model: MODELO(), max_tokens: 3000, system, tools, messages }, emitir);
+    separar = true;
+
+    if (resp.stop_reason === 'pause_turn') {
+      // Búsqueda larga en curso: se devuelve tal cual para que continúe.
+      messages.push({ role: 'assistant', content: resp.content });
+      continue;
+    }
+    if (resp.stop_reason !== 'tool_use') break;
 
     messages.push({ role: 'assistant', content: resp.content });
     const resultados = [];
@@ -200,7 +292,11 @@ async function conversar(textoUsuario, opciones = {}) {
       const r = await H.ejecutar(bloque.name, bloque.input, { conversacionId });
       const etiqueta = ETIQUETAS[bloque.name] && !r.error ? ETIQUETAS[bloque.name](bloque.input, r) : null;
       if (etiqueta) acciones.push({ herramienta: bloque.name, etiqueta });
-      if (bloque.name === 'entregar_documento' && r.ok) documentos.push({ id: r.documento_id, titulo: bloque.input.titulo });
+      if (bloque.name === 'entregar_documento' && r.ok) {
+        const doc = { id: r.documento_id, titulo: bloque.input.titulo };
+        documentos.push(doc);
+        alEvento('documento', doc);
+      }
       resultados.push({
         type: 'tool_result',
         tool_use_id: bloque.id,
@@ -209,10 +305,13 @@ async function conversar(textoUsuario, opciones = {}) {
       });
     }
     messages.push({ role: 'user', content: resultados });
-    if (textos) respuestaFinal = textos; // por si se acaban las vueltas
   }
 
-  if (!respuestaFinal) respuestaFinal = documentos.length ? 'Te lo dejé en pantalla.' : 'Listo.';
+  let respuestaFinal = partes.join('').replace(/[ \t]+\n/g, '\n').trim();
+  if (!respuestaFinal) {
+    respuestaFinal = documentos.length ? 'Te lo dejé en pantalla.' : 'Listo.';
+    alEvento('texto', { delta: respuestaFinal });
+  }
   await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('assistant', ?, ?, ?)",
     [respuestaFinal, conversacionId, new Date()]);
   return { respuesta: respuestaFinal, acciones, documentos, conversacion_id: conversacionId };
