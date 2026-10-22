@@ -27,8 +27,62 @@ async function falla(res, quien) {
   return e;
 }
 
-async function google(texto) {
-  const voz = process.env.GOOGLE_TTS_VOZ || 'es-US-Chirp3-HD-Aoede';
+// Voz elegida por Cristian desde la app (se guarda en la base); si no hay, la de Railway o la por defecto.
+let vozElegida = null;
+let vozCargada = false;
+async function vozGuardada() {
+  if (vozCargada) return vozElegida;
+  try {
+    const { q } = require('./db');
+    const [r] = await q("SELECT datos FROM integraciones WHERE nombre = 'voz'");
+    vozElegida = r ? JSON.parse(r.datos).google : null;
+  } catch (_) {}
+  vozCargada = true;
+  return vozElegida;
+}
+
+async function elegirVoz(nombre) {
+  const { q } = require('./db');
+  await q(
+    `INSERT INTO integraciones (nombre, datos, actualizado_en) VALUES ('voz', ?, ?)
+     ON DUPLICATE KEY UPDATE datos = VALUES(datos), actualizado_en = VALUES(actualizado_en)`,
+    [JSON.stringify({ google: nombre }), new Date()]
+  );
+  vozElegida = nombre;
+  vozCargada = true;
+  return { ok: true, voz: nombre };
+}
+
+async function vozActual() {
+  return (await vozGuardada()) || process.env.GOOGLE_TTS_VOZ || 'es-US-Chirp3-HD-Aoede';
+}
+
+// Lista las voces naturales de Google en español (latinoamericano primero).
+let cacheVoces = null;
+async function listarVoces() {
+  if (proveedor() !== 'google') return { proveedor: proveedor(), voces: [], actual: null };
+  if (!cacheVoces) {
+    const res = await fetch(`https://texttospeech.googleapis.com/v1/voices?key=${encodeURIComponent(process.env.GOOGLE_TTS_API_KEY)}`);
+    if (!res.ok) throw await falla(res, 'Google TTS');
+    const { voices = [] } = await res.json();
+    const calidad = (n) => (n.includes('Chirp3-HD') ? 0 : n.includes('Chirp-HD') ? 1 : n.includes('Studio') ? 2 : n.includes('Neural2') ? 3 : 9);
+    cacheVoces = voices
+      .filter((v) => v.languageCodes.some((l) => ['es-US', 'es-ES'].includes(l)) && calidad(v.name) < 9)
+      .map((v) => ({
+        nombre: v.name,
+        etiqueta: v.name.split('-').pop(),
+        idioma: v.languageCodes[0] === 'es-US' ? 'Latinoamérica' : 'España',
+        genero: v.ssmlGender === 'FEMALE' ? 'Femenina' : v.ssmlGender === 'MALE' ? 'Masculina' : '',
+        linea: v.name.includes('Chirp3-HD') ? 'Chirp 3 HD' : v.name.includes('Chirp-HD') ? 'Chirp HD' : v.name.includes('Studio') ? 'Studio' : 'Neural2',
+        orden: (v.languageCodes[0] === 'es-US' ? 0 : 10) + calidad(v.name),
+      }))
+      .sort((a, b) => a.orden - b.orden || a.genero.localeCompare(b.genero) || a.etiqueta.localeCompare(b.etiqueta));
+  }
+  return { proveedor: 'google', voces: cacheVoces, actual: await vozActual() };
+}
+
+async function google(texto, vozForzada) {
+  const voz = vozForzada || (await vozActual());
   const idioma = voz.split('-').slice(0, 2).join('-');
   const pedir = (nombre) => fetch(
     `https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(process.env.GOOGLE_TTS_API_KEY)}`,
@@ -83,10 +137,10 @@ async function openai(texto) {
 
 const PROVEEDORES = { google, elevenlabs, openai };
 
-async function sintetizar(texto) {
+async function sintetizar(texto, vozForzada) {
   const p = proveedor();
   if (p === 'navegador') return null;
-  return PROVEEDORES[p](texto.slice(0, 800));
+  return PROVEEDORES[p](texto.slice(0, 800), p === 'google' ? vozForzada : undefined);
 }
 
-module.exports = { sintetizar, proveedor };
+module.exports = { sintetizar, proveedor, listarVoces, elegirVoz, vozActual };

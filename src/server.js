@@ -112,7 +112,8 @@ app.post('/api/voz', auth, async (req, res) => {
   const texto = String((req.body && req.body.texto) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Texto vacío' });
   try {
-    const audio = await Voz.sintetizar(texto);
+    const vozPrueba = typeof req.body.voz === 'string' && /^[a-z]{2}-[A-Z]{2}-[\w-]+$/.test(req.body.voz) ? req.body.voz : undefined;
+    const audio = await Voz.sintetizar(texto, vozPrueba);
     if (!audio) return res.status(204).end();
     res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
     res.send(audio);
@@ -178,6 +179,13 @@ app.get('/api/ajustes', auth, envolver(async (req) => ({
   internet: process.env.ADA_INTERNET !== 'no',
   modelo: process.env.ADA_MODEL || 'claude-sonnet-5-5',
 })));
+
+app.get('/api/voces', auth, envolver(() => Voz.listarVoces()));
+app.post('/api/voces', auth, envolver((req) => {
+  const nombre = String((req.body || {}).voz || '');
+  if (!/^[a-z]{2}-[A-Z]{2}-[\w-]+$/.test(nombre)) throw new Error('Nombre de voz inválido');
+  return Voz.elegirVoz(nombre);
+}));
 
 app.post('/api/google/enlace', auth, envolver(async (req) => {
   if (!G.configurado()) throw new Error('Faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en Railway');

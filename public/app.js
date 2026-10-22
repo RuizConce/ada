@@ -1152,7 +1152,89 @@
       acciones.appendChild(b);
     }
     $('#voz-estado').textContent = NOMBRE_VOZ[a.voz.proveedor] || a.voz.proveedor;
+    pintarVoces();
     $('#ia-estado').textContent = `Modelo: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
+  }
+
+  // Elegir voz: escuchar cada una y dejar la que guste.
+  const MUESTRA_VOZ = 'Hola Cristian, soy ADA. ¿En qué te ayudo hoy?';
+  let verTodasLasVoces = false;
+
+  async function probarVoz(nombre, boton) {
+    desbloquearVoz();
+    detenerHabla();
+    const texto = boton.textContent;
+    boton.textContent = '…';
+    try {
+      const res = await fetch('/api/voz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ texto: MUESTRA_VOZ, voz: nombre }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+      boton.textContent = '■';
+      await reproducir(url, () => false);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      aviso(`No se pudo probar la voz: ${e.message}`, true);
+    }
+    boton.textContent = texto;
+  }
+
+  async function pintarVoces() {
+    const cont = $('#voces');
+    cont.innerHTML = '';
+    let r;
+    try { r = await api('/api/voces'); } catch (e) { return; }
+    if (!r.voces.length) return;
+    const principales = r.voces.filter((v) => v.idioma === 'Latinoamérica' && v.linea === 'Chirp 3 HD');
+    const lista = verTodasLasVoces || !principales.length ? r.voces : principales;
+    let grupo = '';
+    for (const v of lista) {
+      const g = `${v.idioma} · ${v.linea}`;
+      if (g !== grupo) {
+        grupo = g;
+        const h = document.createElement('p');
+        h.className = 'voz-grupo';
+        h.textContent = g;
+        cont.appendChild(h);
+      }
+      const fila = document.createElement('div');
+      fila.className = `voz${v.nombre === r.actual ? ' actual' : ''}`;
+      fila.innerHTML = '<span class="voz-nombre"><strong></strong><small></small></span><button type="button" class="probar">▶ Probar</button>';
+      fila.querySelector('strong').textContent = v.etiqueta;
+      fila.querySelector('small').textContent = v.genero;
+      fila.querySelector('.probar').addEventListener('click', (e) => probarVoz(v.nombre, e.currentTarget));
+      if (v.nombre === r.actual) {
+        const s = document.createElement('span');
+        s.className = 'en-uso';
+        s.textContent = 'En uso ✓';
+        fila.appendChild(s);
+      } else {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'usar';
+        b.textContent = 'Usar';
+        b.addEventListener('click', async () => {
+          try {
+            await api('/api/voces', { method: 'POST', body: JSON.stringify({ voz: v.nombre }) });
+            aviso(`ADA ahora habla con la voz ${v.etiqueta}.`);
+            pintarVoces();
+          } catch (e) { aviso(e.message, true); }
+        });
+        fila.appendChild(b);
+      }
+      cont.appendChild(fila);
+    }
+    if (!verTodasLasVoces && lista.length < r.voces.length) {
+      const mas = document.createElement('button');
+      mas.type = 'button';
+      mas.className = 'ver-mas';
+      mas.textContent = `Ver más voces (${r.voces.length - lista.length}, incluye España)`;
+      mas.addEventListener('click', () => { verTodasLasVoces = true; pintarVoces(); });
+      cont.appendChild(mas);
+    }
   }
 
   $('#abrir-ajustes').addEventListener('click', abrirAjustes);

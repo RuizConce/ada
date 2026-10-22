@@ -309,6 +309,19 @@ button:disabled { opacity: 0.45; cursor: default; }
 .interruptor input { width: 22px; height: 22px; accent-color: var(--verde); flex: none; margin-top: 2px; }
 .interruptor small { display: block; color: var(--texto-suave); font-size: 13px; margin-top: 2px; }
 
+.voces { display: grid; gap: 8px; margin-bottom: 14px; }
+.voces:empty { display: none; }
+.voz-grupo { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--verde); margin: 8px 0 0; }
+.voz { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--borde); background: var(--fondo-2); }
+.voz.actual { border-color: var(--borde-verde); background: rgba(94, 234, 168, 0.07); }
+.voz-nombre { flex: 1; min-width: 0; }
+.voz-nombre strong { display: block; font-weight: 600; }
+.voz-nombre small { color: var(--texto-suave); font-size: 12px; }
+.voz button { flex: none; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--vidrio-fuerte); font-size: 14px; }
+.voz button.usar { border: 0; color: #04140d; font-weight: 700; background: linear-gradient(90deg, var(--verde), var(--verde-2)); }
+.voz .en-uso { color: var(--verde); font-size: 13px; font-weight: 600; }
+.ver-mas { border: 0; background: none; color: var(--texto-suave); text-decoration: underline; text-underline-offset: 3px; padding: 6px 0; font-size: 14px; }
+
 /* ---------- Hojas (documento y proyectos) ---------- */
 .hoja { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: center; }
 .hoja-fondo { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }
