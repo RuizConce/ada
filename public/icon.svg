@@ -1,5 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#14171c"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#e07a4f" stroke-width="22" stroke-dasharray="700 242" stroke-linecap="round" transform="rotate(-50 256 256)"/>
-  <circle cx="256" cy="256" r="34" fill="#e07a4f"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5eeaa8"/>
+      <stop offset="0.6" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <radialGradient id="luz" cx="0.75" cy="0.25" r="0.8">
+      <stop offset="0" stop-color="#1c5a45"/>
+      <stop offset="1" stop-color="#0a0f14"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#luz)"/>
+  <g fill="url(#g)">
+    <rect x="96" y="226" width="28" height="60" rx="14"/>
+    <rect x="148" y="186" width="28" height="140" rx="14"/>
+    <rect x="200" y="136" width="28" height="240" rx="14"/>
+    <rect x="252" y="106" width="28" height="300" rx="14"/>
+    <rect x="304" y="156" width="28" height="200" rx="14"/>
+    <rect x="356" y="196" width="28" height="120" rx="14"/>
+    <rect x="408" y="232" width="28" height="48" rx="14"/>
+  </g>
 </svg>

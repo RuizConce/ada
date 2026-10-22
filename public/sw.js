@@ -1,6 +1,6 @@
 // Service worker mínimo: permite instalar la app y abrirla aunque la red falle.
 // La API nunca se guarda en caché.
-const CACHE = 'ada-v3';
+const CACHE = 'ada-v4';
 const ARCHIVOS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', (e) => {

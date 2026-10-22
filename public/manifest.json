@@ -4,8 +4,8 @@
   "description": "Asistente personal: lo que piensas, lo que quieres hacer y lo que logras.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#14171c",
-  "theme_color": "#14171c",
+  "background_color": "#0a0f14",
+  "theme_color": "#0a0f14",
   "lang": "es-CL",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },

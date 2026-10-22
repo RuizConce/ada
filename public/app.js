@@ -61,17 +61,54 @@
   }
 
   // ---------- Render ----------
+  const ONDA = '<div class="onda quieta" aria-hidden="true">' + '<i></i>'.repeat(15) + '</div>';
+  const ICONOS = {
+    agenda: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    encargos: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5l4 4 10-10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    revision: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5V12h8.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+  };
+
   function vacio() {
-    chat.innerHTML = `<div class="vacio"><strong>Hola, Cristian.</strong>Cuéntame qué decidiste, qué avanzaste, qué quedó pendiente o qué prometiste. Yo lo ordeno.</div>`;
+    chat.innerHTML = `
+      <div class="hero">
+        <div class="hero-etiqueta">Asistente IA</div>
+        <div class="hero-nombre">ADA</div>
+        ${ONDA}
+        <h1>Hola, Cristian.</h1>
+        <p>Háblame o escríbeme qué decidiste, qué avanzaste o qué prometiste. Yo lo ordeno y me hago cargo.</p>
+        <div class="hero-tarjetas">
+          <button type="button" data-texto="¿Qué me falta?">${ICONOS.agenda}Pendientes y agenda</button>
+          <button type="button" data-texto="¿Cómo van mis encargos?">${ICONOS.encargos}Encargos</button>
+          <button type="button" data-texto="Hazme la revisión semanal.">${ICONOS.revision}Revisión semanal</button>
+        </div>
+      </div>`;
+    chat.querySelectorAll('.hero-tarjetas button').forEach((b) => b.addEventListener('click', () => enviar(b.dataset.texto)));
   }
 
-  function burbuja(rol, texto, acciones = []) {
-    const v = chat.querySelector('.vacio');
+  function burbuja(rol, texto, acciones = [], opciones = {}) {
+    const v = chat.querySelector('.hero');
     if (v) v.remove();
     const div = document.createElement('div');
     div.className = `msg ${rol}`;
-    if (rol === 'assistant') div.innerHTML = md(texto);
-    else div.textContent = texto;
+    if (rol === 'assistant') {
+      div.innerHTML = md(texto);
+      if (vozDisponible()) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'escuchar';
+        b.textContent = '▶ Escuchar';
+        b.addEventListener('click', () => hablar(texto, true));
+        div.appendChild(b);
+      }
+    } else if (opciones.voz) {
+      const et = document.createElement('span');
+      et.className = 'via-voz';
+      et.textContent = '🎙 Por voz';
+      div.appendChild(et);
+      div.appendChild(document.createTextNode(texto));
+    } else {
+      div.textContent = texto;
+    }
     if (acciones.length) {
       const cont = document.createElement('div');
       cont.className = 'acciones';
@@ -231,12 +268,12 @@
   }
 
   // ---------- Enviar ----------
-  async function enviar(texto) {
+  async function enviar(texto, opciones = {}) {
     texto = (texto || '').trim();
     if (!texto || ocupado) return;
     ocupado = true;
     btnEnviar.disabled = true;
-    burbuja('user', texto);
+    burbuja('user', texto, [], opciones);
     input.value = '';
     ajustar();
     const pensando = escribiendo();
@@ -244,6 +281,8 @@
       const r = await api('/api/chat', { method: 'POST', body: JSON.stringify({ mensaje: texto }) });
       pensando.remove();
       burbuja('assistant', r.respuesta, r.acciones || []);
+      // Si le hablaste, responde hablando (o siempre, si activaste la voz).
+      if (opciones.voz || vozSalida) hablar(r.respuesta);
       actualizarEstado();
       if ((r.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
     } catch (e) {
@@ -271,6 +310,142 @@
       enviar(input.value);
     }
   });
+
+  // ---------- Voz: hablarle a ADA (dictado) ----------
+  const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btnMic = $('#microfono');
+  const panelEscucha = $('#escucha');
+  const txtTranscripcion = $('#transcripcion');
+  let rec = null;
+  let textoFinal = '';
+  let textoParcial = '';
+  let cancelado = false;
+
+  function mostrarTranscripcion() {
+    const t = (textoFinal + ' ' + textoParcial).trim();
+    txtTranscripcion.textContent = t || 'Escuchando…';
+    txtTranscripcion.classList.toggle('vacia', !t);
+  }
+
+  function terminarEscucha() {
+    panelEscucha.hidden = true;
+    btnMic.classList.remove('activo');
+    const t = (textoFinal + ' ' + textoParcial).trim();
+    rec = null;
+    if (!cancelado && t) enviar(t, { voz: true });
+  }
+
+  function escuchar() {
+    if (ocupado) return;
+    if (rec) { rec.stop(); return; }
+    desbloquearVoz();
+    if (!Reconocimiento) {
+      burbuja('error', 'Este navegador no permite dictado. Usa Safari o Chrome, o el micrófono del teclado.');
+      return;
+    }
+    detenerHabla();
+    rec = new Reconocimiento();
+    rec.lang = 'es-CL';
+    rec.interimResults = true;
+    rec.continuous = true;
+    rec.maxAlternatives = 1;
+    textoFinal = '';
+    textoParcial = '';
+    cancelado = false;
+    rec.onresult = (e) => {
+      textoParcial = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) textoFinal += ' ' + r[0].transcript;
+        else textoParcial += r[0].transcript;
+      }
+      mostrarTranscripcion();
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        cancelado = true;
+        burbuja('error', 'ADA no tiene permiso para usar el micrófono. Actívalo en los ajustes del navegador.');
+      } else if (e.error === 'no-speech') {
+        cancelado = true;
+      }
+    };
+    rec.onend = terminarEscucha;
+    try {
+      rec.start();
+      panelEscucha.hidden = false;
+      btnMic.classList.add('activo');
+      mostrarTranscripcion();
+    } catch (_) {
+      rec = null;
+    }
+  }
+
+  btnMic.addEventListener('click', escuchar);
+  $('#escucha-listo').addEventListener('click', () => { if (rec) rec.stop(); });
+  $('#escucha-cancelar').addEventListener('click', () => { cancelado = true; if (rec) rec.abort(); });
+
+  // ---------- Voz: ADA responde hablando ----------
+  const sintesis = window.speechSynthesis;
+  const btnVoz = $('#voz-salida');
+  let vozSalida = false;
+  try { vozSalida = localStorage.getItem('ada_voz') === '1'; } catch (_) {}
+
+  function vozDisponible() { return !!sintesis; }
+
+  function elegirVoz() {
+    const voces = sintesis ? sintesis.getVoices() : [];
+    return voces.find((v) => v.lang === 'es-CL')
+      || voces.find((v) => /^es[-_](419|MX|US|AR|CO)/i.test(v.lang))
+      || voces.find((v) => /^es/i.test(v.lang))
+      || null;
+  }
+
+  function textoParaHablar(t) {
+    return t
+      .replace(/\*\*|__|`/g, '')
+      .replace(/^#+\s*/gm, '')
+      .replace(/^\s*[-•*]\s+/gm, '')
+      .replace(/✓/g, '')
+      .replace(/https?:\/\/\S+/g, 'el enlace')
+      .replace(/\n{2,}/g, '. ')
+      .trim();
+  }
+
+  function hablar(texto, forzar = false) {
+    if (!sintesis || (!forzar && !texto)) return;
+    sintesis.cancel();
+    const u = new SpeechSynthesisUtterance(textoParaHablar(texto));
+    const v = elegirVoz();
+    if (v) u.voice = v;
+    u.lang = v ? v.lang : 'es-CL';
+    u.rate = 1.05;
+    sintesis.speak(u);
+  }
+
+  function detenerHabla() { if (sintesis) sintesis.cancel(); }
+
+  // iOS solo permite hablar si antes hubo un toque del usuario.
+  let vozDesbloqueada = false;
+  function desbloquearVoz() {
+    if (vozDesbloqueada || !sintesis) return;
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    sintesis.speak(u);
+    vozDesbloqueada = true;
+  }
+
+  function pintarBotonVoz() { btnVoz.setAttribute('aria-pressed', vozSalida ? 'true' : 'false'); }
+  btnVoz.hidden = !vozDisponible();
+  pintarBotonVoz();
+  btnVoz.addEventListener('click', () => {
+    vozSalida = !vozSalida;
+    try { localStorage.setItem('ada_voz', vozSalida ? '1' : '0'); } catch (_) {}
+    pintarBotonVoz();
+    desbloquearVoz();
+    if (!vozSalida) detenerHabla();
+  });
+  if (sintesis) sintesis.onvoiceschanged = () => {};
+  $('#form').addEventListener('submit', desbloquearVoz, true);
 
   // ---------- Atajos ----------
   document.querySelectorAll('.atajos button').forEach((b) => {
