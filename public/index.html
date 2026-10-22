@@ -16,7 +16,7 @@
 <body>
   <div class="ambiente" aria-hidden="true"></div>
 
-  <!-- Login -->
+  <!-- ============ Login ============ -->
   <main id="login" class="login" hidden>
     <div class="login-card">
       <div class="onda grande quieta" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -30,58 +30,123 @@
     </div>
   </main>
 
-  <!-- App -->
   <div id="app" class="app" hidden>
+    <!-- ============ Barra ============ -->
     <header class="barra">
       <div class="marca-chica"><span class="punto" aria-hidden="true"></span>ADA</div>
       <div id="estado" class="estado" aria-live="polite"></div>
-      <button id="voz-salida" class="icono" type="button" aria-pressed="false" title="Respuestas en voz alta">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path class="ondas-sonido" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="mute" d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <button id="abrir-archivo" class="icono" type="button" aria-label="Archivo de conversaciones" title="Archivo">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
       </button>
     </header>
 
-    <section id="chat" class="chat" aria-live="polite"></section>
-
-    <footer class="pie">
-      <section id="autorizaciones" class="autorizaciones" aria-label="Mensajes por autorizar" hidden></section>
-
-      <!-- Panel de escucha -->
-      <div id="escucha" class="escucha" hidden>
-        <div class="onda" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <p id="transcripcion" class="transcripcion">Escuchando…</p>
-        <div class="escucha-botones">
-          <button id="escucha-cancelar" type="button">Terminar</button>
-          <button id="escucha-listo" type="button" class="principal">Listo, envía</button>
+    <!-- ============ Vista principal: voz ============ -->
+    <main id="vista-voz" class="vista-voz">
+      <section class="escenario" aria-live="polite">
+        <button id="orbe" class="orbe" type="button" data-fase="reposo" aria-label="Hablar con ADA">
+          <span class="halo" aria-hidden="true"></span>
+          <span class="onda" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        </button>
+        <p id="fase" class="fase">Toca para hablar con ADA</p>
+        <div class="subtitulos">
+          <p id="sub-yo" class="sub-yo"></p>
+          <div id="sub-ada" class="sub-ada"></div>
         </div>
-      </div>
+      </section>
 
+      <!-- Lo que ADA te deja en pantalla: documentos y mensajes por autorizar -->
+      <section id="entregas" class="entregas" aria-label="Documentos y autorizaciones"></section>
+    </main>
+
+    <!-- ============ Mando ============ -->
+    <footer class="mando">
       <div class="atajos" role="toolbar" aria-label="Atajos">
         <button type="button" data-accion="foco">Estoy con…</button>
         <button type="button" data-texto="¿Qué me falta?">¿Qué me falta?</button>
         <button type="button" data-texto="¿Cómo van mis encargos?">Encargos</button>
-        <button type="button" data-texto="Terminé por ahora, cierra el foco.">Terminé</button>
         <button type="button" data-texto="Hazme la revisión semanal.">Revisión semanal</button>
       </div>
-      <form id="form" class="entrada">
-        <button id="microfono" type="button" class="mic" aria-label="Conversar con ADA por voz">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
-        <textarea id="mensaje" rows="1" placeholder="Escríbele o háblale a ADA…" enterkeyhint="send"></textarea>
+      <form id="form" class="entrada" hidden>
+        <textarea id="mensaje" rows="1" placeholder="Escríbele a ADA…" enterkeyhint="send"></textarea>
         <button id="enviar" type="submit" class="enviar" aria-label="Enviar">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 12h14M12 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </form>
+      <div class="controles">
+        <button id="teclado" class="icono redondo" type="button" aria-label="Escribir" title="Escribir">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M8 14h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="hablar" class="hablar" type="button">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span id="hablar-texto">Hablar con ADA</span>
+        </button>
+        <button id="ver-transcripcion" class="icono redondo" type="button" aria-label="Ver la conversación en texto" title="Ver en texto">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
     </footer>
 
-    <!-- Selector de proyecto -->
+    <!-- ============ Archivo ============ -->
+    <section id="vista-archivo" class="panel" hidden aria-label="Archivo">
+      <header class="panel-cab">
+        <button class="volver" type="button" data-volver aria-label="Volver">‹</button>
+        <h2>Archivo</h2>
+      </header>
+      <div class="panel-cuerpo">
+        <input id="buscar" class="buscar" type="search" placeholder="Buscar en conversaciones…">
+        <div id="carpetas" class="carpetas" role="tablist"></div>
+        <div id="lista-conversaciones" class="lista"></div>
+      </div>
+    </section>
+
+    <!-- ============ Detalle de conversación ============ -->
+    <section id="vista-detalle" class="panel" hidden aria-label="Conversación">
+      <header class="panel-cab">
+        <button class="volver" type="button" data-volver aria-label="Volver">‹</button>
+        <div class="panel-titulo">
+          <h2 id="detalle-titulo">Conversación</h2>
+          <p id="detalle-meta" class="meta"></p>
+        </div>
+      </header>
+      <div class="panel-cuerpo">
+        <p id="detalle-resumen" class="resumen"></p>
+        <div id="detalle-documentos" class="docs-lista"></div>
+        <div id="detalle-mensajes" class="transcripcion-chat"></div>
+        <div id="detalle-pie" class="detalle-pie"></div>
+      </div>
+    </section>
+
+    <!-- ============ Documento ============ -->
+    <div id="doc" class="hoja" hidden>
+      <div class="hoja-fondo" data-cerrar-doc></div>
+      <article class="hoja-panel doc-panel" role="dialog" aria-labelledby="doc-titulo">
+        <header class="doc-cab">
+          <div>
+            <p class="doc-etiqueta">Documento</p>
+            <h2 id="doc-titulo"></h2>
+          </div>
+          <button class="icono" type="button" data-cerrar-doc aria-label="Cerrar">✕</button>
+        </header>
+        <div id="doc-cuerpo" class="doc-cuerpo"></div>
+        <div class="doc-botones">
+          <button id="doc-copiar" type="button" class="principal">Copiar</button>
+          <button id="doc-compartir" type="button">Compartir</button>
+          <button id="doc-descargar" type="button">Descargar</button>
+        </div>
+      </article>
+    </div>
+
+    <!-- ============ Selector de proyecto ============ -->
     <div id="hoja" class="hoja" hidden>
       <div class="hoja-fondo" data-cerrar></div>
-      <div class="hoja-panel" role="dialog" aria-label="¿En qué proyecto estás?">
-        <h2>¿En qué estás?</h2>
+      <div class="hoja-panel" role="dialog" aria-labelledby="hoja-titulo">
+        <h2 id="hoja-titulo">¿En qué estás?</h2>
         <div id="hoja-proyectos" class="hoja-proyectos"></div>
         <button type="button" class="hoja-cancelar" data-cerrar>Cancelar</button>
       </div>
     </div>
+
+    <div id="aviso" class="aviso" role="status" hidden></div>
   </div>
 
   <script src="app.js"></script>

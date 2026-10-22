@@ -7,6 +7,7 @@ const express = require('express');
 const { q, initDb } = require('./db');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
+const C = require('./conversaciones');
 
 const app = express();
 app.set('trust proxy', 1); // Railway está detrás de un proxy
@@ -62,7 +63,10 @@ app.post('/api/chat', auth, async (req, res) => {
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
   if (texto.length > 8000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
   try {
-    res.json(await conversar(texto, { voz: req.body.voz === true }));
+    res.json(await conversar(texto, {
+      voz: req.body.voz === true,
+      conversacionId: parseInt(req.body.conversacion_id, 10) || null,
+    }));
   } catch (e) {
     console.error('Error en /api/chat:', e);
     const status = e.status === 529 || e.status === 503 ? 503 : 500;
@@ -89,13 +93,34 @@ app.get('/api/autorizaciones', auth, async (req, res) => {
 });
 
 app.post('/api/acciones/:id', auth, async (req, res) => {
-  const { decision, contenido } = req.body || {};
+  const { decision, contenido, conversacion_id: convId } = req.body || {};
   try {
-    res.json(await E.resolverAccion(parseInt(req.params.id, 10), decision, contenido));
+    res.json(await E.resolverAccion(parseInt(req.params.id, 10), decision, contenido, parseInt(convId, 10) || null));
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
 });
+
+// ---------- Archivo de conversaciones y documentos ----------
+
+const envolver = (fn) => async (req, res) => {
+  try {
+    const r = await fn(req);
+    if (r === null || r === undefined) return res.status(404).json({ error: 'No encontrado' });
+    res.json(r);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+};
+
+app.get('/api/carpetas', auth, envolver(() => C.carpetas()));
+app.get('/api/conversaciones', auth, envolver((req) => C.listar({ proyecto_id: req.query.proyecto, texto: req.query.q })));
+app.get('/api/conversaciones/:id', auth, envolver((req) => C.detalle(parseInt(req.params.id, 10))));
+app.post('/api/conversaciones/:id/cerrar', auth, envolver((req) => C.cerrar(parseInt(req.params.id, 10))));
+app.post('/api/conversaciones/:id/proyecto', auth,
+  envolver((req) => C.moverConversacion(parseInt(req.params.id, 10), (req.body || {}).proyecto || null)));
+app.get('/api/documentos/:id', auth, envolver((req) => C.obtenerDocumento(parseInt(req.params.id, 10))));
 
 app.get('/api/encargos', auth, async (req, res) => {
   try {

@@ -394,11 +394,11 @@ function registrar(definiciones, implementaciones) {
   Object.assign(IMPLEMENTACIONES, implementaciones);
 }
 
-async function ejecutar(nombre, input) {
+async function ejecutar(nombre, input, ctx = {}) {
   const fn = IMPLEMENTACIONES[nombre];
   if (!fn) return { error: `Herramienta desconocida: ${nombre}` };
   try {
-    return await fn(input || {});
+    return await fn(input || {}, ctx);
   } catch (e) {
     return { error: e.message };
   }

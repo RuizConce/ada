@@ -255,7 +255,7 @@ async function autorizacionesPendientes() {
 }
 
 // Llamado SOLO desde el botón de la app (nunca por el modelo).
-async function resolverAccion(id, decision, contenidoEditado) {
+async function resolverAccion(id, decision, contenidoEditado, conversacionId = null) {
   const [a] = await q(
     `SELECT a.*, c.nombre AS contacto FROM acciones a LEFT JOIN contactos c ON c.id = a.contacto_id WHERE a.id = ?`, [id]
   );
@@ -274,8 +274,8 @@ async function resolverAccion(id, decision, contenidoEditado) {
       );
       await anotar(a.encargo_id, `Cristian autorizó y envió el mensaje por ${a.canal} a ${quien}${contenido !== a.contenido ? ' (editado)' : ''}. Revisar respuesta: ${F.fmt(revisar)}`);
     }
-    await q("INSERT INTO mensajes (rol, contenido, creado_en) VALUES ('user', ?, ?)",
-      [`[Desde botón] Autoricé y envié el mensaje por ${a.canal} a ${quien}${a.encargo_id ? ` (encargo #${a.encargo_id})` : ''}.`, ahora]);
+    await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('user', ?, ?, ?)",
+      [`[Desde botón] Autoricé y envié el mensaje por ${a.canal} a ${quien}${a.encargo_id ? ` (encargo #${a.encargo_id})` : ''}.`, conversacionId, ahora]);
     return { ok: true, estado: 'ejecutada' };
   }
   if (decision === 'rechazar') {
@@ -284,8 +284,8 @@ async function resolverAccion(id, decision, contenidoEditado) {
       await q("UPDATE encargos SET estado = 'en_curso', actualizado_en = ? WHERE id = ?", [ahora, a.encargo_id]);
       await anotar(a.encargo_id, `Cristian rechazó el mensaje propuesto para ${quien}`);
     }
-    await q("INSERT INTO mensajes (rol, contenido, creado_en) VALUES ('user', ?, ?)",
-      [`[Desde botón] Rechacé el mensaje propuesto para ${quien}${a.encargo_id ? ` (encargo #${a.encargo_id})` : ''}.`, ahora]);
+    await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('user', ?, ?, ?)",
+      [`[Desde botón] Rechacé el mensaje propuesto para ${quien}${a.encargo_id ? ` (encargo #${a.encargo_id})` : ''}.`, conversacionId, ahora]);
     return { ok: true, estado: 'rechazada' };
   }
   throw new Error('Decisión no válida');

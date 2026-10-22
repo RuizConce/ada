@@ -1,12 +1,26 @@
 (() => {
   const $ = (s) => document.querySelector(s);
-  const chat = $('#chat');
-  const input = $('#mensaje');
-  const btnEnviar = $('#enviar');
-  let token = null;
-  let ocupado = false;
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-  try { token = localStorage.getItem('ada_token'); } catch (_) {}
+  let token = null;
+  let convId = null;          // conversación en curso
+  let ocupado = false;        // esperando respuesta del servidor
+  let docsActuales = [];      // documentos entregados en la conversación en curso
+  let proyectos = [];
+
+  try {
+    token = localStorage.getItem('ada_token');
+    convId = parseInt(localStorage.getItem('ada_conv'), 10) || null;
+  } catch (_) {}
+
+  function guardarConv(id) {
+    convId = id || null;
+    try {
+      if (convId) localStorage.setItem('ada_conv', String(convId));
+      else localStorage.removeItem('ada_conv');
+    } catch (_) {}
+    pintarControles();
+  }
 
   // ---------- API ----------
   async function api(ruta, opciones = {}) {
@@ -22,7 +36,7 @@
 
   // ---------- Markdown mínimo y seguro ----------
   function esc(s) {
-    return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function inline(s) {
     return esc(s)
@@ -31,7 +45,7 @@
       .replace(/`([^`]+)`/g, '<code>$1</code>');
   }
   function md(texto) {
-    const lineas = texto.split('\n');
+    const lineas = String(texto || '').split('\n');
     let html = '';
     let lista = null;
     let parrafo = [];
@@ -40,7 +54,7 @@
     for (const l of lineas) {
       const ul = l.match(/^\s*[-•*]\s+(.*)/);
       const ol = l.match(/^\s*\d+[.)]\s+(.*)/);
-      const h = l.match(/^#{1,4}\s+(.*)/);
+      const h = l.match(/^(#{1,4})\s+(.*)/);
       if (ul || ol) {
         cerrarParrafo();
         const tipo = ul ? 'ul' : 'ol';
@@ -48,7 +62,10 @@
         html += `<li>${inline((ul || ol)[1])}</li>`;
       } else if (h) {
         cerrarParrafo(); cerrarLista();
-        html += `<h3>${inline(h[1])}</h3>`;
+        const nivel = Math.min(h[1].length + 1, 4);
+        html += `<h${nivel}>${inline(h[2])}</h${nivel}>`;
+      } else if (/^\s*---+\s*$/.test(l)) {
+        cerrarParrafo(); cerrarLista(); html += '<hr>';
       } else if (!l.trim()) {
         cerrarParrafo(); cerrarLista();
       } else {
@@ -60,127 +77,83 @@
     return html;
   }
 
-  // ---------- Render ----------
-  const ONDA = '<div class="onda quieta" aria-hidden="true">' + '<i></i>'.repeat(15) + '</div>';
-  const ICONOS = {
-    agenda: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-    encargos: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5l4 4 10-10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    revision: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5V12h8.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+  // ---------- Avisos ----------
+  let timerAviso = null;
+  function aviso(texto, error = false) {
+    const a = $('#aviso');
+    a.textContent = texto;
+    a.classList.toggle('error', error);
+    a.hidden = false;
+    clearTimeout(timerAviso);
+    timerAviso = setTimeout(() => { a.hidden = true; }, error ? 6000 : 3200);
+  }
+
+  function fechaCorta(d) {
+    const f = new Date(d);
+    const hoy = new Date();
+    const ayer = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1);
+    const hora = f.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+    if (f.toDateString() === hoy.toDateString()) return `Hoy ${hora}`;
+    if (f.toDateString() === ayer.toDateString()) return `Ayer ${hora}`;
+    return `${f.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })} ${hora}`;
+  }
+
+  function duracion(a, b) {
+    if (!a || !b) return '';
+    const min = Math.max(1, Math.round((new Date(b) - new Date(a)) / 60000));
+    return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
+  }
+
+  // ---------- Escenario de voz ----------
+  const orbe = $('#orbe');
+  const txtFase = $('#fase');
+  const subYo = $('#sub-yo');
+  const subAda = $('#sub-ada');
+
+  const TEXTO_FASE = {
+    reposo: 'Toca para hablar con ADA',
+    escuchando: 'Te escucho…',
+    pensando: 'ADA está pensando…',
+    hablando: 'ADA está hablando · toca para interrumpir',
   };
 
-  function vacio() {
-    chat.innerHTML = `
-      <div class="hero">
-        <div class="hero-etiqueta">Asistente IA</div>
-        <div class="hero-nombre">ADA</div>
-        ${ONDA}
-        <h1>Hola, Cristian.</h1>
-        <p>Háblame o escríbeme qué decidiste, qué avanzaste o qué prometiste. Yo lo ordeno y me hago cargo.</p>
-        <div class="hero-tarjetas">
-          <button type="button" data-texto="¿Qué me falta?">${ICONOS.agenda}Pendientes y agenda</button>
-          <button type="button" data-texto="¿Cómo van mis encargos?">${ICONOS.encargos}Encargos</button>
-          <button type="button" data-texto="Hazme la revisión semanal.">${ICONOS.revision}Revisión semanal</button>
-        </div>
-      </div>`;
-    chat.querySelectorAll('.hero-tarjetas button').forEach((b) => b.addEventListener('click', () => enviar(b.dataset.texto)));
+  function setFase(fase, texto) {
+    orbe.dataset.fase = fase;
+    txtFase.textContent = texto || TEXTO_FASE[fase];
   }
 
-  function burbuja(rol, texto, acciones = [], opciones = {}) {
-    const v = chat.querySelector('.hero');
-    if (v) v.remove();
-    const div = document.createElement('div');
-    div.className = `msg ${rol}`;
-    if (rol === 'assistant') {
-      div.innerHTML = md(texto);
-      if (vozDisponible()) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'escuchar';
-        b.textContent = '▶ Escuchar';
-        b.addEventListener('click', () => { desbloquearVoz(); hablar(texto); });
-        div.appendChild(b);
-      }
-    } else if (opciones.voz) {
-      const et = document.createElement('span');
-      et.className = 'via-voz';
-      et.textContent = '🎙 Por voz';
-      div.appendChild(et);
-      div.appendChild(document.createTextNode(texto));
-    } else {
-      div.textContent = texto;
+  function mostrarYo(texto) {
+    subYo.textContent = texto ? `“${texto}”` : '';
+  }
+
+  function mostrarAda(texto) {
+    subAda.innerHTML = texto ? md(texto) : '';
+    subAda.scrollTop = 0;
+  }
+
+  // ---------- Entregas: documentos y mensajes por autorizar ----------
+  const ICONO_DOC = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5v12.5H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4.5M9.5 12.5h6M9.5 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  let autorizaciones = [];
+
+  function pintarEntregas() {
+    const cont = $('#entregas');
+    cont.innerHTML = '';
+    for (const d of docsActuales.slice().reverse()) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'entrega-doc';
+      b.innerHTML = `${ICONO_DOC}<span><small>Documento</small><strong></strong></span><em>Abrir</em>`;
+      b.querySelector('strong').textContent = d.titulo;
+      b.addEventListener('click', () => abrirDocumento(d.id));
+      cont.appendChild(b);
     }
-    if (acciones.length) {
-      const cont = document.createElement('div');
-      cont.className = 'acciones';
-      for (const a of acciones) {
-        const s = document.createElement('span');
-        s.className = `accion${a.herramienta === 'registrar_alerta' ? ' cuestiona' : ''}`;
-        s.textContent = `✓ ${a.etiqueta}`;
-        cont.appendChild(s);
-      }
-      div.appendChild(cont);
-    }
-    chat.appendChild(div);
-    bajar();
-    return div;
+    for (const a of autorizaciones) cont.appendChild(tarjetaAutorizacion(a));
   }
 
-  function bajar() { chat.scrollTop = chat.scrollHeight; }
-
-  function escribiendo() {
-    const div = document.createElement('div');
-    div.className = 'msg assistant';
-    div.innerHTML = '<span class="escribiendo"><span></span><span></span><span></span></span>';
-    chat.appendChild(div);
-    bajar();
-    return div;
-  }
-
-  function corto(d) {
-    // "2026-10-23 18:00 (jueves)" -> "jue 18:00"
-    if (!d) return '';
-    const m = d.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}) \((\w+)/u);
-    if (!m) return d;
-    const hoy = new Date();
-    const f = new Date(+m[1], +m[2] - 1, +m[3]);
-    const dif = Math.round((f - new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())) / 86400000);
-    const dia = dif === 0 ? 'hoy' : dif === 1 ? 'mañana' : dif === -1 ? 'ayer' : m[5].slice(0, 3);
-    return `${dia} ${m[4]}`;
-  }
-
-  let proyectos = [];
-  async function actualizarEstado() {
-    try {
-      const e = await api('/api/estado');
-      proyectos = e.proyectos || [];
-      const cont = $('#estado');
-      cont.innerHTML = '';
-      const pill = (texto, clase) => {
-        const s = document.createElement('span');
-        s.className = `pastilla ${clase || ''}`;
-        s.textContent = texto;
-        cont.appendChild(s);
-      };
-      if (e.por_autorizar) pill(`${e.por_autorizar} por autorizar`, 'autorizar');
-      if (e.foco) pill(`● ${e.foco.proyecto || e.foco.descripcion} · ${e.foco.minutos} min`, 'foco');
-      else pill('Sin foco');
-      if (e.encargos_activos) {
-        pill(`${e.encargos_activos} encargo${e.encargos_activos > 1 ? 's' : ''}${e.encargos_por_revisar ? ` · ${e.encargos_por_revisar} por revisar` : ''}`,
-          e.encargos_por_revisar ? 'urgente' : 'encargos');
-      }
-      for (const u of (e.urgentes || []).slice(0, 3)) {
-        pill(`${u.vencido ? 'Vencido' : corto(u.fecha_limite)} · ${u.texto}`, u.vencido ? 'vencido' : 'urgente');
-      }
-    } catch (_) {}
-  }
-
-  // ---------- Mensajes por autorizar ----------
   const CANAL = { whatsapp: 'WhatsApp', correo: 'Correo', llamada: 'Llamada', otro: 'Mensaje' };
 
   function enlace(a, texto, asunto) {
-    if (a.canal === 'whatsapp') {
-      return a.telefono ? `https://wa.me/${a.telefono}?text=${encodeURIComponent(texto)}` : null;
-    }
+    if (a.canal === 'whatsapp') return a.telefono ? `https://wa.me/${a.telefono}?text=${encodeURIComponent(texto)}` : null;
     if (a.canal === 'correo' && a.destinatario) {
       return `mailto:${encodeURIComponent(a.destinatario)}?subject=${encodeURIComponent(asunto || '')}&body=${encodeURIComponent(texto)}`;
     }
@@ -194,137 +167,147 @@
 
   async function resolver(a, decision, contenido) {
     try {
-      await api(`/api/acciones/${a.id}`, { method: 'POST', body: JSON.stringify({ decision, contenido }) });
+      await api(`/api/acciones/${a.id}`, { method: 'POST', body: JSON.stringify({ decision, contenido, conversacion_id: convId }) });
+      aviso(decision === 'enviar' ? 'Listo, ADA hará el seguimiento.' : 'Mensaje descartado.');
     } catch (e) {
-      burbuja('error', e.message);
+      aviso(e.message, true);
     }
     cargarAutorizaciones();
     actualizarEstado();
   }
 
-  async function cargarAutorizaciones() {
-    const cont = $('#autorizaciones');
-    let lista = [];
-    try { lista = await api('/api/autorizaciones'); } catch (_) { return; }
-    cont.innerHTML = '';
-    cont.hidden = !lista.length;
-    for (const a of lista) {
-      const t = document.createElement('div');
-      t.className = 'tarjeta';
-      const para = a.contacto || a.destinatario || 'sin destinatario';
-      t.innerHTML = `
-        <div class="tarjeta-cab">
-          <span><span class="tarjeta-canal"></span> → <strong class="para"></strong></span>
-          <span class="enc"></span>
-        </div>
-        ${a.canal === 'correo' ? '<input class="asunto" placeholder="Asunto">' : ''}
-        <textarea></textarea>
-        <div class="tarjeta-botones">
-          <button type="button" class="principal"></button>
-          <button type="button" class="copiar">Copiar</button>
-          <button type="button" class="descartar">Descartar</button>
-        </div>`;
-      t.querySelector('.tarjeta-canal').textContent = CANAL[a.canal] || a.canal;
-      t.querySelector('.para').textContent = para;
-      t.querySelector('.enc').textContent = a.encargo_id ? `Encargo #${a.encargo_id}` : '';
-      const area = t.querySelector('textarea');
-      area.value = a.contenido;
-      const asunto = t.querySelector('.asunto');
-      if (asunto) asunto.value = a.asunto || '';
-
-      const principal = t.querySelector('.principal');
-      const hayEnlace = !!enlace(a, a.contenido, a.asunto);
-      principal.textContent = hayEnlace
-        ? (a.canal === 'whatsapp' ? 'Enviar por WhatsApp' : a.canal === 'correo' ? 'Enviar por correo' : 'Llamar')
-        : 'Copiar y marcar enviado';
-      if (!hayEnlace && a.canal !== 'otro') {
-        const aviso = document.createElement('div');
-        aviso.className = 'tarjeta-aviso';
-        aviso.textContent = `Falta el ${a.canal === 'correo' ? 'correo' : 'teléfono'} de ${para}. Puedes dárselo a ADA en el chat.`;
-        t.appendChild(aviso);
-      }
-
-      principal.addEventListener('click', async () => {
-        const texto = area.value;
-        const link = enlace(a, texto, asunto && asunto.value);
-        // Abrir el enlace dentro del mismo toque (iOS bloquea aperturas diferidas).
-        if (link) {
-          if (link.startsWith('http')) window.open(link, '_blank');
-          else window.location.href = link;
-        } else {
-          await copiar(texto);
-        }
-        principal.disabled = true;
-        resolver(a, 'enviar', texto);
-      });
-      t.querySelector('.copiar').addEventListener('click', async (ev) => {
-        const ok = await copiar(area.value);
-        ev.target.textContent = ok ? 'Copiado ✓' : 'No se pudo copiar';
-        setTimeout(() => { ev.target.textContent = 'Copiar'; }, 1800);
-      });
-      t.querySelector('.descartar').addEventListener('click', () => resolver(a, 'rechazar'));
-      cont.appendChild(t);
+  function tarjetaAutorizacion(a) {
+    const t = document.createElement('div');
+    t.className = 'tarjeta';
+    const para = a.contacto || a.destinatario || 'sin destinatario';
+    t.innerHTML = `
+      <div class="tarjeta-cab">
+        <span><span class="tarjeta-canal"></span> → <strong class="para"></strong></span>
+        <span class="enc"></span>
+      </div>
+      ${a.canal === 'correo' ? '<input class="asunto" placeholder="Asunto">' : ''}
+      <textarea></textarea>
+      <div class="tarjeta-botones">
+        <button type="button" class="principal"></button>
+        <button type="button" class="copiar">Copiar</button>
+        <button type="button" class="descartar">Descartar</button>
+      </div>`;
+    t.querySelector('.tarjeta-canal').textContent = `Por autorizar · ${CANAL[a.canal] || a.canal}`;
+    t.querySelector('.para').textContent = para;
+    t.querySelector('.enc').textContent = a.encargo_id ? `Encargo #${a.encargo_id}` : '';
+    const area = t.querySelector('textarea');
+    area.value = a.contenido;
+    const asunto = t.querySelector('.asunto');
+    if (asunto) asunto.value = a.asunto || '';
+    const principal = t.querySelector('.principal');
+    const hayEnlace = !!enlace(a, a.contenido, a.asunto);
+    principal.textContent = hayEnlace
+      ? (a.canal === 'whatsapp' ? 'Enviar por WhatsApp' : a.canal === 'correo' ? 'Enviar por correo' : 'Llamar')
+      : 'Copiar y marcar enviado';
+    if (!hayEnlace && a.canal !== 'otro') {
+      const av = document.createElement('div');
+      av.className = 'tarjeta-aviso';
+      av.textContent = `Falta el ${a.canal === 'correo' ? 'correo' : 'teléfono'} de ${para}. Díselo a ADA.`;
+      t.appendChild(av);
     }
+    principal.addEventListener('click', async () => {
+      const texto = area.value;
+      const link = enlace(a, texto, asunto && asunto.value);
+      if (link) {
+        if (link.startsWith('http')) window.open(link, '_blank');
+        else window.location.href = link;
+      } else {
+        await copiar(texto);
+      }
+      principal.disabled = true;
+      resolver(a, 'enviar', texto);
+    });
+    t.querySelector('.copiar').addEventListener('click', async (ev) => {
+      const ok = await copiar(area.value);
+      ev.target.textContent = ok ? 'Copiado ✓' : 'No se pudo';
+      setTimeout(() => { ev.target.textContent = 'Copiar'; }, 1800);
+    });
+    t.querySelector('.descartar').addEventListener('click', () => resolver(a, 'rechazar'));
+    return t;
   }
 
-  // ---------- Enviar ----------
+  async function cargarAutorizaciones() {
+    try { autorizaciones = await api('/api/autorizaciones'); } catch (_) { return; }
+    pintarEntregas();
+  }
+
+  // ---------- Documento ----------
+  let docAbierto = null;
+  async function abrirDocumento(id) {
+    try {
+      docAbierto = await api(`/api/documentos/${id}`);
+    } catch (e) {
+      aviso(e.message, true);
+      return;
+    }
+    $('#doc-titulo').textContent = docAbierto.titulo;
+    $('#doc-cuerpo').innerHTML = md(docAbierto.contenido);
+    $('#doc-compartir').hidden = !navigator.share;
+    $('#doc').hidden = false;
+  }
+  $$('[data-cerrar-doc]').forEach((el) => el.addEventListener('click', () => { $('#doc').hidden = true; }));
+  $('#doc-copiar').addEventListener('click', async () => {
+    if (!docAbierto) return;
+    aviso((await copiar(docAbierto.contenido)) ? 'Documento copiado' : 'No se pudo copiar', false);
+  });
+  $('#doc-compartir').addEventListener('click', () => {
+    if (docAbierto && navigator.share) navigator.share({ title: docAbierto.titulo, text: docAbierto.contenido }).catch(() => {});
+  });
+  $('#doc-descargar').addEventListener('click', () => {
+    if (!docAbierto) return;
+    const blob = new Blob([`# ${docAbierto.titulo}\n\n${docAbierto.contenido}`], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${docAbierto.titulo.replace(/[^\p{L}\p{N} _-]/gu, '').trim() || 'documento'}.md`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  });
+
+  // ---------- Hablar con el servidor ----------
   async function enviar(texto, opciones = {}) {
     texto = (texto || '').trim();
     if (!texto || ocupado) return null;
     ocupado = true;
-    btnEnviar.disabled = true;
-    burbuja('user', texto, [], opciones);
-    input.value = '';
-    ajustar();
-    const pensando = escribiendo();
+    pintarControles();
+    mostrarYo(texto);
+    mostrarAda('');
+    if (!conversando) setFase('pensando');
     try {
       const r = await api('/api/chat', {
         method: 'POST',
-        body: JSON.stringify({ mensaje: texto, voz: !!opciones.conversacion }),
+        body: JSON.stringify({ mensaje: texto, voz: !!opciones.voz, conversacion_id: convId }),
       });
-      pensando.remove();
-      burbuja('assistant', r.respuesta, r.acciones || []);
-      // En modo conversación, el ciclo de voz se encarga de hablar.
-      if (!opciones.conversacion && (opciones.voz || vozSalida)) hablar(r.respuesta);
+      if (r.conversacion_id !== convId) docsActuales = [];
+      guardarConv(r.conversacion_id);
+      mostrarAda(r.respuesta);
+      if (r.documentos && r.documentos.length) {
+        docsActuales.push(...r.documentos);
+        pintarEntregas();
+        if (!opciones.voz) abrirDocumento(r.documentos[r.documentos.length - 1].id);
+      }
       actualizarEstado();
       if ((r.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
       return r.respuesta;
     } catch (e) {
-      pensando.remove();
-      const d = burbuja('error', `${e.message}. Tu mensaje no se perdió: tócalo para reintentar.`);
-      d.style.cursor = 'pointer';
-      d.addEventListener('click', () => { d.remove(); input.value = texto; ajustar(); input.focus(); });
+      mostrarAda('');
+      aviso(`${e.message}. Inténtalo de nuevo.`, true);
       return null;
     } finally {
       ocupado = false;
-      btnEnviar.disabled = false;
+      if (!conversando) setFase('reposo');
+      pintarControles();
     }
   }
 
-  function ajustar() {
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
-  }
-
-  $('#form').addEventListener('submit', (e) => { e.preventDefault(); enviar(input.value); });
-  input.addEventListener('input', ajustar);
-  input.addEventListener('keydown', (e) => {
-    // Enter envía en teclado físico; Shift+Enter agrega línea.
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(pointer: fine)').matches) {
-      e.preventDefault();
-      enviar(input.value);
-    }
-  });
-
-  // ---------- Modo conversación por voz ----------
-  // Un toque al micrófono abre la conversación: ADA escucha, detecta cuándo terminaste
-  // de hablar, responde en voz alta y vuelve a escuchar sola, hasta que digas "chao" o toques Terminar.
+  // ---------- Conversación por voz ----------
   const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const btnMic = $('#microfono');
-  const panelEscucha = $('#escucha');
-  const txtTranscripcion = $('#transcripcion');
-  const ondaEscucha = panelEscucha.querySelector('.onda');
-  const SILENCIO_MS = 1400;           // pausa que se considera "terminé de hablar"
+  const SILENCIO_MS = 1400;
   const DESPEDIDA = /\b(chao|chau|adi[oó]s|hasta luego|nos vemos|eso es todo|terminamos|termina la conversaci[oó]n)\b/i;
 
   let conversando = false;
@@ -334,53 +317,61 @@
   let timerSilencio = null;
   let silenciosSeguidos = 0;
 
-  function estadoPanel(fase, texto) {
-    // fase: escuchando | pensando | hablando
-    panelEscucha.dataset.fase = fase;
-    ondaEscucha.classList.toggle('quieta', fase !== 'escuchando');
-    txtTranscripcion.textContent = texto;
-    txtTranscripcion.classList.toggle('vacia', fase !== 'escuchando' || !textoFinal.trim() && !textoParcial.trim());
-    $('#escucha-listo').textContent = fase === 'hablando' ? 'Interrumpir' : 'Listo, envía';
-    $('#escucha-listo').hidden = fase === 'pensando';
-  }
-
-  function textoActual() { return (textoFinal + ' ' + textoParcial).replace(/\s+/g, ' ').trim(); }
+  const textoActual = () => (textoFinal + ' ' + textoParcial).replace(/\s+/g, ' ').trim();
 
   function iniciarConversacion() {
-    if (ocupado) return;
-    if (conversando) { terminarConversacion(); return; }
+    if (ocupado || conversando) return;
     desbloquearVoz();
     if (!Reconocimiento) {
-      burbuja('error', 'Este navegador no permite conversar por voz. Usa Chrome o Safari, o el micrófono del teclado.');
+      aviso('Este navegador no permite conversar por voz. Usa Chrome o Safari, o escríbele.', true);
+      mostrarTeclado(true);
       return;
     }
     conversando = true;
     silenciosSeguidos = 0;
-    panelEscucha.hidden = false;
-    btnMic.classList.add('activo');
+    pintarControles();
     escucharTurno();
   }
 
-  function terminarConversacion() {
+  function detenerVoz() {
     conversando = false;
     clearTimeout(timerSilencio);
     if (rec) { try { rec.abort(); } catch (_) {} rec = null; }
     detenerHabla();
-    panelEscucha.hidden = true;
-    btnMic.classList.remove('activo');
+    setFase('reposo');
+    pintarControles();
+  }
+
+  // Termina la conversación: la guarda en el archivo con título y carpeta.
+  async function cerrarConversacion() {
+    detenerVoz();
+    if (!convId) return;
+    const id = convId;
+    guardarConv(null);
+    docsActuales = [];
+    pintarEntregas();
+    mostrarYo('');
+    mostrarAda('');
+    setFase('reposo', 'Guardando la conversación…');
+    try {
+      const r = await api(`/api/conversaciones/${id}/cerrar`, { method: 'POST' });
+      if (r.conversacion) aviso(`Guardada: ${r.conversacion.titulo}${r.conversacion.proyecto ? ` · ${r.conversacion.proyecto}` : ''}`);
+    } catch (_) {
+      aviso('La conversación quedó guardada en el archivo.');
+    }
+    setFase('reposo');
   }
 
   function escucharTurno() {
     if (!conversando) return;
     textoFinal = '';
     textoParcial = '';
-    estadoPanel('escuchando', 'Te escucho…');
+    setFase('escuchando');
     rec = new Reconocimiento();
     rec.lang = 'es-CL';
     rec.interimResults = true;
     rec.continuous = true;
     rec.maxAlternatives = 1;
-
     rec.onresult = (e) => {
       textoParcial = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -388,15 +379,14 @@
         if (r.isFinal) textoFinal += ' ' + r[0].transcript;
         else textoParcial += r[0].transcript;
       }
-      estadoPanel('escuchando', textoActual() || 'Te escucho…');
-      // Cada vez que llega voz, reinicia la cuenta de silencio.
+      mostrarYo(textoActual());
       clearTimeout(timerSilencio);
       timerSilencio = setTimeout(() => { if (rec) rec.stop(); }, SILENCIO_MS);
     };
     rec.onerror = (e) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        burbuja('error', 'ADA no tiene permiso para usar el micrófono. Actívalo en los ajustes del navegador.');
-        terminarConversacion();
+        aviso('ADA no tiene permiso para usar el micrófono. Actívalo en los ajustes del navegador.', true);
+        detenerVoz();
       }
     };
     rec.onend = () => {
@@ -405,46 +395,31 @@
       if (!conversando) return;
       const t = textoActual();
       if (!t) {
-        // Nadie habló: vuelve a escuchar un par de veces y luego descansa.
         silenciosSeguidos += 1;
-        if (silenciosSeguidos >= 3) { terminarConversacion(); return; }
+        if (silenciosSeguidos >= 3) { detenerVoz(); setFase('reposo', 'Te dejo tranquilo. Toca para seguir hablando.'); return; }
         escucharTurno();
         return;
       }
       silenciosSeguidos = 0;
       turnoDeAda(t);
     };
-    try { rec.start(); } catch (_) { terminarConversacion(); }
+    try { rec.start(); } catch (_) { detenerVoz(); }
   }
 
   async function turnoDeAda(texto) {
-    estadoPanel('pensando', 'ADA está pensando…');
-    const respuesta = await enviar(texto, { voz: true, conversacion: true });
+    setFase('pensando');
+    const respuesta = await enviar(texto, { voz: true });
     if (!conversando) return;
-    if (!respuesta) { terminarConversacion(); return; }
-    estadoPanel('hablando', 'ADA está hablando… toca para interrumpir');
+    if (!respuesta) { detenerVoz(); return; }
+    setFase('hablando');
     await hablar(respuesta);
     if (!conversando) return;
-    if (DESPEDIDA.test(texto)) { terminarConversacion(); return; }
+    if (DESPEDIDA.test(texto)) { cerrarConversacion(); return; }
     escucharTurno();
   }
 
-  btnMic.addEventListener('click', iniciarConversacion);
-  $('#escucha-listo').addEventListener('click', () => {
-    if (panelEscucha.dataset.fase === 'hablando') { detenerHabla(); return; } // la promesa de hablar() continúa el ciclo
-    if (rec) rec.stop();
-  });
-  ondaEscucha.addEventListener('click', () => { if (panelEscucha.dataset.fase === 'hablando') detenerHabla(); });
-  $('#escucha-cancelar').addEventListener('click', terminarConversacion);
-  document.addEventListener('visibilitychange', () => { if (document.hidden && conversando) terminarConversacion(); });
-
-  // ---------- Voz: ADA responde hablando ----------
+  // ---------- Voz de ADA ----------
   const sintesis = window.speechSynthesis;
-  const btnVoz = $('#voz-salida');
-  let vozSalida = false;
-  try { vozSalida = localStorage.getItem('ada_voz') === '1'; } catch (_) {}
-
-  function vozDisponible() { return !!sintesis; }
 
   function elegirVoz() {
     const voces = sintesis ? sintesis.getVoices() : [];
@@ -465,7 +440,6 @@
       .trim();
   }
 
-  // Devuelve una promesa que se cumple cuando ADA termina de hablar (o la interrumpes).
   let terminarHablaActual = null;
   function hablar(texto) {
     return new Promise((resolve) => {
@@ -479,7 +453,6 @@
       u.lang = v ? v.lang : 'es-CL';
       u.rate = 1.05;
       let listo = false;
-      // Respaldo: algunos navegadores no avisan cuando terminan de hablar.
       const respaldo = setTimeout(() => fin(), 4000 + limpio.length * 90);
       function fin() {
         if (listo) return;
@@ -509,28 +482,114 @@
     sintesis.speak(u);
     vozDesbloqueada = true;
   }
-
-  function pintarBotonVoz() { btnVoz.setAttribute('aria-pressed', vozSalida ? 'true' : 'false'); }
-  btnVoz.hidden = !vozDisponible();
-  pintarBotonVoz();
-  btnVoz.addEventListener('click', () => {
-    vozSalida = !vozSalida;
-    try { localStorage.setItem('ada_voz', vozSalida ? '1' : '0'); } catch (_) {}
-    pintarBotonVoz();
-    desbloquearVoz();
-    if (!vozSalida) detenerHabla();
-  });
   if (sintesis) sintesis.onvoiceschanged = () => {};
-  $('#form').addEventListener('submit', desbloquearVoz, true);
 
-  // ---------- Atajos ----------
-  document.querySelectorAll('.atajos button').forEach((b) => {
+  // ---------- Controles ----------
+  const btnHablar = $('#hablar');
+
+  function pintarControles() {
+    btnHablar.classList.toggle('activo', conversando);
+    $('#hablar-texto').textContent = conversando ? 'Terminar conversación' : (convId ? 'Seguir hablando' : 'Hablar con ADA');
+    btnHablar.disabled = ocupado && !conversando;
+    $('#enviar').disabled = ocupado;
+    $('#cerrar-conv').hidden = conversando || !convId;
+  }
+
+  btnHablar.addEventListener('click', () => {
+    if (conversando) cerrarConversacion();
+    else iniciarConversacion();
+  });
+
+  orbe.addEventListener('click', () => {
+    const fase = orbe.dataset.fase;
+    if (fase === 'hablando') { detenerHabla(); return; }      // interrumpir: vuelve a escuchar
+    if (fase === 'escuchando') { if (rec) rec.stop(); return; } // ya terminé de hablar
+    if (fase === 'reposo') iniciarConversacion();
+  });
+
+  // Botón pequeño para guardar una conversación de texto
+  const cerrarBtn = document.createElement('button');
+  cerrarBtn.id = 'cerrar-conv';
+  cerrarBtn.type = 'button';
+  cerrarBtn.className = 'cerrar-conv';
+  cerrarBtn.textContent = 'Terminar y guardar esta conversación';
+  cerrarBtn.hidden = true;
+  cerrarBtn.addEventListener('click', cerrarConversacion);
+  $('.escenario').appendChild(cerrarBtn);
+
+  // Teclado (secundario)
+  const input = $('#mensaje');
+  function mostrarTeclado(mostrar) {
+    const form = $('#form');
+    form.hidden = mostrar === undefined ? !form.hidden : !mostrar;
+    $('#teclado').setAttribute('aria-pressed', form.hidden ? 'false' : 'true');
+    if (!form.hidden) input.focus();
+  }
+  $('#teclado').addEventListener('click', () => mostrarTeclado());
+
+  function ajustar() {
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+  }
+  $('#form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const t = input.value;
+    input.value = '';
+    ajustar();
+    enviar(t);
+  });
+  input.addEventListener('input', ajustar);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(pointer: fine)').matches) {
+      e.preventDefault();
+      $('#form').requestSubmit();
+    }
+  });
+
+  $$('.atajos button').forEach((b) => {
     b.addEventListener('click', () => {
       if (b.dataset.accion === 'foco') return abrirHoja();
       enviar(b.dataset.texto);
     });
   });
 
+  // ---------- Estado (barra superior) ----------
+  function corto(d) {
+    if (!d) return '';
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}) \((\S+)/u);
+    if (!m) return d;
+    const hoy = new Date();
+    const f = new Date(+m[1], +m[2] - 1, +m[3]);
+    const dif = Math.round((f - new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())) / 86400000);
+    const dia = dif === 0 ? 'hoy' : dif === 1 ? 'mañana' : dif === -1 ? 'ayer' : m[5].slice(0, 3);
+    return `${dia} ${m[4]}`;
+  }
+
+  async function actualizarEstado() {
+    try {
+      const e = await api('/api/estado');
+      proyectos = e.proyectos || [];
+      const cont = $('#estado');
+      cont.innerHTML = '';
+      const pill = (texto, clase) => {
+        const s = document.createElement('span');
+        s.className = `pastilla ${clase || ''}`;
+        s.textContent = texto;
+        cont.appendChild(s);
+      };
+      if (e.por_autorizar) pill(`${e.por_autorizar} por autorizar`, 'autorizar');
+      if (e.foco) pill(`● ${e.foco.proyecto || e.foco.descripcion} · ${e.foco.minutos} min`, 'foco');
+      for (const u of (e.urgentes || []).slice(0, 3)) {
+        pill(`${u.vencido ? 'Vencido' : corto(u.fecha_limite)} · ${u.texto}`, u.vencido ? 'vencido' : 'urgente');
+      }
+      if (e.encargos_activos) {
+        pill(`${e.encargos_activos} encargo${e.encargos_activos > 1 ? 's' : ''}${e.encargos_por_revisar ? ` · ${e.encargos_por_revisar} por revisar` : ''}`,
+          e.encargos_por_revisar ? 'urgente' : 'encargos');
+      }
+    } catch (_) {}
+  }
+
+  // ---------- Selector de proyecto (Estoy con…) ----------
   function abrirHoja() {
     const cont = $('#hoja-proyectos');
     cont.innerHTML = '';
@@ -538,55 +597,199 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = p;
-      b.addEventListener('click', () => {
-        cerrarHoja();
-        input.value = `Estoy con ${p}: `;
-        ajustar();
-        input.focus();
-      });
+      b.addEventListener('click', () => { cerrarHoja(); enviar(`Estoy con ${p}.`); });
       cont.appendChild(b);
     }
     const otro = document.createElement('button');
     otro.type = 'button';
     otro.textContent = 'Otra cosa…';
-    otro.addEventListener('click', () => { cerrarHoja(); input.value = 'Estoy con '; ajustar(); input.focus(); });
+    otro.addEventListener('click', () => { cerrarHoja(); mostrarTeclado(true); input.value = 'Estoy con '; ajustar(); });
     cont.appendChild(otro);
     $('#hoja').hidden = false;
   }
   function cerrarHoja() { $('#hoja').hidden = true; }
-  document.querySelectorAll('[data-cerrar]').forEach((el) => el.addEventListener('click', cerrarHoja));
+  $$('[data-cerrar]').forEach((el) => el.addEventListener('click', cerrarHoja));
+
+  // ---------- Archivo ----------
+  let carpetaActiva = '';
+  let timerBuscar = null;
+
+  function abrirPanel(id) { $(id).hidden = false; }
+  $$('[data-volver]').forEach((b) => b.addEventListener('click', () => { b.closest('.panel').hidden = true; }));
+
+  async function abrirArchivo() {
+    abrirPanel('#vista-archivo');
+    await pintarCarpetas();
+    await pintarLista();
+  }
+  $('#abrir-archivo').addEventListener('click', abrirArchivo);
+
+  async function pintarCarpetas() {
+    let c;
+    try { c = await api('/api/carpetas'); } catch (e) { aviso(e.message, true); return; }
+    const cont = $('#carpetas');
+    cont.innerHTML = '';
+    const chip = (valor, nombre, n) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.role = 'tab';
+      b.className = 'carpeta';
+      b.setAttribute('aria-selected', carpetaActiva === valor ? 'true' : 'false');
+      b.innerHTML = `<span></span><b>${n}</b>`;
+      b.querySelector('span').textContent = nombre;
+      b.addEventListener('click', () => { carpetaActiva = valor; pintarCarpetas(); pintarLista(); });
+      cont.appendChild(b);
+    };
+    chip('', 'Todas', c.total);
+    for (const p of c.proyectos) chip(String(p.id), p.nombre, p.n);
+    if (c.general) chip('general', 'General', c.general);
+  }
+
+  async function pintarLista() {
+    const cont = $('#lista-conversaciones');
+    const params = new URLSearchParams();
+    if (carpetaActiva) params.set('proyecto', carpetaActiva);
+    const qText = $('#buscar').value.trim();
+    if (qText) params.set('q', qText);
+    let lista = [];
+    try { lista = await api(`/api/conversaciones?${params}`); } catch (e) { aviso(e.message, true); return; }
+    cont.innerHTML = '';
+    if (!lista.length) {
+      cont.innerHTML = '<p class="vacio-lista">Todavía no hay conversaciones aquí.</p>';
+      return;
+    }
+    for (const c of lista) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'item-conv';
+      b.innerHTML = `
+        <span class="item-icono" aria-hidden="true"></span>
+        <span class="item-texto"><strong></strong><small class="item-resumen"></small><small class="item-meta"></small></span>`;
+      b.querySelector('.item-icono').textContent = c.modo === 'voz' ? '🎙' : '💬';
+      b.querySelector('strong').textContent = c.titulo;
+      b.querySelector('.item-resumen').textContent = c.resumen || '';
+      const meta = [fechaCorta(c.inicio)];
+      if (c.fin) meta.push(duracion(c.inicio, c.fin));
+      if (c.abierta) meta.push('en curso');
+      if (c.n_documentos) meta.push(`${c.n_documentos} doc.`);
+      if (c.proyecto && !carpetaActiva) meta.push(c.proyecto);
+      b.querySelector('.item-meta').textContent = meta.join(' · ');
+      b.addEventListener('click', () => abrirDetalle(c.id));
+      cont.appendChild(b);
+    }
+  }
+
+  $('#buscar').addEventListener('input', () => {
+    clearTimeout(timerBuscar);
+    timerBuscar = setTimeout(pintarLista, 300);
+  });
+
+  async function abrirDetalle(id) {
+    let d;
+    try { d = await api(`/api/conversaciones/${id}`); } catch (e) { aviso(e.message, true); return; }
+    const c = d.conversacion;
+    $('#detalle-titulo').textContent = c.titulo;
+    const meta = [fechaCorta(c.inicio)];
+    if (c.fin) meta.push(duracion(c.inicio, c.fin));
+    meta.push(c.modo === 'voz' ? 'por voz' : 'por texto');
+    meta.push(c.proyecto || 'General');
+    $('#detalle-meta').textContent = meta.join(' · ');
+    $('#detalle-resumen').textContent = c.resumen || '';
+    $('#detalle-resumen').hidden = !c.resumen;
+
+    const docs = $('#detalle-documentos');
+    docs.innerHTML = '';
+    for (const doc of d.documentos) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'entrega-doc';
+      b.innerHTML = `${ICONO_DOC}<span><small>Documento</small><strong></strong></span><em>Abrir</em>`;
+      b.querySelector('strong').textContent = doc.titulo;
+      b.addEventListener('click', () => abrirDocumento(doc.id));
+      docs.appendChild(b);
+    }
+
+    const cont = $('#detalle-mensajes');
+    cont.innerHTML = '';
+    for (const m of d.mensajes) {
+      const div = document.createElement('div');
+      div.className = `msg ${m.rol}`;
+      if (m.rol === 'assistant') div.innerHTML = md(m.contenido);
+      else div.textContent = m.contenido.replace(/^\[Desde botón\]\s*/, '');
+      cont.appendChild(div);
+    }
+
+    const pie = $('#detalle-pie');
+    pie.innerHTML = '';
+    if (c.abierta && c.id === convId) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'principal';
+      b.textContent = 'Volver a la conversación';
+      b.addEventListener('click', () => { $('#vista-detalle').hidden = true; $('#vista-archivo').hidden = true; });
+      pie.appendChild(b);
+    } else {
+      const label = document.createElement('label');
+      label.className = 'mover';
+      label.innerHTML = '<span>Carpeta</span><select></select>';
+      const sel = label.querySelector('select');
+      const opciones = ['General', ...proyectos];
+      for (const nombre of opciones) {
+        const o = document.createElement('option');
+        o.value = nombre === 'General' ? '' : nombre;
+        o.textContent = nombre;
+        if ((c.proyecto || '') === o.value) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', async () => {
+        try {
+          await api(`/api/conversaciones/${c.id}/proyecto`, { method: 'POST', body: JSON.stringify({ proyecto: sel.value || null }) });
+          aviso(`Movida a ${sel.value || 'General'}`);
+          if (!$('#vista-archivo').hidden) { pintarCarpetas(); pintarLista(); }
+        } catch (e) { aviso(e.message, true); }
+      });
+      pie.appendChild(label);
+    }
+    abrirPanel('#vista-detalle');
+    cont.lastElementChild && cont.lastElementChild.scrollIntoView({ block: 'end' });
+  }
+
+  $('#ver-transcripcion').addEventListener('click', () => {
+    if (convId) abrirDetalle(convId);
+    else abrirArchivo();
+  });
 
   // ---------- Sesión ----------
   function salir() {
     token = null;
+    detenerVoz();
     try { localStorage.removeItem('ada_token'); } catch (_) {}
     $('#app').hidden = true;
     $('#login').hidden = false;
   }
 
+  async function retomarConversacion() {
+    if (!convId) return;
+    try {
+      const d = await api(`/api/conversaciones/${convId}`);
+      if (!d.conversacion.abierta) { guardarConv(null); return; }
+      const ultimoYo = [...d.mensajes].reverse().find((m) => m.rol === 'user');
+      const ultimaAda = [...d.mensajes].reverse().find((m) => m.rol === 'assistant');
+      if (ultimoYo) mostrarYo(ultimoYo.contenido);
+      if (ultimaAda) mostrarAda(ultimaAda.contenido);
+      docsActuales = d.documentos.map((x) => ({ id: x.id, titulo: x.titulo }));
+      pintarEntregas();
+    } catch (_) {
+      guardarConv(null);
+    }
+  }
+
   async function entrar() {
     $('#login').hidden = true;
     $('#app').hidden = false;
-    try {
-      const msgs = await api('/api/historial');
-      chat.innerHTML = '';
-      if (!msgs.length) vacio();
-      let diaAnterior = '';
-      for (const m of msgs) {
-        const d = new Date(m.creado_en);
-        const dia = d.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
-        if (dia !== diaAnterior) {
-          const h = document.createElement('div');
-          h.className = 'hora';
-          h.textContent = dia;
-          chat.appendChild(h);
-          diaAnterior = dia;
-        }
-        burbuja(m.rol, m.contenido);
-      }
-    } catch (e) {
-      if (token) vacio();
-    }
+    setFase('reposo');
+    pintarControles();
+    await retomarConversacion();
     actualizarEstado();
     cargarAutorizaciones();
   }
@@ -604,9 +807,9 @@
     }
   });
 
-  // Refresca la barra de estado cada minuto y al volver a la app.
   setInterval(() => { if (token && !document.hidden) actualizarEstado(); }, 60000);
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden && conversando) detenerVoz();
     if (!document.hidden && token) { actualizarEstado(); cargarAutorizaciones(); }
   });
 

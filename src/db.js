@@ -134,6 +134,29 @@ const ESQUEMA = [
     INDEX idx_encargo (encargo_id),
     FOREIGN KEY (encargo_id) REFERENCES encargos(id) ON DELETE CASCADE
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS conversaciones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(200) NULL,
+    resumen TEXT NULL,
+    proyecto_id INT NULL,
+    modo ENUM('voz','texto') NOT NULL DEFAULT 'texto',
+    inicio DATETIME NOT NULL,
+    fin DATETIME NULL,
+    INDEX idx_inicio (inicio),
+    INDEX idx_fin (fin),
+    FOREIGN KEY (proyecto_id) REFERENCES proyectos(id) ON DELETE SET NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS documentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conversacion_id INT NULL,
+    proyecto_id INT NULL,
+    titulo VARCHAR(200) NOT NULL,
+    contenido MEDIUMTEXT NOT NULL,
+    creado_en DATETIME NOT NULL,
+    INDEX idx_conv (conversacion_id),
+    FOREIGN KEY (conversacion_id) REFERENCES conversaciones(id) ON DELETE SET NULL,
+    FOREIGN KEY (proyecto_id) REFERENCES proyectos(id) ON DELETE SET NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS mensajes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     rol ENUM('user','assistant') NOT NULL,
@@ -146,6 +169,7 @@ const ESQUEMA = [
 // Cambios sobre tablas ya existentes en producción (idempotentes).
 const MIGRACIONES = [
   ['proyectos', 'descripcion', 'ALTER TABLE proyectos ADD COLUMN descripcion TEXT NULL'],
+  ['mensajes', 'conversacion_id', 'ALTER TABLE mensajes ADD COLUMN conversacion_id INT NULL, ADD INDEX idx_conv (conversacion_id)'],
 ];
 
 async function initDb() {
@@ -156,6 +180,17 @@ async function initDb() {
       [tabla, columna]
     );
     if (n === 0) await q(sql);
+  }
+  // Mensajes de antes de que existieran las conversaciones: se archivan juntos.
+  const [{ huerfanos, desde, hasta }] = await q(
+    'SELECT COUNT(*) AS huerfanos, MIN(creado_en) AS desde, MAX(creado_en) AS hasta FROM mensajes WHERE conversacion_id IS NULL'
+  );
+  if (huerfanos > 0) {
+    const r = await q(
+      "INSERT INTO conversaciones (titulo, resumen, modo, inicio, fin) VALUES ('Primeras conversaciones', 'Mensajes anteriores al archivo de conversaciones.', 'texto', ?, ?)",
+      [desde, hasta]
+    );
+    await q('UPDATE mensajes SET conversacion_id = ? WHERE conversacion_id IS NULL', [r.insertId]);
   }
   const [{ n }] = await q('SELECT COUNT(*) AS n FROM proyectos');
   if (n === 0) {

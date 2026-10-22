@@ -1,23 +1,14 @@
 // Cerebro de ADA: arma el contexto, llama a Claude con herramientas y guarda la conversación.
-const Anthropic = require('@anthropic-ai/sdk');
 const { q } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
 const E = require('./encargos'); // registra las herramientas de contactos y encargos
+const C = require('./conversaciones'); // registra entregar_documento
+const { claude, MODELO } = require('./claude');
 
-const MODELO = () => process.env.ADA_MODEL || 'claude-sonnet-5-5';
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
 const MINUTOS_FOCO = () => parseInt(process.env.ADA_MINUTOS_FOCO || '60', 10);
 const MINUTOS_ENTRE_ALERTAS = () => parseInt(process.env.ADA_MINUTOS_ENTRE_ALERTAS || '90', 10);
-
-let cliente;
-function claude() {
-  if (!cliente) {
-    if (!process.env.ANTHROPIC_API_KEY) throw new Error('Falta ANTHROPIC_API_KEY');
-    cliente = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return cliente;
-}
 
 const SYSTEM = `Eres ADA, la asistente personal de Cristian, fundador y desarrollador en Iquique, Chile. Lleva varios proyectos en paralelo.
 
@@ -29,7 +20,8 @@ QUÉ HACES
 2. Seguir el foco. Si dice en qué está trabajando ("estoy con…", "me pongo con…"), usa iniciar_foco. Si termina o cierra el día, cerrar_foco.
 3. Ordenar el día. Si el contexto indica que es el primer mensaje del día, saluda breve y propone máximo 3 prioridades basadas en compromisos vencidos o próximos y pendientes abiertos (consulta con listar_items). Luego atiende lo que dijo.
 4. Responder con datos. Para "¿qué me falta?", "¿qué le prometí a X?", "¿qué decidí sobre Y?" usa listar_items. Nunca inventes items, fechas ni personas: si no está registrado, dilo.
-5. Revisión. Cuando pida el informe o la revisión semanal, usa datos_informe y entrega:
+5. Documentos. Cuando Cristian pida un documento, borrador, carta, minuta, plan, lista larga o informe, créalo con entregar_documento: aparece en su pantalla y queda archivado. No lo pegues en la respuesta; di en una línea que se lo dejaste en pantalla.
+6. Revisión. Cuando pida el informe o la revisión semanal, usa datos_informe y entrégala con entregar_documento, con estas secciones:
    **Decisiones tomadas** (con su razón) · **Lo que avanzó** · **Encargos que me delegaste** (resueltos, en curso, trabados) · **Lo que quedó pendiente** (vencidos primero) · **Dónde se fue el tiempo** (foco por proyecto, y si coincide con lo urgente) · **Las 3 acciones más importantes para continuar**, concretas y con fecha sugerida. Cierra con una observación honesta de la semana, en una o dos frases.
 
 MEMORIA DE PROYECTOS
@@ -111,8 +103,15 @@ async function construirContexto() {
 
 // ---------- Historial ----------
 
-async function historialParaClaude(limite = 20) {
-  const rows = await q('SELECT rol, contenido FROM mensajes ORDER BY id DESC LIMIT ?', [limite]);
+// Historial de la conversación actual. Si recién empieza, incluye el cierre de la anterior para dar continuidad.
+async function historialParaClaude(conversacionId, limite = 30) {
+  let rows = await q('SELECT rol, contenido FROM mensajes WHERE conversacion_id = ? ORDER BY id DESC LIMIT ?', [conversacionId, limite]);
+  if (!rows.length) {
+    rows = await q(
+      `SELECT rol, contenido FROM mensajes WHERE conversacion_id <> ? AND creado_en >= ? ORDER BY id DESC LIMIT 6`,
+      [conversacionId, new Date(Date.now() - 12 * 3600e3)]
+    );
+  }
   rows.reverse();
   // La conversación debe comenzar con 'user' y alternar roles.
   const msgs = [];
@@ -138,6 +137,7 @@ const ETIQUETAS = {
   crear_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}` : null,
   actualizar_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}: ${r.encargo.estado.replace(/_/g, ' ')}` : null,
   proponer_mensaje: (i, r) => r.ok ? 'Mensaje para autorizar' : null,
+  entregar_documento: (i, r) => r.ok ? `Documento: ${i.titulo}` : null,
 };
 
 function nombreTipo(t) {
@@ -148,17 +148,19 @@ const MODO_VOZ = `MODO CONVERSACIÓN POR VOZ (activo ahora)
 Cristian te está hablando en voz alta y tu respuesta se leerá en voz alta. Conversa como una persona:
 - Responde en 1 o 2 frases cortas, naturales. Máximo unas 35 palabras.
 - Nada de markdown, listas, viñetas, emojis ni enlaces. Las fechas y horas dilas como se hablan ("mañana a las doce").
-- Si hay mucha información (una lista, un informe), di lo esencial y ofrece "te lo dejo en pantalla" o pregunta si quiere el detalle.
+- Si hay mucha información (una lista, un informe, un borrador) o te piden un documento, créalo con entregar_documento y di solo "te lo dejé en pantalla" con una frase sobre qué es.
 - Termina con una pregunta corta solo si hace falta para avanzar. Si es un saludo, saluda breve y pregunta en qué lo ayudas.
 - Sigue usando tus herramientas igual que siempre: registrar, encargos, foco.
 - Si se despide ("chao", "eso es todo"), despídete en una frase.`;
 
 async function conversar(textoUsuario, opciones = {}) {
+  const conversacionId = await C.asegurar(opciones.conversacionId, opciones.voz ? 'voz' : 'texto');
   const contexto = await construirContexto();
-  const historial = await historialParaClaude(20);
+  const historial = await historialParaClaude(conversacionId);
 
   const ahora = new Date();
-  await q("INSERT INTO mensajes (rol, contenido, creado_en) VALUES ('user', ?, ?)", [textoUsuario, ahora]);
+  await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('user', ?, ?, ?)",
+    [textoUsuario, conversacionId, ahora]);
 
   const messages = [...historial];
   if (messages.length && messages[messages.length - 1].role === 'user') {
@@ -174,6 +176,7 @@ async function conversar(textoUsuario, opciones = {}) {
   if (opciones.voz) system.push({ type: 'text', text: MODO_VOZ });
 
   const acciones = [];
+  const documentos = [];
   let respuestaFinal = '';
   for (let vuelta = 0; vuelta < 8; vuelta++) {
     const resp = await claude().messages.create({
@@ -194,9 +197,10 @@ async function conversar(textoUsuario, opciones = {}) {
     const resultados = [];
     for (const bloque of resp.content) {
       if (bloque.type !== 'tool_use') continue;
-      const r = await H.ejecutar(bloque.name, bloque.input);
+      const r = await H.ejecutar(bloque.name, bloque.input, { conversacionId });
       const etiqueta = ETIQUETAS[bloque.name] && !r.error ? ETIQUETAS[bloque.name](bloque.input, r) : null;
       if (etiqueta) acciones.push({ herramienta: bloque.name, etiqueta });
+      if (bloque.name === 'entregar_documento' && r.ok) documentos.push({ id: r.documento_id, titulo: bloque.input.titulo });
       resultados.push({
         type: 'tool_result',
         tool_use_id: bloque.id,
@@ -208,9 +212,10 @@ async function conversar(textoUsuario, opciones = {}) {
     if (textos) respuestaFinal = textos; // por si se acaban las vueltas
   }
 
-  if (!respuestaFinal) respuestaFinal = 'Listo.';
-  await q("INSERT INTO mensajes (rol, contenido, creado_en) VALUES ('assistant', ?, ?)", [respuestaFinal, new Date()]);
-  return { respuesta: respuestaFinal, acciones };
+  if (!respuestaFinal) respuestaFinal = documentos.length ? 'Te lo dejé en pantalla.' : 'Listo.';
+  await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('assistant', ?, ?, ?)",
+    [respuestaFinal, conversacionId, new Date()]);
+  return { respuesta: respuestaFinal, acciones, documentos, conversacion_id: conversacionId };
 }
 
 module.exports = { conversar, construirContexto };
