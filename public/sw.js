@@ -1,6 +1,6 @@
 // Service worker mínimo: permite instalar la app y abrirla aunque la red falle.
 // La API nunca se guarda en caché.
-const CACHE = 'ada-v12';
+const CACHE = 'ada-v13';
 const ARCHIVOS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -17,7 +17,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.pathname.startsWith('/api/')) return;
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || e.request.mode === 'navigate' && url.search) return;
   // Red primero; caché solo como respaldo.
   e.respondWith(
     fetch(e.request)

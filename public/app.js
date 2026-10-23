@@ -1247,10 +1247,22 @@
       b.className = 'principal';
       b.textContent = 'Conectar Google (Calendar y Drive)';
       b.addEventListener('click', async () => {
+        b.disabled = true;
+        b.textContent = 'Abriendo Google…';
         try {
           const r = await api('/api/google/enlace', { method: 'POST' });
-          window.location.href = r.url;
-        } catch (e) { aviso(e.message, true); }
+          // Respaldo: si el navegador no navega solo, queda un enlace para tocar.
+          const manual = document.createElement('a');
+          manual.className = 'enlace-manual';
+          manual.href = r.url;
+          manual.textContent = 'Si no se abre Google, toca aquí';
+          acciones.appendChild(manual);
+          window.location.assign(r.url);
+        } catch (e) {
+          aviso(`No se pudo iniciar la conexión: ${e.message}`, true);
+          b.disabled = false;
+          b.textContent = 'Conectar Google (Calendar y Drive)';
+        }
       });
       acciones.appendChild(b);
     }

@@ -306,7 +306,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .ajuste .meta { margin: 0 0 12px; }
 .ajuste-botones { display: flex; gap: 8px; flex-wrap: wrap; }
 .ajuste-botones button, .secundario { padding: 11px 16px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio-fuerte); font-weight: 600; }
-.ajuste-botones .principal { border: 0; }
+.ajuste-botones .principal { border: 0; color: #04140d; background: linear-gradient(90deg, var(--verde), var(--verde-2)); }
+.enlace-manual { display: block; margin-top: 10px; font-size: 14px; color: var(--verde); word-break: break-all; }
 .secundario { width: 100%; color: var(--texto-suave); }
 .estado-ok { color: var(--verde); }
 .ayuda { margin-top: 12px; font-size: 14px; color: var(--texto-suave); }
