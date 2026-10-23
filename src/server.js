@@ -59,12 +59,15 @@ function auth(req, res, next) {
 
 // ---------- API ----------
 
+// Si el service worker aún no está activo, lo compartido no se puede leer: se abre la app igual.
+app.post('/compartir', (req, res) => res.redirect(303, '/?compartido=0'));
+
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.post('/api/chat', auth, async (req, res) => {
   const texto = String((req.body && req.body.mensaje) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
-  if (texto.length > 8000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
+  if (texto.length > 24000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
   try {
     res.json(await conversar(texto, {
       voz: req.body.voz === true,
@@ -81,7 +84,7 @@ app.post('/api/chat', auth, async (req, res) => {
 app.post('/api/chat/stream', auth, async (req, res) => {
   const texto = String((req.body && req.body.mensaje) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
-  if (texto.length > 8000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
+  if (texto.length > 24000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
   res.set({
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
@@ -145,9 +148,9 @@ app.get('/api/autorizaciones', auth, async (req, res) => {
 });
 
 app.post('/api/acciones/:id', auth, async (req, res) => {
-  const { decision, contenido, conversacion_id: convId } = req.body || {};
+  const { decision, contenido, conversacion_id: convId, asunto, via } = req.body || {};
   try {
-    res.json(await E.resolverAccion(parseInt(req.params.id, 10), decision, contenido, parseInt(convId, 10) || null));
+    res.json(await E.resolverAccion(parseInt(req.params.id, 10), decision, contenido, parseInt(convId, 10) || null, { asunto, via }));
   } catch (e) {
     res.status(400).json({ error: e.message });
   }

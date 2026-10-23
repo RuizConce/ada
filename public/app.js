@@ -214,15 +214,19 @@
     try { await navigator.clipboard.writeText(texto); return true; } catch (_) { return false; }
   }
 
-  async function resolver(a, decision, contenido) {
+  async function resolver(a, decision, contenido, extra = {}) {
+    let ok = true;
     try {
-      await api(`/api/acciones/${a.id}`, { method: 'POST', body: JSON.stringify({ decision, contenido, conversacion_id: convId }) });
-      aviso(decision === 'enviar' ? 'Listo, ADA hará el seguimiento.' : 'Mensaje descartado.');
+      await api(`/api/acciones/${a.id}`, { method: 'POST', body: JSON.stringify({ decision, contenido, conversacion_id: convId, ...extra }) });
+      aviso(decision !== 'enviar' ? 'Mensaje descartado.'
+        : extra.via === 'gmail' ? 'Correo enviado desde tu Gmail. ADA hará el seguimiento.' : 'Listo, ADA hará el seguimiento.');
     } catch (e) {
-      aviso(e.message, true);
+      ok = false;
+      aviso(extra.via === 'gmail' ? `No se pudo enviar: ${e.message}` : e.message, true);
     }
     cargarAutorizaciones();
     actualizarEstado();
+    return ok;
   }
 
   function tarjetaAutorizacion(a) {
@@ -249,11 +253,14 @@
     const asunto = t.querySelector('.asunto');
     if (asunto) asunto.value = a.asunto || '';
     const principal = t.querySelector('.principal');
+    const porGmail = !!a.gmail && (!!a.destinatario || !!a.responde_correo);
     const hayEnlace = !!enlace(a, a.contenido, a.asunto);
-    principal.textContent = hayEnlace
-      ? (a.canal === 'whatsapp' ? 'Enviar por WhatsApp' : a.canal === 'correo' ? 'Enviar por correo' : 'Llamar')
-      : 'Copiar y marcar enviado';
-    if (!hayEnlace && a.canal !== 'otro') {
+    principal.textContent = porGmail ? 'Enviar desde Gmail'
+      : hayEnlace
+        ? (a.canal === 'whatsapp' ? 'Enviar por WhatsApp' : a.canal === 'correo' ? 'Enviar por correo' : 'Llamar')
+        : 'Copiar y marcar enviado';
+    if (a.responde_correo) t.querySelector('.para').textContent = `${para} (respuesta)`;
+    if (!porGmail && !hayEnlace && a.canal !== 'otro') {
       const av = document.createElement('div');
       av.className = 'tarjeta-aviso';
       av.textContent = `Falta el ${a.canal === 'correo' ? 'correo' : 'teléfono'} de ${para}. Díselo a ADA.`;
@@ -261,6 +268,13 @@
     }
     principal.addEventListener('click', async () => {
       const texto = area.value;
+      if (porGmail) {
+        principal.disabled = true;
+        principal.textContent = 'Enviando…';
+        const ok = await resolver(a, 'enviar', texto, { via: 'gmail', asunto: asunto ? asunto.value : undefined });
+        if (!ok) { principal.disabled = false; principal.textContent = 'Enviar desde Gmail'; }
+        return;
+      }
       const link = enlace(a, texto, asunto && asunto.value);
       if (link) {
         if (link.startsWith('http')) window.open(link, '_blank');
@@ -676,7 +690,7 @@
     if (!texto || ocupado) return null;
     ocupado = true;
     pintarControles();
-    mostrarYo(texto);
+    mostrarYo(opciones.mostrar || texto);
     mostrarAda('');
     setFase('pensando');
 
@@ -1212,6 +1226,32 @@
     }
   }
 
+  function botonConectar(texto) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'principal';
+    b.textContent = texto;
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      b.textContent = 'Abriendo Google…';
+      try {
+        const r = await api('/api/google/enlace', { method: 'POST' });
+        // Respaldo: si el navegador no navega solo, queda un enlace para tocar.
+        const manual = document.createElement('a');
+        manual.className = 'enlace-manual';
+        manual.href = r.url;
+        manual.textContent = 'Si no se abre Google, toca aquí';
+        b.parentNode.appendChild(manual);
+        window.location.assign(r.url);
+      } catch (e) {
+        aviso(`No se pudo iniciar la conexión: ${e.message}`, true);
+        b.disabled = false;
+        b.textContent = texto;
+      }
+    });
+    return b;
+  }
+
   async function abrirAjustes() {
     abrirPanel('#vista-ajustes');
     $('#op-interrumpir').checked = interrumpirHablando;
@@ -1231,6 +1271,12 @@
     } else if (g.conectado) {
       estado.innerHTML = '<span class="estado-ok">Conectado</span>';
       if (g.cuenta) estado.append(` · ${g.cuenta}`);
+      const faltaGmail = (g.faltan_permisos || []).some((p) => p.startsWith('gmail'));
+      if (faltaGmail) {
+        ayuda.hidden = false;
+        ayuda.textContent = 'Falta darle acceso a tu correo. Reconecta y acepta los permisos de Gmail.';
+        acciones.appendChild(botonConectar('Reconectar para dar acceso a Gmail'));
+      }
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = 'Desconectar';
@@ -1242,29 +1288,7 @@
       acciones.appendChild(b);
     } else {
       estado.textContent = 'No conectado.';
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'principal';
-      b.textContent = 'Conectar Google (Calendar y Drive)';
-      b.addEventListener('click', async () => {
-        b.disabled = true;
-        b.textContent = 'Abriendo Google…';
-        try {
-          const r = await api('/api/google/enlace', { method: 'POST' });
-          // Respaldo: si el navegador no navega solo, queda un enlace para tocar.
-          const manual = document.createElement('a');
-          manual.className = 'enlace-manual';
-          manual.href = r.url;
-          manual.textContent = 'Si no se abre Google, toca aquí';
-          acciones.appendChild(manual);
-          window.location.assign(r.url);
-        } catch (e) {
-          aviso(`No se pudo iniciar la conexión: ${e.message}`, true);
-          b.disabled = false;
-          b.textContent = 'Conectar Google (Calendar y Drive)';
-        }
-      });
-      acciones.appendChild(b);
+      acciones.appendChild(botonConectar('Conectar Google (Calendar, Drive y Gmail)'));
     }
     $('#voz-estado').textContent = NOMBRE_VOZ[a.voz.proveedor] || a.voz.proveedor;
     pintarVoces();
@@ -1384,10 +1408,69 @@
   function revisarRetornoGoogle() {
     const p = new URLSearchParams(window.location.search);
     if (!p.has('google')) return;
-    if (p.get('google') === 'ok') aviso('Google conectado. ADA ya puede ver tu agenda y tu Drive.');
+    if (p.get('google') === 'ok') aviso('Google conectado. ADA ya puede ver tu agenda, tu Drive y tu correo.');
     else aviso(`No se pudo conectar Google: ${p.get('motivo') || 'error'}`, true);
     history.replaceState(null, '', '/');
   }
+
+  // ---------- Compartido desde WhatsApp u otra app ----------
+  const MAX_COMPARTIDO = 20000;
+  let compartido = null;
+
+  async function revisarCompartido() {
+    const p = new URLSearchParams(window.location.search);
+    if (!p.has('compartido')) return;
+    history.replaceState(null, '', '/');
+    if (p.get('compartido') === '0' || !('caches' in window)) {
+      aviso('No alcancé a recibir lo compartido. Vuelve a compartirlo ahora que ADA está abierta.', true);
+      return;
+    }
+    try {
+      const c = await caches.open('ada-compartido');
+      const r = await c.match('/compartido-datos');
+      if (!r) return;
+      compartido = await r.json();
+      await c.delete('/compartido-datos');
+    } catch (_) { return; }
+    if (!compartido || !compartido.texto || !compartido.texto.trim()) {
+      compartido = null;
+      aviso('Lo compartido venía vacío. Si es un chat, expórtalo "sin archivos".', true);
+      return;
+    }
+    let t = compartido.texto.trim();
+    // En chats largos lo reciente está al final: se conserva el final.
+    if (t.length > MAX_COMPARTIDO) t = `[…solo lo más reciente…]\n${t.slice(-MAX_COMPARTIDO)}`;
+    compartido.texto = t;
+    const lineas = t.split('\n').length;
+    $('#compartido-meta').textContent = compartido.archivos && compartido.archivos.length
+      ? `${compartido.archivos.join(', ')} · ${lineas} líneas`
+      : `${t.length} caracteres`;
+    $('#compartido-texto').textContent = t.length > 1500 ? `${t.slice(0, 1500)}…` : t;
+    $('#hoja-compartido').hidden = false;
+  }
+
+  function cerrarCompartido() {
+    $('#hoja-compartido').hidden = true;
+    compartido = null;
+  }
+
+  function pedirSobreCompartido(pedido, etiqueta) {
+    if (!compartido || !pedido.trim()) return;
+    const esChat = !!(compartido.archivos && compartido.archivos.length);
+    const origen = esChat ? `chat exportado (${compartido.archivos.join(', ')})` : 'mensaje';
+    const mensaje = `[Compartido desde otra app, probablemente WhatsApp · ${origen}]\n---\n${compartido.texto}\n---\n\n${pedido.trim()}`;
+    cerrarCompartido();
+    enviar(mensaje, { mostrar: `📎 Te compartí un ${esChat ? 'chat' : 'mensaje'} · ${etiqueta || pedido.trim()}` });
+  }
+
+  $$('[data-cerrar-compartido]').forEach((el) => el.addEventListener('click', cerrarCompartido));
+  $$('#hoja-compartido [data-pedido]').forEach((b) => b.addEventListener('click', () => pedirSobreCompartido(b.dataset.pedido, b.textContent)));
+  $('#compartido-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    pedirSobreCompartido($('#compartido-pedido').value);
+    $('#compartido-pedido').value = '';
+  });
+
 
   // ---------- Sesión ----------
   function salir() {
@@ -1425,6 +1508,7 @@
     await retomarConversacion();
     actualizarEstado();
     cargarAutorizaciones();
+    revisarCompartido();
   }
 
   $('#login-form').addEventListener('submit', async (e) => {

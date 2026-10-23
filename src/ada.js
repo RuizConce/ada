@@ -7,6 +7,7 @@ const C = require('./conversaciones'); // registra entregar_documento
 const G = require('./google'); // registra las herramientas de agenda
 require('./archivos'); // registra crear_archivo
 require('./drive'); // registra las herramientas de Drive
+const M = require('./gmail'); // registra las herramientas de correo
 const { claude, MODELO } = require('./claude');
 
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
@@ -42,6 +43,18 @@ ARCHIVOS Y GOOGLE DRIVE
 - Ordenar el Drive: primero explora y propone un plan concreto (qué carpetas crear, qué mover, qué renombrar). Con su sí, ejecútalo completo y al final resume lo hecho.
 - Para modificar (mover, renombrar, editar, papelera) necesitas su confirmación explícita; luego llama con confirmado: true. Nunca envíes a la papelera sin que él lo haya pedido.
 - Si Google no está conectado, díselo una vez: se conecta en Ajustes.
+
+CORREO (GMAIL)
+- Si Gmail está conectado, el contexto trae "correos_no_leidos_recientes". No los recites solo porque sí; menciónalos cuando venga al caso (al ordenar el día, si algo parece urgente o si pregunta).
+- "¿Qué correos tengo?", "¿me escribió Paola?", "busca el correo de la SEREMI": buscar_correos (sintaxis de Gmail: from:, subject:, newer_than:7d, is:unread, has:attachment). Luego leer_correo para el detalle.
+- Al resumir correos: quién, qué pide y si requiere acción o tiene plazo. Agrupa lo irrelevante ("además tres newsletters"). Si un correo trae un compromiso o plazo, ofrece registrarlo.
+- Para responder: redacta con proponer_mensaje canal "correo" y responder_a_id con el id del correo (queda en el mismo hilo). Cristian lo revisa y lo envía con un botón: nunca digas que ya se envió.
+- Si pide dejarlo como borrador, usa guardar_borrador_correo.
+- Archivar requiere su sí explícito (archivar_correos con confirmado: true). No borras correos.
+- Si Gmail no está conectado o falta el permiso, dile que lo active en Ajustes (Reconectar Google).
+
+WHATSAPP
+No puedes leer su WhatsApp directamente. Él puede compartirte un mensaje o un chat exportado desde WhatsApp con el botón Compartir → ADA; te llegará como "[Compartido desde otra app]". Ahí lo resumes, detectas lo pendiente y, si hay que contestar, propones la respuesta con proponer_mensaje canal "whatsapp".
 
 PENSAR CONTIGO
 Cristian no solo necesita que hagas cosas: también que lo ayudes a pensar. Cuando te pida opinión, estrategia, ideas o "ayúdame a pensar":
@@ -94,7 +107,7 @@ Español chileno, cercano y profesional, como una colega de confianza (no como u
 
 async function construirContexto() {
   const ahora = new Date();
-  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta, encargos, agenda] = await Promise.all([
+  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta, encargos, agenda, correo] = await Promise.all([
     H.focoActual(),
     H.compromisosProximos(48),
     H.alertasHoy(),
@@ -103,6 +116,7 @@ async function construirContexto() {
     q('SELECT creado_en FROM alertas ORDER BY creado_en DESC LIMIT 1'),
     E.resumenParaContexto(),
     G.agendaParaContexto(),
+    M.paraContexto(),
   ]);
 
   const minutosFoco = foco ? F.minutosEntre(foco.inicio, ahora) : 0;
@@ -137,6 +151,7 @@ async function construirContexto() {
       p.descripcion ? `${p.nombre}: ${p.descripcion.slice(0, 160)}` : `${p.nombre} (sin descripción)`),
     ...encargos,
     ...agenda,
+    ...correo,
   };
 }
 
@@ -187,6 +202,8 @@ const ETIQUETAS = {
   crear_evento: (i, r) => r.ok ? `Agendado: ${r.evento.titulo}` : null,
   modificar_evento: (i, r) => r.ok ? `Evento movido: ${r.evento.titulo}` : null,
   eliminar_evento: (i, r) => r.ok ? 'Evento eliminado' : null,
+  guardar_borrador_correo: (i, r) => r.ok ? `Borrador en Gmail: ${r.asunto || 'sin asunto'}` : null,
+  archivar_correos: (i, r) => r.ok ? `${r.archivados} correo(s) archivado(s)` : null,
 };
 
 function nombreTipo(t) {
@@ -247,6 +264,10 @@ const ESTADO_HERRAMIENTA = {
   ver_encargo: 'Revisando el encargo…',
   proponer_mensaje: 'Redactando el mensaje…',
   buscar_contactos: 'Buscando el contacto…',
+  buscar_correos: 'Revisando tu correo…',
+  leer_correo: 'Leyendo el correo…',
+  guardar_borrador_correo: 'Dejando el borrador…',
+  archivar_correos: 'Archivando…',
 };
 
 function herramientasDisponibles() {

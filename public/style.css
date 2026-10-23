@@ -392,3 +392,14 @@ button:disabled { opacity: 0.45; cursor: default; }
   .orbe { animation: none !important; }
   .orbe .halo { animation: none !important; }
 }
+
+/* Compartido desde otra app */
+.compartido-panel { max-height: 86dvh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 10px; padding-top: 16px; }
+.compartido-texto { overflow-y: auto; white-space: pre-wrap; font-size: 14px; line-height: 1.45; color: var(--texto-suave); background: var(--vidrio); border: 1px solid var(--borde); border-radius: 12px; padding: 12px; min-height: 60px; max-height: 38dvh; overflow-wrap: anywhere; }
+.compartido-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.compartido-acciones button { flex: 1 1 auto; }
+.compartido-form { display: flex; gap: 8px; }
+.compartido-form input { flex: 1; min-width: 0; }
+.compartido-acciones button, .compartido-form button { padding: 11px 12px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio); }
+.compartido-acciones .principal { border: 0; color: #04140d; background: linear-gradient(90deg, var(--verde), var(--verde-2)); font-weight: 700; }
+.compartido-form input { padding: 11px 12px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio); color: var(--texto); font: inherit; }

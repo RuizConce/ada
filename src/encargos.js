@@ -215,12 +215,13 @@ async function proponerAccion(a) {
   if (!destinatario && contacto) {
     destinatario = a.canal === 'correo' ? contacto.email : (a.canal === 'whatsapp' || a.canal === 'llamada') ? contacto.telefono : null;
   }
-  const faltaDato = (a.canal === 'whatsapp' || a.canal === 'llamada' || a.canal === 'correo') && !destinatario;
+  const responderA = a.canal === 'correo' && a.responder_a_id ? String(a.responder_a_id) : null;
+  const faltaDato = (a.canal === 'whatsapp' || a.canal === 'llamada' || (a.canal === 'correo' && !responderA)) && !destinatario;
 
   const r = await q(
-    `INSERT INTO acciones (encargo_id, canal, destinatario, contacto_id, asunto, contenido, estado, creado_en)
-     VALUES (?, ?, ?, ?, ?, ?, 'propuesta', ?)`,
-    [encargo ? encargo.id : null, a.canal, destinatario, contacto ? contacto.id : null, a.asunto || null, a.contenido.trim(), new Date()]
+    `INSERT INTO acciones (encargo_id, canal, destinatario, contacto_id, asunto, contenido, responder_a, estado, creado_en)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'propuesta', ?)`,
+    [encargo ? encargo.id : null, a.canal, destinatario, contacto ? contacto.id : null, a.asunto || null, a.contenido.trim(), responderA, new Date()]
   );
   if (encargo) {
     await q("UPDATE encargos SET estado = 'esperando_autorizacion', actualizado_en = ? WHERE id = ?", [new Date(), encargo.id]);
@@ -240,6 +241,7 @@ async function autorizacionesPendientes() {
      LEFT JOIN contactos c ON c.id = a.contacto_id LEFT JOIN encargos e ON e.id = a.encargo_id
      WHERE a.estado = 'propuesta' ORDER BY a.id`
   );
+  const gmail = rows.some((r) => r.canal === 'correo') ? await correo().disponible().catch(() => false) : false;
   return rows.map((r) => ({
     id: r.id,
     encargo_id: r.encargo_id,
@@ -250,12 +252,17 @@ async function autorizacionesPendientes() {
     telefono: r.canal === 'whatsapp' || r.canal === 'llamada' ? normalizarTelefono(r.destinatario) : null,
     asunto: r.asunto,
     contenido: r.contenido,
+    responde_correo: !!r.responder_a,
+    gmail: r.canal === 'correo' && gmail,
     creado: F.fmt(r.creado_en),
   }));
 }
 
 // Llamado SOLO desde el botón de la app (nunca por el modelo).
-async function resolverAccion(id, decision, contenidoEditado, conversacionId = null) {
+// Gmail se carga tarde para no crear dependencias circulares.
+const correo = () => require('./gmail');
+
+async function resolverAccion(id, decision, contenidoEditado, conversacionId = null, opciones = {}) {
   const [a] = await q(
     `SELECT a.*, c.nombre AS contacto FROM acciones a LEFT JOIN contactos c ON c.id = a.contacto_id WHERE a.id = ?`, [id]
   );
@@ -265,7 +272,15 @@ async function resolverAccion(id, decision, contenidoEditado, conversacionId = n
   const quien = a.contacto || a.destinatario || 'el destinatario';
   if (decision === 'enviar') {
     const contenido = contenidoEditado && contenidoEditado.trim() ? contenidoEditado.trim() : a.contenido;
-    await q("UPDATE acciones SET estado = 'ejecutada', contenido = ?, resuelto_en = ? WHERE id = ?", [contenido, ahora, id]);
+    const asunto = opciones.asunto && String(opciones.asunto).trim() ? String(opciones.asunto).trim() : a.asunto;
+    let envio = null;
+    // Con Gmail conectado, el botón envía el correo de verdad (Cristian ya lo autorizó al tocarlo).
+    if (opciones.via === 'gmail') {
+      if (a.canal !== 'correo') throw new Error('Solo los correos se envían por Gmail');
+      envio = await correo().enviar({ para: a.destinatario, asunto, cuerpo: contenido, responderA: a.responder_a });
+    }
+    await q("UPDATE acciones SET estado = 'ejecutada', contenido = ?, asunto = ?, destinatario = COALESCE(destinatario, ?), resuelto_en = ? WHERE id = ?",
+      [contenido, asunto, envio ? envio.para : null, ahora, id]);
     if (a.encargo_id) {
       const revisar = new Date(ahora.getTime() + HORAS_SEGUIMIENTO() * 3600e3);
       await q(
@@ -275,8 +290,8 @@ async function resolverAccion(id, decision, contenidoEditado, conversacionId = n
       await anotar(a.encargo_id, `Cristian autorizó y envió el mensaje por ${a.canal} a ${quien}${contenido !== a.contenido ? ' (editado)' : ''}. Revisar respuesta: ${F.fmt(revisar)}`);
     }
     await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('user', ?, ?, ?)",
-      [`[Desde botón] Autoricé y envié el mensaje por ${a.canal} a ${quien}${a.encargo_id ? ` (encargo #${a.encargo_id})` : ''}.`, conversacionId, ahora]);
-    return { ok: true, estado: 'ejecutada' };
+      [`[Desde botón] Autoricé y envié el mensaje por ${envio ? 'Gmail' : a.canal} a ${quien}${a.encargo_id ? ` (encargo #${a.encargo_id})` : ''}.`, conversacionId, ahora]);
+    return { ok: true, estado: 'ejecutada', enviado_por_gmail: !!envio };
   }
   if (decision === 'rechazar') {
     await q("UPDATE acciones SET estado = 'rechazada', resuelto_en = ? WHERE id = ?", [ahora, id]);
@@ -396,6 +411,7 @@ const DEFINICIONES = [
         contacto: { type: 'string', description: 'Nombre del contacto (se usa su teléfono o correo guardado)' },
         destinatario: { type: 'string', description: 'Teléfono o correo explícito, si no está en el contacto' },
         asunto: { type: 'string', description: 'Solo para correo' },
+        responder_a_id: { type: 'string', description: 'Solo correo: id del correo de Gmail que se responde (el destinatario y el asunto salen de ahí y queda en el mismo hilo)' },
         contenido: { type: 'string', description: 'Texto completo listo para enviar' },
       },
       required: ['canal', 'contenido'],

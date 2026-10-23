@@ -77,18 +77,28 @@ Sin configuración, ADA usa la voz del teléfono (suena robótica). Con una de e
 
 Si hay varias, `VOZ_PROVEEDOR` decide (`google`, `elevenlabs`, `openai` o `navegador`).
 
-## Google (Calendar y Drive)
+## Google (Calendar, Drive y Gmail)
 
-1. En [Google Cloud Console](https://console.cloud.google.com) crea un proyecto y habilita **Google Calendar API**, **Google Drive API**, **Google Sheets API** y **Google Docs API** (y **Cloud Text-to-Speech API** si usarás esa voz).
+1. En [Google Cloud Console](https://console.cloud.google.com) crea un proyecto y habilita **Google Calendar API**, **Google Drive API**, **Google Sheets API**, **Google Docs API** y **Gmail API** (y **Cloud Text-to-Speech API** si usarás esa voz).
 2. Configura la pantalla de consentimiento OAuth: tipo *Externo*, agrega tu Gmail como usuario de prueba. Para que la conexión no venza cada 7 días, publícala (*En producción*); el aviso de "app no verificada" es normal para uso personal.
 3. Credenciales → **ID de cliente OAuth** → *Aplicación web* → URI de redirección autorizada:
    `https://TU-DOMINIO.up.railway.app/api/google/callback` (la app la muestra en Ajustes).
 4. En Railway: `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
-5. En ADA: ⚙ Ajustes → **Conectar Google Calendar**.
+5. En ADA: ⚙ Ajustes → **Conectar Google**. Si ya estaba conectado antes de Gmail, aparece **Reconectar para dar acceso a Gmail**.
 
 ADA puede ver la agenda libremente; para crear, mover o eliminar eventos siempre pide confirmación.
 
 Con Drive conectado, ADA puede **buscar, leer y analizar** (Docs, Sheets, Slides, Word, Excel, PDF, CSV), **ordenar** (crear carpetas, mover, renombrar, enviar a la papelera) y **editar** (agregar filas o actualizar celdas en Sheets, agregar o reemplazar texto en Docs). Todo lo que modifica requiere confirmación.
+
+Con Gmail, ADA **busca, lee y resume** correos, ve los no leídos recientes, deja **borradores**, **archiva** (con confirmación) y propone **respuestas en el mismo hilo**. Nunca envía sola: la tarjeta muestra **Enviar desde Gmail** y el correo sale solo cuando tocas el botón (puedes editar asunto y texto antes).
+
+## WhatsApp: Compartir con ADA
+
+WhatsApp personal no permite que otra app lea tus chats. En Android, con ADA instalada como app (menú del navegador → *Instalar app*), aparece en el menú **Compartir**:
+- Un mensaje: mantén presionado → Compartir → ADA.
+- Un chat completo: en el chat → ⋮ → Más → **Exportar chat → Sin archivos** → ADA.
+
+ADA muestra lo recibido y ofrece *Resúmelo*, *Propón una respuesta* o *Anota lo importante*. Las respuestas se envían con el botón **Enviar por WhatsApp**, que abre WhatsApp con el texto listo. (En iPhone las web apps no aparecen en Compartir; copia y pega.)
 
 ## Archivos Word y Excel
 

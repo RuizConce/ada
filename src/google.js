@@ -10,6 +10,8 @@ const SCOPES = [
   'email',
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/drive', // leer, ordenar y editar Drive (incluye Docs y Sheets)
+  'https://www.googleapis.com/auth/gmail.modify', // leer, buscar, archivar y crear borradores
+  'https://www.googleapis.com/auth/gmail.send', // enviar lo que Cristian autoriza
 ];
 const CALENDARIO = () => process.env.GOOGLE_CALENDAR_ID || 'primary';
 const ZONA = 'America/Santiago';
@@ -40,7 +42,19 @@ async function guardar(datos) {
 
 async function estado() {
   const d = configurado() ? await leer() : null;
-  return { configurado: configurado(), conectado: !!(d && d.refresh_token), cuenta: d ? d.email : null };
+  const conectado = !!(d && d.refresh_token);
+  const otorgados = (d && d.scope) || '';
+  // Permisos que la app pide hoy pero que la conexión guardada no tiene (ej.: se agregó Gmail después).
+  // Conexiones anteriores a este cambio no guardaban los permisos: se asume que no incluyen Gmail.
+  const faltan = conectado
+    ? SCOPES.filter((s) => s.startsWith('https://') && !otorgados.includes(s)).map((s) => s.split('/').pop())
+    : [];
+  return { configurado: configurado(), conectado, cuenta: d ? d.email : null, faltan_permisos: faltan, permisos: otorgados };
+}
+
+async function tienePermiso(fragmento) {
+  const d = await leer();
+  return !!(d && d.refresh_token && d.scope && d.scope.includes(fragmento));
 }
 
 // ---------- OAuth ----------
@@ -100,6 +114,7 @@ async function recibirCallback(req) {
     email = (await u.json()).email || null;
   } catch (_) {}
   await guardar({
+    scope: t.scope || '',
     refresh_token: t.refresh_token || (anterior && anterior.refresh_token),
     access_token: t.access_token,
     vence: Date.now() + (t.expires_in - 60) * 1000,
@@ -141,7 +156,7 @@ async function tokenAcceso() {
     }
     throw new Error(t.error_description || t.error || 'No se pudo renovar el acceso a Google');
   }
-  await guardar({ ...d, access_token: t.access_token, vence: Date.now() + (t.expires_in - 60) * 1000 });
+  await guardar({ ...d, scope: t.scope || d.scope || '', access_token: t.access_token, vence: Date.now() + (t.expires_in - 60) * 1000 });
   return t.access_token;
 }
 
@@ -357,5 +372,5 @@ H.registrar([
 });
 
 module.exports = {
-  configurado, estado, crearEnlace, urlAutorizacion, recibirCallback, desconectar, agendaParaContexto, redirectUri, tokenAcceso,
+  configurado, estado, crearEnlace, urlAutorizacion, recibirCallback, desconectar, agendaParaContexto, redirectUri, tokenAcceso, tienePermiso,
 };

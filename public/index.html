@@ -178,6 +178,31 @@
       </div>
     </div>
 
+    <!-- ============ Compartido desde otra app ============ -->
+    <div id="hoja-compartido" class="hoja" hidden>
+      <div class="hoja-fondo" data-cerrar-compartido></div>
+      <div class="hoja-panel compartido-panel" role="dialog" aria-labelledby="compartido-titulo">
+        <header class="doc-cab">
+          <div>
+            <p class="doc-etiqueta">Compartido con ADA</p>
+            <h2 id="compartido-titulo">¿Qué hago con esto?</h2>
+          </div>
+          <button class="icono" type="button" data-cerrar-compartido aria-label="Cerrar">✕</button>
+        </header>
+        <div id="compartido-meta" class="meta"></div>
+        <div id="compartido-texto" class="compartido-texto"></div>
+        <div class="compartido-acciones">
+          <button type="button" class="principal" data-pedido="Resúmelo: qué dice, qué me piden y si hay algo pendiente.">Resúmelo</button>
+          <button type="button" data-pedido="Propón una respuesta para enviar, en mi tono.">Propón una respuesta</button>
+          <button type="button" data-pedido="Anota lo importante: compromisos, fechas y pendientes, en el proyecto que corresponda.">Anota lo importante</button>
+        </div>
+        <form id="compartido-form" class="compartido-form">
+          <input id="compartido-pedido" type="text" placeholder="O dile qué hacer…" autocomplete="off">
+          <button type="submit">Enviar</button>
+        </form>
+      </div>
+    </div>
+
     <!-- ============ Documento ============ -->
     <div id="doc" class="hoja" hidden>
       <div class="hoja-fondo" data-cerrar-doc></div>

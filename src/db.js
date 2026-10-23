@@ -188,6 +188,7 @@ const ESQUEMA = [
 const MIGRACIONES = [
   ['proyectos', 'descripcion', 'ALTER TABLE proyectos ADD COLUMN descripcion TEXT NULL'],
   ['mensajes', 'conversacion_id', 'ALTER TABLE mensajes ADD COLUMN conversacion_id INT NULL, ADD INDEX idx_conv (conversacion_id)'],
+  ['acciones', 'responder_a', 'ALTER TABLE acciones ADD COLUMN responder_a VARCHAR(64) NULL'],
 ];
 
 async function initDb() {
