@@ -154,6 +154,30 @@
       </div>
     </section>
 
+    <!-- ============ Elegir voz ============ -->
+    <div id="hoja-voces" class="hoja" hidden>
+      <div class="hoja-fondo" data-cerrar-voces></div>
+      <div class="hoja-panel voces-panel" role="dialog" aria-labelledby="voces-titulo">
+        <header class="doc-cab">
+          <div>
+            <p class="doc-etiqueta">Voz de ADA</p>
+            <h2 id="voces-titulo">Elige cómo suena</h2>
+          </div>
+          <button class="icono" type="button" data-cerrar-voces aria-label="Cerrar">✕</button>
+        </header>
+        <div class="voces-filtros">
+          <div id="filtro-voces" class="segmentos" role="group" aria-label="Filtrar voces">
+            <button type="button" data-filtro="todas" aria-pressed="true">Todas</button>
+            <button type="button" data-filtro="f" aria-pressed="false">Femeninas</button>
+            <button type="button" data-filtro="m" aria-pressed="false">Masculinas</button>
+          </div>
+          <label class="check-chico"><input id="voces-espana" type="checkbox"> Incluir España</label>
+        </div>
+        <p class="meta">Toca ▶ para escucharla y "Usar" para elegirla.</p>
+        <div id="lista-voces" class="lista-voces"></div>
+      </div>
+    </div>
+
     <!-- ============ Documento ============ -->
     <div id="doc" class="hoja" hidden>
       <div class="hoja-fondo" data-cerrar-doc></div>

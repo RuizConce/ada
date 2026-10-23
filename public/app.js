@@ -1273,7 +1273,6 @@
 
   // Elegir voz: escuchar cada una y dejar la que guste.
   const MUESTRA_VOZ = 'Hola Cristian, soy ADA. ¿En qué te ayudo hoy?';
-  let verTodasLasVoces = false;
 
   async function probarVoz(nombre, boton) {
     desbloquearVoz();
@@ -1297,31 +1296,57 @@
     boton.textContent = texto;
   }
 
+  // En Ajustes solo se muestra la voz actual; la lista completa se abre en una hoja encima.
+  let datosVoces = null;
+  let filtroGenero = 'todas';
+
   async function pintarVoces() {
     const cont = $('#voces');
     cont.innerHTML = '';
-    let r;
-    try { r = await api('/api/voces'); } catch (e) { return; }
-    if (!r.voces.length) return;
-    const principales = r.voces.filter((v) => v.idioma === 'Latinoamérica' && v.linea === 'Chirp 3 HD');
-    const lista = verTodasLasVoces || !principales.length ? r.voces : principales;
-    let grupo = '';
+    try { datosVoces = await api('/api/voces'); } catch (e) { return; }
+    if (!datosVoces.voces.length) return;
+    const actual = datosVoces.voces.find((v) => v.nombre === datosVoces.actual);
+    const fila = document.createElement('div');
+    fila.className = 'voz actual';
+    fila.innerHTML = '<span class="voz-nombre"><small>Voz actual</small><strong></strong></span><button type="button" class="probar" aria-label="Escuchar">▶</button><button type="button" class="usar">Cambiar voz</button>';
+    fila.querySelector('strong').textContent = actual ? `${actual.etiqueta} · ${actual.genero.toLowerCase()}` : datosVoces.actual;
+    fila.querySelector('.probar').addEventListener('click', (e) => probarVoz(datosVoces.actual, e.currentTarget));
+    fila.querySelector('.usar').addEventListener('click', abrirSelectorVoces);
+    cont.appendChild(fila);
+  }
+
+  function abrirSelectorVoces() {
+    pintarSelectorVoces();
+    $('#hoja-voces').hidden = false;
+  }
+  function cerrarSelectorVoces() {
+    $('#hoja-voces').hidden = true;
+    detenerHabla();
+  }
+  $$('[data-cerrar-voces]').forEach((el) => el.addEventListener('click', cerrarSelectorVoces));
+  $$('#filtro-voces button').forEach((b) => b.addEventListener('click', () => {
+    filtroGenero = b.dataset.filtro;
+    pintarSelectorVoces();
+  }));
+  $('#voces-espana').addEventListener('change', pintarSelectorVoces);
+
+  function pintarSelectorVoces() {
+    if (!datosVoces) return;
+    $$('#filtro-voces button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.filtro === filtroGenero ? 'true' : 'false'));
+    const conEspana = $('#voces-espana').checked;
+    const lista = datosVoces.voces.filter((v) =>
+      (conEspana || v.idioma === 'Latinoamérica')
+      && (filtroGenero === 'todas' || (filtroGenero === 'f' ? v.genero === 'Femenina' : v.genero === 'Masculina')));
+    const cont = $('#lista-voces');
+    cont.innerHTML = '';
     for (const v of lista) {
-      const g = `${v.idioma} · ${v.linea}`;
-      if (g !== grupo) {
-        grupo = g;
-        const h = document.createElement('p');
-        h.className = 'voz-grupo';
-        h.textContent = g;
-        cont.appendChild(h);
-      }
       const fila = document.createElement('div');
-      fila.className = `voz${v.nombre === r.actual ? ' actual' : ''}`;
-      fila.innerHTML = '<span class="voz-nombre"><strong></strong><small></small></span><button type="button" class="probar">▶ Probar</button>';
+      fila.className = `voz-fila${v.nombre === datosVoces.actual ? ' actual' : ''}`;
+      fila.innerHTML = '<button type="button" class="voz-play" aria-label="Escuchar">▶</button><span class="voz-nombre"><strong></strong><small></small></span>';
       fila.querySelector('strong').textContent = v.etiqueta;
-      fila.querySelector('small').textContent = v.genero;
-      fila.querySelector('.probar').addEventListener('click', (e) => probarVoz(v.nombre, e.currentTarget));
-      if (v.nombre === r.actual) {
+      fila.querySelector('small').textContent = [v.genero, v.idioma === 'España' ? 'España' : '', v.linea !== 'Chirp 3 HD' ? v.linea : ''].filter(Boolean).join(' · ');
+      fila.querySelector('.voz-play').addEventListener('click', (e) => probarVoz(v.nombre, e.currentTarget));
+      if (v.nombre === datosVoces.actual) {
         const s = document.createElement('span');
         s.className = 'en-uso';
         s.textContent = 'En uso ✓';
@@ -1334,7 +1359,9 @@
         b.addEventListener('click', async () => {
           try {
             await api('/api/voces', { method: 'POST', body: JSON.stringify({ voz: v.nombre }) });
+            datosVoces.actual = v.nombre;
             aviso(`ADA ahora habla con la voz ${v.etiqueta}.`);
+            pintarSelectorVoces();
             pintarVoces();
             prepararAcuses();
           } catch (e) { aviso(e.message, true); }
@@ -1343,14 +1370,7 @@
       }
       cont.appendChild(fila);
     }
-    if (!verTodasLasVoces && lista.length < r.voces.length) {
-      const mas = document.createElement('button');
-      mas.type = 'button';
-      mas.className = 'ver-mas';
-      mas.textContent = `Ver más voces (${r.voces.length - lista.length}, incluye España)`;
-      mas.addEventListener('click', () => { verTodasLasVoces = true; pintarVoces(); });
-      cont.appendChild(mas);
-    }
+    if (!lista.length) cont.innerHTML = '<p class="vacio-lista">No hay voces con ese filtro.</p>';
   }
 
   $('#abrir-ajustes').addEventListener('click', abrirAjustes);
