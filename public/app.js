@@ -6,6 +6,7 @@
   let convId = null;          // conversación en curso
   let ocupado = false;        // esperando respuesta del servidor
   let docsActuales = [];      // documentos entregados en la conversación en curso
+  let archivosActuales = [];  // archivos Word/Excel creados en la conversación en curso
   let proyectos = [];
 
   try {
@@ -135,9 +136,57 @@
   const ICONO_DOC = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5v12.5H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4.5M9.5 12.5h6M9.5 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   let autorizaciones = [];
 
+  const ICONO_ARCHIVO = {
+    word: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5v12.5H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.5 11.5l1.2 5 1.3-4 1.3 4 1.2-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    excel: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 9.5h16M4 14.5h16M10 4v16" stroke="currentColor" stroke-width="1.6"/></svg>',
+  };
+
+  async function descargarArchivo(a, boton) {
+    const texto = boton.textContent;
+    boton.textContent = '…';
+    try {
+      const res = await fetch(`/api/archivos/${a.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+      const enl = document.createElement('a');
+      enl.href = url;
+      enl.download = a.nombre;
+      document.body.appendChild(enl);
+      enl.click();
+      setTimeout(() => { URL.revokeObjectURL(url); enl.remove(); }, 1000);
+    } catch (e) {
+      aviso(`No se pudo descargar: ${e.message}`, true);
+    }
+    boton.textContent = texto;
+  }
+
+  function tarjetaArchivo(a) {
+    const t = document.createElement('div');
+    t.className = 'entrega-doc entrega-archivo';
+    t.innerHTML = `${ICONO_ARCHIVO[a.tipo] || ICONO_DOC}<span><small></small><strong></strong></span><div class="archivo-botones"></div>`;
+    t.querySelector('small').textContent = a.tipo === 'excel' ? 'Excel' : 'Word';
+    t.querySelector('strong').textContent = a.nombre;
+    const botones = t.querySelector('.archivo-botones');
+    const bajar = document.createElement('button');
+    bajar.type = 'button';
+    bajar.textContent = 'Descargar';
+    bajar.addEventListener('click', () => descargarArchivo(a, bajar));
+    botones.appendChild(bajar);
+    if (a.drive_url) {
+      const drive = document.createElement('a');
+      drive.href = a.drive_url;
+      drive.target = '_blank';
+      drive.rel = 'noopener';
+      drive.textContent = 'Abrir en Drive';
+      botones.appendChild(drive);
+    }
+    return t;
+  }
+
   function pintarEntregas() {
     const cont = $('#entregas');
     cont.innerHTML = '';
+    for (const a of archivosActuales.slice().reverse()) cont.appendChild(tarjetaArchivo(a));
     for (const d of docsActuales.slice().reverse()) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -648,7 +697,7 @@
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
       await leerFlujo(res, (tipo, d) => {
         if (tipo === 'conversacion') {
-          if (d.conversacion_id !== convId) { docsActuales = []; pintarEntregas(); }
+          if (d.conversacion_id !== convId) { docsActuales = []; archivosActuales = []; pintarEntregas(); }
           guardarConv(d.conversacion_id);
         } else if (tipo === 'texto') {
           acumulado += d.delta;
@@ -658,6 +707,9 @@
           if (!locutor || !locutor.hablando) setFase('pensando', d.texto);
         } else if (tipo === 'documento') {
           docsActuales.push(d);
+          pintarEntregas();
+        } else if (tipo === 'archivo') {
+          archivosActuales.push(d);
           pintarEntregas();
         } else if (tipo === 'fin') {
           resultado = d;
@@ -770,6 +822,7 @@
     const id = convId;
     guardarConv(null);
     docsActuales = [];
+    archivosActuales = [];
     pintarEntregas();
     mostrarYo('');
     mostrarAda('');
@@ -1087,6 +1140,8 @@
       docs.appendChild(b);
     }
 
+    for (const a of d.archivos || []) docs.appendChild(tarjetaArchivo(a));
+
     const cont = $('#detalle-mensajes');
     cont.innerHTML = '';
     for (const m of d.mensajes) {
@@ -1181,7 +1236,7 @@
       b.textContent = 'Desconectar';
       b.addEventListener('click', async () => {
         await api('/api/google/desconectar', { method: 'POST' }).catch(() => {});
-        aviso('Google Calendar desconectado.');
+        aviso('Google desconectado.');
         abrirAjustes();
       });
       acciones.appendChild(b);
@@ -1190,7 +1245,7 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'principal';
-      b.textContent = 'Conectar Google Calendar';
+      b.textContent = 'Conectar Google (Calendar y Drive)';
       b.addEventListener('click', async () => {
         try {
           const r = await api('/api/google/enlace', { method: 'POST' });
@@ -1297,8 +1352,8 @@
   function revisarRetornoGoogle() {
     const p = new URLSearchParams(window.location.search);
     if (!p.has('google')) return;
-    if (p.get('google') === 'ok') aviso('Google Calendar conectado. ADA ya puede ver tu agenda.');
-    else aviso(`No se pudo conectar Google Calendar: ${p.get('motivo') || 'error'}`, true);
+    if (p.get('google') === 'ok') aviso('Google conectado. ADA ya puede ver tu agenda y tu Drive.');
+    else aviso(`No se pudo conectar Google: ${p.get('motivo') || 'error'}`, true);
     history.replaceState(null, '', '/');
   }
 
@@ -1321,6 +1376,7 @@
       if (ultimoYo) mostrarYo(ultimoYo.contenido);
       if (ultimaAda) mostrarAda(ultimaAda.contenido);
       docsActuales = d.documentos.map((x) => ({ id: x.id, titulo: x.titulo }));
+      archivosActuales = (d.archivos || []).map((x) => ({ id: x.id, nombre: x.nombre, tipo: x.tipo, drive_url: x.drive_url }));
       pintarEntregas();
     } catch (_) {
       guardarConv(null);

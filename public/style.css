@@ -191,6 +191,13 @@ button:disabled { opacity: 0.45; cursor: default; }
 .entrega-doc strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entrega-doc em { font-style: normal; font-size: 13px; color: var(--texto-suave); }
 
+.entrega-archivo { cursor: default; }
+.archivo-botones { display: flex; gap: 6px; flex: none; }
+.archivo-botones button, .archivo-botones a {
+  padding: 8px 10px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none;
+  border: 1px solid var(--borde); background: var(--vidrio-fuerte); color: var(--texto);
+}
+.archivo-botones button { border: 0; color: #04140d; background: linear-gradient(90deg, var(--verde), var(--verde-2)); }
 .tarjeta { background: var(--fondo-2); border: 1px solid var(--borde-verde); border-radius: 16px; padding: 12px; }
 .tarjeta-cab { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--texto-suave); margin-bottom: 8px; }
 .tarjeta-cab strong { color: var(--texto); font-weight: 600; }

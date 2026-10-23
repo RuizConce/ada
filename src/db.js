@@ -162,6 +162,19 @@ const ESQUEMA = [
     FOREIGN KEY (conversacion_id) REFERENCES conversaciones(id) ON DELETE SET NULL,
     FOREIGN KEY (proyecto_id) REFERENCES proyectos(id) ON DELETE SET NULL
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS archivos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conversacion_id INT NULL,
+    nombre VARCHAR(200) NOT NULL,
+    tipo VARCHAR(20) NOT NULL,
+    mime VARCHAR(120) NOT NULL,
+    datos MEDIUMBLOB NOT NULL,
+    drive_id VARCHAR(120) NULL,
+    drive_url VARCHAR(500) NULL,
+    creado_en DATETIME NOT NULL,
+    INDEX idx_conv (conversacion_id),
+    FOREIGN KEY (conversacion_id) REFERENCES conversaciones(id) ON DELETE SET NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS mensajes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     rol ENUM('user','assistant') NOT NULL,

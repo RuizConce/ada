@@ -5,6 +5,8 @@ const H = require('./herramientas');
 const E = require('./encargos'); // registra las herramientas de contactos y encargos
 const C = require('./conversaciones'); // registra entregar_documento
 const G = require('./google'); // registra las herramientas de agenda
+require('./archivos'); // registra crear_archivo
+require('./drive'); // registra las herramientas de Drive
 const { claude, MODELO } = require('./claude');
 
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
@@ -31,6 +33,15 @@ AGENDA (GOOGLE CALENDAR)
 - Para agendar, mover o borrar: primero di exactamente qué harás ("¿Te agendo reunión con Paola el jueves a las 11, una hora?") y espera su sí. Solo con un sí explícito llamas a crear_evento / modificar_evento / eliminar_evento con confirmado: true. Si dice que sí de inmediato al pedirlo ("agéndame X el jueves a las 11"), eso ya cuenta como confirmación.
 - Para coordinar con otra persona: revisa la agenda, propone 2 o 3 horarios libres y redacta el mensaje con proponer_mensaje.
 - Si el calendario no está conectado, díselo una vez y sigue ayudando sin él.
+
+ARCHIVOS Y GOOGLE DRIVE
+- Para un Word o Excel ("hazme un Excel con…", "pásamelo a Word", "una planilla de costos") usa crear_archivo. Si Google está conectado queda también en su Drive, en la carpeta ADA. Para notas rápidas en pantalla sigue usando entregar_documento.
+- En Excel usa fórmulas cuando tenga sentido (totales, márgenes, porcentajes) para que la planilla siga viva, y formatea montos como "pesos".
+- Puedes buscar (buscar_drive), explorar carpetas (listar_carpeta_drive) y leer (leer_drive) cualquier archivo de su Drive: Docs, Sheets, Word, Excel, PDF. Úsalo cuando pregunte por algo que probablemente está ahí ("¿cuánto era el presupuesto de…?", "resume el acta…", "¿qué dice el contrato…?").
+- Al analizar: lee, calcula y responde con lo importante (cifras clave, conclusiones, riesgos, lo que falta). Si la respuesta es larga, entrégala como documento o archivo.
+- Ordenar el Drive: primero explora y propone un plan concreto (qué carpetas crear, qué mover, qué renombrar). Con su sí, ejecútalo completo y al final resume lo hecho.
+- Para modificar (mover, renombrar, editar, papelera) necesitas su confirmación explícita; luego llama con confirmado: true. Nunca envíes a la papelera sin que él lo haya pedido.
+- Si Google no está conectado, díselo una vez: se conecta en Ajustes.
 
 PENSAR CONTIGO
 Cristian no solo necesita que hagas cosas: también que lo ayudes a pensar. Cuando te pida opinión, estrategia, ideas o "ayúdame a pensar":
@@ -166,6 +177,13 @@ const ETIQUETAS = {
   actualizar_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}: ${r.encargo.estado.replace(/_/g, ' ')}` : null,
   proponer_mensaje: (i, r) => r.ok ? 'Mensaje para autorizar' : null,
   entregar_documento: (i, r) => r.ok ? `Documento: ${i.titulo}` : null,
+  crear_archivo: (i, r) => r.ok ? `${i.tipo === 'excel' ? 'Excel' : 'Word'}: ${i.titulo}${r.drive ? ' · en Drive' : ''}` : null,
+  crear_carpeta_drive: (i, r) => r.ok ? `Carpeta: ${i.nombre}` : null,
+  mover_drive: (i, r) => r.ok ? `Movido: ${r.archivo.nombre}` : null,
+  renombrar_drive: (i, r) => r.ok ? `Renombrado: ${r.archivo.nombre}` : null,
+  papelera_drive: (i, r) => r.ok ? `A la papelera: ${r.archivo.nombre}` : null,
+  editar_hoja_drive: (i, r) => r.ok ? 'Planilla editada' : null,
+  editar_documento_drive: (i, r) => r.ok ? 'Documento editado' : null,
   crear_evento: (i, r) => r.ok ? `Agendado: ${r.evento.titulo}` : null,
   modificar_evento: (i, r) => r.ok ? `Evento movido: ${r.evento.titulo}` : null,
   eliminar_evento: (i, r) => r.ok ? 'Evento eliminado' : null,
@@ -215,6 +233,13 @@ const ESTADO_HERRAMIENTA = {
   modificar_evento: 'Cambiando el evento…',
   eliminar_evento: 'Quitando el evento…',
   entregar_documento: 'Preparando el documento…',
+  crear_archivo: 'Armando el archivo…',
+  buscar_drive: 'Buscando en tu Drive…',
+  listar_carpeta_drive: 'Revisando tu Drive…',
+  leer_drive: 'Leyendo el archivo…',
+  mover_drive: 'Ordenando tu Drive…',
+  editar_hoja_drive: 'Editando la planilla…',
+  editar_documento_drive: 'Editando el documento…',
   datos_informe: 'Revisando tu semana…',
   listar_items: 'Revisando tus pendientes…',
   ver_proyecto: 'Revisando el proyecto…',
@@ -289,6 +314,7 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
 
   const acciones = [];
   const documentos = [];
+  const archivos = [];
   const partes = [];      // todo lo que ADA dijo en el turno (incluye "déjame revisar…" antes de una herramienta)
   let separar = false;    // separa el texto de vueltas distintas
   const emitir = (tipo, datos) => {
@@ -318,6 +344,11 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
       const r = await H.ejecutar(bloque.name, bloque.input, { conversacionId });
       const etiqueta = ETIQUETAS[bloque.name] && !r.error ? ETIQUETAS[bloque.name](bloque.input, r) : null;
       if (etiqueta) acciones.push({ herramienta: bloque.name, etiqueta });
+      if (bloque.name === 'crear_archivo' && r.ok) {
+        const arch = { id: r.archivo_id, nombre: r.nombre, tipo: bloque.input.tipo, drive_url: r.drive ? r.drive.url : null };
+        archivos.push(arch);
+        alEvento('archivo', arch);
+      }
       if (bloque.name === 'entregar_documento' && r.ok) {
         const doc = { id: r.documento_id, titulo: bloque.input.titulo };
         documentos.push(doc);
@@ -335,12 +366,12 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
 
   let respuestaFinal = partes.join('').replace(/[ \t]+\n/g, '\n').trim();
   if (!respuestaFinal) {
-    respuestaFinal = documentos.length ? 'Te lo dejé en pantalla.' : 'Listo.';
+    respuestaFinal = documentos.length || archivos.length ? 'Te lo dejé en pantalla.' : 'Listo.';
     alEvento('texto', { delta: respuestaFinal });
   }
   await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('assistant', ?, ?, ?)",
     [respuestaFinal, conversacionId, new Date()]);
-  return { respuesta: respuestaFinal, acciones, documentos, conversacion_id: conversacionId };
+  return { respuesta: respuestaFinal, acciones, documentos, archivos, conversacion_id: conversacionId };
 }
 
 module.exports = { conversar, construirContexto };

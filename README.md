@@ -77,9 +77,9 @@ Sin configuración, ADA usa la voz del teléfono (suena robótica). Con una de e
 
 Si hay varias, `VOZ_PROVEEDOR` decide (`google`, `elevenlabs`, `openai` o `navegador`).
 
-## Google Calendar
+## Google (Calendar y Drive)
 
-1. En [Google Cloud Console](https://console.cloud.google.com) crea un proyecto y habilita **Google Calendar API** (y **Cloud Text-to-Speech API** si usarás esa voz).
+1. En [Google Cloud Console](https://console.cloud.google.com) crea un proyecto y habilita **Google Calendar API**, **Google Drive API**, **Google Sheets API** y **Google Docs API** (y **Cloud Text-to-Speech API** si usarás esa voz).
 2. Configura la pantalla de consentimiento OAuth: tipo *Externo*, agrega tu Gmail como usuario de prueba. Para que la conexión no venza cada 7 días, publícala (*En producción*); el aviso de "app no verificada" es normal para uso personal.
 3. Credenciales → **ID de cliente OAuth** → *Aplicación web* → URI de redirección autorizada:
    `https://TU-DOMINIO.up.railway.app/api/google/callback` (la app la muestra en Ajustes).
@@ -87,6 +87,12 @@ Si hay varias, `VOZ_PROVEEDOR` decide (`google`, `elevenlabs`, `openai` o `naveg
 5. En ADA: ⚙ Ajustes → **Conectar Google Calendar**.
 
 ADA puede ver la agenda libremente; para crear, mover o eliminar eventos siempre pide confirmación.
+
+Con Drive conectado, ADA puede **buscar, leer y analizar** (Docs, Sheets, Slides, Word, Excel, PDF, CSV), **ordenar** (crear carpetas, mover, renombrar, enviar a la papelera) y **editar** (agregar filas o actualizar celdas en Sheets, agregar o reemplazar texto en Docs). Todo lo que modifica requiere confirmación.
+
+## Archivos Word y Excel
+
+ADA crea `.docx` (desde markdown: títulos, listas, negritas, tablas) y `.xlsx` (varias hojas, fórmulas y formatos de pesos/porcentaje). Aparecen en pantalla para descargar y, con Google conectado, se guardan además en la carpeta **ADA** de Drive como Google Docs / Sheets.
 
 ## Internet
 

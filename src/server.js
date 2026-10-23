@@ -10,6 +10,7 @@ const E = require('./encargos');
 const C = require('./conversaciones');
 const Voz = require('./voz');
 const G = require('./google');
+const A = require('./archivos');
 
 const app = express();
 app.set('trust proxy', 1); // Railway está detrás de un proxy
@@ -172,6 +173,20 @@ app.post('/api/conversaciones/:id/cerrar', auth, envolver((req) => C.cerrar(pars
 app.post('/api/conversaciones/:id/proyecto', auth,
   envolver((req) => C.moverConversacion(parseInt(req.params.id, 10), (req.body || {}).proyecto || null)));
 app.get('/api/documentos/:id', auth, envolver((req) => C.obtenerDocumento(parseInt(req.params.id, 10))));
+app.get('/api/archivos/:id', auth, async (req, res) => {
+  try {
+    const a = await A.obtenerArchivo(parseInt(req.params.id, 10));
+    if (!a) return res.status(404).json({ error: 'No encontrado' });
+    res.set({
+      'Content-Type': a.mime,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(a.nombre)}`,
+      'Cache-Control': 'no-store',
+    });
+    res.send(a.datos);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ---------- Ajustes y Google Calendar ----------
 

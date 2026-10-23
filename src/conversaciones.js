@@ -107,7 +107,7 @@ Devuelve JSON con:
 
 const SELECT_CONV = `SELECT c.*, p.nombre AS proyecto,
     (SELECT COUNT(*) FROM mensajes m WHERE m.conversacion_id = c.id) AS n_mensajes,
-    (SELECT COUNT(*) FROM documentos d WHERE d.conversacion_id = c.id) AS n_documentos
+    (SELECT COUNT(*) FROM documentos d WHERE d.conversacion_id = c.id) + (SELECT COUNT(*) FROM archivos a WHERE a.conversacion_id = c.id) AS n_documentos
   FROM conversaciones c LEFT JOIN proyectos p ON p.id = c.proyecto_id`;
 
 function convPublica(c) {
@@ -156,11 +156,12 @@ async function carpetas() {
 async function detalle(id) {
   const [c] = await q(`${SELECT_CONV} WHERE c.id = ?`, [id]);
   if (!c) return null;
-  const [mensajes, documentos] = await Promise.all([
+  const [mensajes, documentos, archivos] = await Promise.all([
     q('SELECT id, rol, contenido, creado_en FROM mensajes WHERE conversacion_id = ? ORDER BY id', [id]),
     q('SELECT id, titulo, creado_en FROM documentos WHERE conversacion_id = ? ORDER BY id', [id]),
+    q('SELECT id, nombre, tipo, drive_url, creado_en FROM archivos WHERE conversacion_id = ? ORDER BY id', [id]),
   ]);
-  return { conversacion: convPublica(c), mensajes, documentos };
+  return { conversacion: convPublica(c), mensajes, documentos, archivos };
 }
 
 async function moverConversacion(id, proyecto) {

@@ -5,7 +5,12 @@ const { q } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
 
-const SCOPES = ['openid', 'email', 'https://www.googleapis.com/auth/calendar.events'];
+const SCOPES = [
+  'openid',
+  'email',
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/drive', // leer, ordenar y editar Drive (incluye Docs y Sheets)
+];
 const CALENDARIO = () => process.env.GOOGLE_CALENDAR_ID || 'primary';
 const ZONA = 'America/Santiago';
 
@@ -114,9 +119,9 @@ async function desconectar() {
 }
 
 async function tokenAcceso() {
-  if (!configurado()) throw new Error('Google Calendar no está configurado en el servidor.');
+  if (!configurado()) throw new Error('Google (Calendar y Drive) no está configurado en el servidor.');
   const d = await leer();
-  if (!d || !d.refresh_token) throw new Error('Google Calendar no está conectado. Cristian puede conectarlo en Ajustes (ícono de engranaje).');
+  if (!d || !d.refresh_token) throw new Error('Google no está conectado. Cristian puede conectarlo en Ajustes (ícono de engranaje).');
   if (d.access_token && d.vence > Date.now()) return d.access_token;
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -352,5 +357,5 @@ H.registrar([
 });
 
 module.exports = {
-  configurado, estado, crearEnlace, urlAutorizacion, recibirCallback, desconectar, agendaParaContexto, redirectUri,
+  configurado, estado, crearEnlace, urlAutorizacion, recibirCallback, desconectar, agendaParaContexto, redirectUri, tokenAcceso,
 };
