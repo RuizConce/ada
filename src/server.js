@@ -92,8 +92,10 @@ app.post('/api/chat/stream', auth, async (req, res) => {
   // Mantiene viva la conexión mientras ADA piensa o busca.
   const latido = setInterval(() => res.write(': latido\n\n'), 15000);
   try {
+    const acuse = typeof req.body.acuse === 'string' ? req.body.acuse.slice(0, 20).replace(/[^\p{L} .,]/gu, '') : null;
     const r = await conversar(texto, {
       voz: req.body.voz === true,
+      acuse,
       conversacionId: parseInt(req.body.conversacion_id, 10) || null,
     }, enviarEvento);
     enviarEvento('fin', r);

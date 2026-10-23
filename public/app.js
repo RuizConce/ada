@@ -404,7 +404,7 @@
   // El locutor recibe frases a medida que llegan, precarga el audio y las dice en orden.
   // detener() la calla de inmediato (para interrumpir).
   let locutorActual = null;
-  function crearLocutor({ alEmpezar } = {}) {
+  function crearLocutor({ alEmpezar, antes } = {}) {
     const cola = [];
     let cerrado = false;
     let detenido = false;
@@ -418,6 +418,7 @@
     async function bombear() {
       if (trabajando) return;
       trabajando = true;
+      if (antes) { await antes; antes = null; }
       while (cola.length && !detenido) {
         const item = cola.shift();
         if (!empezo) { empezo = true; if (alEmpezar) alEmpezar(); }
@@ -472,6 +473,7 @@
     if (vozDesbloqueada) return;
     vozDesbloqueada = true;
     try { reproductor.src = SILENCIO_WAV; reproductor.play().catch(() => {}); } catch (_) {}
+    try { reproductorAcuse.src = SILENCIO_WAV; reproductorAcuse.play().catch(() => {}); } catch (_) {}
     if (sintesis) {
       sintesis.getVoices();
       const u = new SpeechSynthesisUtterance('.');
@@ -489,6 +491,15 @@
     return {
       agregar(delta) {
         buffer += delta;
+        // La primera vez, corta en una coma para empezar a hablar antes.
+        if (!this.yaHablo) {
+          const c = buffer.match(/^([\s\S]{28,}?[,;:])\s/);
+          if (c && !/[.!?…](?=\s)/.test(c[1])) {
+            buffer = buffer.slice(c[0].length);
+            alFrase(c[1].trim());
+            this.yaHablo = true;
+          }
+        }
         let m;
         while ((m = buffer.match(corte))) {
           const frase = m[1].trim();
@@ -552,6 +563,40 @@
     return parar;
   }
 
+  // ---------- Acuse inmediato ----------
+  // Apenas Cristian termina de hablar, ADA dice algo breve ("Mmm", "Ya") mientras piensa la respuesta.
+  const TEXTOS_ACUSE = ['Mmm.', 'Ya.', 'A ver.', 'Ajá.', 'Ya, ya.'];
+  const reproductorAcuse = new Audio();
+  let acuses = [];
+  let ultimoAcuse = null;
+
+  async function prepararAcuses() {
+    acuses.forEach((a) => URL.revokeObjectURL(a.url));
+    acuses = [];
+    if (!vozServidor) return;
+    for (const texto of TEXTOS_ACUSE) {
+      const url = await pedirAudio(texto);
+      if (url) acuses.push({ texto: texto.replace(/\.$/, ''), url });
+    }
+  }
+
+  // Devuelve { texto, termino } o null si esta vez no corresponde.
+  function decirAcuse() {
+    if (!acuses.length || silenciada || Math.random() > 0.75) return null;
+    const opciones = acuses.filter((a) => a !== ultimoAcuse);
+    const a = opciones[Math.floor(Math.random() * opciones.length)];
+    ultimoAcuse = a;
+    const termino = new Promise((ok) => {
+      const fin = () => { reproductorAcuse.onended = reproductorAcuse.onerror = null; ok(); };
+      reproductorAcuse.onended = fin;
+      reproductorAcuse.onerror = fin;
+      reproductorAcuse.src = a.url;
+      reproductorAcuse.play().catch(fin);
+      setTimeout(fin, 2000);
+    });
+    return { texto: a.texto, termino };
+  }
+
   // ---------- Hablar con el servidor (en tiempo real) ----------
   // Lee la respuesta como un flujo de eventos: texto a medida que se escribe, estados y documentos.
   async function leerFlujo(res, alEvento) {
@@ -587,7 +632,7 @@
     setFase('pensando');
 
     const hablar = !silenciada;
-    const locutor = hablar ? crearLocutor({ alEmpezar: () => setFase('hablando') }) : null;
+    const locutor = hablar ? crearLocutor({ alEmpezar: () => setFase('hablando'), antes: opciones.antes }) : null;
     const cortador = crearCortador((frase) => locutor && locutor.decir(frase));
     let acumulado = '';
     let resultado = null;
@@ -597,7 +642,7 @@
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ mensaje: texto, voz: !!opciones.voz, conversacion_id: convId }),
+        body: JSON.stringify({ mensaje: texto, voz: !!opciones.voz, acuse: opciones.acuse || null, conversacion_id: convId }),
       });
       if (res.status === 401) { salir(); throw new Error('Sesión expirada'); }
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
@@ -789,7 +834,8 @@
 
   async function turnoDeAda(texto) {
     setFase('pensando');
-    const r = await enviar(texto, { voz: true });
+    const acuse = decirAcuse();
+    const r = await enviar(texto, { voz: true, acuse: acuse && acuse.texto, antes: acuse && acuse.termino });
     if (!conversando) return;
     if (!r) { detenerVoz(); return; }
     if (r.locutor) {
@@ -1102,7 +1148,9 @@
   async function cargarAjustes() {
     try {
       const a = await api('/api/ajustes');
+      const antes = vozServidor;
       vozServidor = a.voz.proveedor !== 'navegador';
+      if (vozServidor && (!antes || !acuses.length)) prepararAcuses();
       return a;
     } catch (_) {
       return null;
@@ -1221,6 +1269,7 @@
             await api('/api/voces', { method: 'POST', body: JSON.stringify({ voz: v.nombre }) });
             aviso(`ADA ahora habla con la voz ${v.etiqueta}.`);
             pintarVoces();
+            prepararAcuses();
           } catch (e) { aviso(e.message, true); }
         });
         fila.appendChild(b);
