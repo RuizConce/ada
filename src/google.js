@@ -293,6 +293,66 @@ async function eliminarEvento(a) {
   return { ok: true };
 }
 
+// ---------- Tareas que ADA agenda sola ----------
+// Lo que sale de la conversación como pendiente o compromiso con fecha se publica en el calendario
+// sin pedir confirmación (Cristian lo pidió así), con aviso al celular; si es importante, también por correo.
+
+const HORA_TAREAS = () => parseInt(process.env.ADA_HORA_TAREAS || '9', 10);
+
+async function calendarioDisponible() {
+  if (!configurado()) return false;
+  const d = await leer();
+  return !!(d && d.refresh_token && (!d.scope || d.scope.includes('calendar')));
+}
+
+// Si solo dijo el día, el aviso queda a las 9:00 (o en una hora más, si ya pasó esa hora hoy).
+function momentoTarea(fecha, conHora) {
+  if (conHora) return { inicio: fecha, hora_supuesta: false };
+  const d = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), HORA_TAREAS(), 0, 0);
+  const ahora = new Date();
+  if (d <= ahora && fecha.toDateString() === ahora.toDateString()) {
+    const prox = new Date(ahora.getTime() + 60 * 60000);
+    prox.setMinutes(prox.getMinutes() < 30 ? 30 : 60, 0, 0);
+    return { inicio: prox, hora_supuesta: true };
+  }
+  return { inicio: d, hora_supuesta: true };
+}
+
+function cuerpoTarea({ texto, persona, proyecto, importante, inicio, hecho }) {
+  const recordatorios = hecho ? [] : importante
+    ? [{ method: 'popup', minutes: 0 }, { method: 'popup', minutes: 30 }, { method: 'email', minutes: 60 }, { method: 'email', minutes: 24 * 60 }]
+    : [{ method: 'popup', minutes: 0 }, { method: 'popup', minutes: 15 }];
+  const cuerpo = {
+    summary: `${hecho ? '✔ ' : importante ? '⭐ ' : ''}${texto}`,
+    description: [persona && `Con: ${persona}`, proyecto && `Proyecto: ${proyecto}`, 'Agendado por ADA.'].filter(Boolean).join('\n'),
+    colorId: hecho ? '8' : importante ? '11' : '9',
+    reminders: { useDefault: false, overrides: recordatorios },
+    transparency: 'transparent', // no bloquea la agenda
+  };
+  if (inicio) {
+    cuerpo.start = { dateTime: localISO(inicio), timeZone: ZONA };
+    cuerpo.end = { dateTime: localISO(new Date(inicio.getTime() + 30 * 60000)), timeZone: ZONA };
+  }
+  return cuerpo;
+}
+
+async function agendarTarea(t) {
+  const e = await api(`/calendars/${encodeURIComponent(CALENDARIO())}/events`, { method: 'POST', body: JSON.stringify(cuerpoTarea(t)) });
+  cacheAgenda.delete(usuario().id);
+  return { evento_id: e.id, inicio: F.fmt(t.inicio), enlace: e.htmlLink };
+}
+
+async function actualizarTarea(eventoId, t) {
+  const ruta = `/calendars/${encodeURIComponent(CALENDARIO())}/events/${encodeURIComponent(eventoId)}`;
+  if (t.borrar) {
+    await api(ruta, { method: 'DELETE' }).catch(() => {});
+  } else {
+    await api(ruta, { method: 'PATCH', body: JSON.stringify(cuerpoTarea(t)) });
+  }
+  cacheAgenda.delete(usuario().id);
+  return { ok: true };
+}
+
 // Agenda de las próximas horas para el contexto de ADA (con caché corta para no demorar cada mensaje).
 const cacheAgenda = new Map(); // por persona
 async function agendaParaContexto() {
@@ -382,5 +442,6 @@ H.registrar([
 });
 
 module.exports = {
+  calendarioDisponible, momentoTarea, agendarTarea, actualizarTarea,
   configurado, estado, crearEnlace, urlAutorizacion, recibirCallback, desconectar, agendaParaContexto, redirectUri, tokenAcceso, tienePermiso,
 };

@@ -1293,6 +1293,7 @@
     }
     $('#voz-estado').textContent = NOMBRE_VOZ[a.voz.proveedor] || a.voz.proveedor;
     pintarVoces();
+    $('#op-tareas').checked = !a.preferencias || a.preferencias.tareas_auto !== false;
     if (a.usuario) {
       yo = a.usuario;
       $('#sesion-de').textContent = `Entraste como ${a.usuario.nombre}${a.usuario.admin ? ' (administrador)' : ''}.`;
@@ -1301,6 +1302,16 @@
     }
     $('#ia-estado').textContent = `Modelo: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
   }
+
+  $('#op-tareas').addEventListener('change', async (e) => {
+    try {
+      await api('/api/preferencias', { method: 'POST', body: JSON.stringify({ tareas_auto: e.target.checked }) });
+      aviso(e.target.checked ? 'ADA agendará tus tareas en Google Calendar.' : 'ADA ya no agendará tareas sola.');
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      aviso(err.message, true);
+    }
+  });
 
   // ---------- Personas de la prueba (solo Cristian) ----------
 

@@ -73,8 +73,56 @@ function itemPublico(r) {
     persona: r.persona || undefined,
     fecha_limite: r.fecha_limite ? F.fmt(r.fecha_limite) : undefined,
     estado: r.estado,
+    importante: r.importante ? true : undefined,
+    en_calendario: r.evento_id ? true : undefined,
     creado: F.fmt(r.creado_en),
   };
+}
+
+// ---------- Preferencias de la persona ----------
+
+const PREF_DEFECTO = { tareas_auto: true };
+async function preferencias() {
+  const [r] = await q("SELECT datos FROM integraciones WHERE nombre = 'preferencias'");
+  return { ...PREF_DEFECTO, ...(r ? JSON.parse(r.datos) : {}) };
+}
+async function guardarPreferencias(cambios) {
+  const nuevas = { ...(await preferencias()) };
+  if (cambios.tareas_auto !== undefined) nuevas.tareas_auto = !!cambios.tareas_auto;
+  await q(
+    `INSERT INTO integraciones (nombre, datos, actualizado_en) VALUES ('preferencias', ?, ?)
+     ON DUPLICATE KEY UPDATE datos = VALUES(datos), actualizado_en = VALUES(actualizado_en)`,
+    [JSON.stringify(nuevas), new Date()]
+  );
+  return nuevas;
+}
+
+// ---------- Tareas en Google Calendar ----------
+
+const G = () => require('./google'); // carga tarde: google.js también registra herramientas aquí
+const conHora = (t) => /\d{1,2}:\d{2}/.test(String(t || ''));
+const agendable = (tipo) => tipo === 'pendiente' || tipo === 'compromiso';
+
+// Publica el item en el calendario si corresponde. Nunca hace fallar el registro.
+async function sincronizarTarea(row, { fechaTexto, agendar, importante } = {}) {
+  try {
+    if (agendar === false || !agendable(row.tipo) || !row.fecha_limite || row.estado !== 'abierto') return null;
+    if (!(await preferencias()).tareas_auto) return { agendado: false, motivo: 'agendar tareas automáticamente está desactivado en Ajustes' };
+    if (!(await G().calendarioDisponible())) return { agendado: false, motivo: 'Google Calendar no está conectado' };
+    const { inicio, hora_supuesta } = G().momentoTarea(new Date(row.fecha_limite), conHora(fechaTexto));
+    if (inicio < new Date(Date.now() - 5 * 60000)) return { agendado: false, motivo: 'la fecha ya pasó' };
+    const t = { texto: row.texto, persona: row.persona, proyecto: row.proyecto, importante: !!(importante ?? row.importante), inicio };
+    const r = await G().agendarTarea(t);
+    await q('UPDATE items SET evento_id = ?, importante = ? WHERE id = ?', [r.evento_id, t.importante ? 1 : 0, row.id]);
+    return {
+      agendado: true,
+      aviso: r.inicio,
+      ...(hora_supuesta ? { hora_supuesta: 'No dijo hora: quedó con aviso a esa hora; menciónalo por si quiere otra.' } : {}),
+      avisos: t.importante ? 'celular (a la hora y 30 min antes) y correo (1 día y 1 hora antes)' : 'celular (a la hora y 15 min antes)',
+    };
+  } catch (e) {
+    return { agendado: false, motivo: `no se pudo agendar: ${e.message}` };
+  }
 }
 
 const SELECT_ITEMS = `SELECT i.*, p.nombre AS proyecto FROM items i LEFT JOIN proyectos p ON p.id = i.proyecto_id`;
@@ -92,7 +140,13 @@ async function registrarItem(a) {
       F.parse(a.fecha_limite), estado, ahora, ahora]
   );
   const [row] = await q(`${SELECT_ITEMS} WHERE i.id = ?`, [r.insertId]);
-  return { ok: true, item: itemPublico(row), proyecto_nuevo: proyecto && proyecto.nuevo ? proyecto.nombre : undefined };
+  const calendario = await sincronizarTarea(row, { fechaTexto: a.fecha_limite, agendar: a.agendar, importante: a.importante });
+  return {
+    ok: true,
+    item: itemPublico(row),
+    proyecto_nuevo: proyecto && proyecto.nuevo ? proyecto.nombre : undefined,
+    ...(calendario ? { calendario } : {}),
+  };
 }
 
 async function actualizarItem(a) {
@@ -116,12 +170,39 @@ async function actualizarItem(a) {
     const p = await resolverProyecto(a.proyecto);
     sets.push('proyecto_id = ?'); params.push(p ? p.id : null);
   }
-  if (!sets.length) throw new Error('No indicaste nada que cambiar');
+  if (!sets.length && a.importante === undefined && a.agendar === undefined) throw new Error('No indicaste nada que cambiar');
+  if (a.importante !== undefined) { sets.push('importante = ?'); params.push(a.importante ? 1 : 0); }
   sets.push('actualizado_en = ?'); params.push(new Date());
   params.push(a.id);
   await q(`UPDATE items SET ${sets.join(', ')} WHERE id = ?`, params);
   const [row] = await q(`${SELECT_ITEMS} WHERE i.id = ?`, [a.id]);
-  return { ok: true, item: itemPublico(row) };
+  const calendario = await actualizarEnCalendario(row, a);
+  return { ok: true, item: itemPublico(row), ...(calendario ? { calendario } : {}) };
+}
+
+// Mantiene el evento del calendario al día con el item.
+async function actualizarEnCalendario(row, a) {
+  if (!row.evento_id) {
+    if (a.fecha_limite !== undefined || a.agendar === true) return sincronizarTarea(row, { fechaTexto: a.fecha_limite, agendar: a.agendar, importante: a.importante });
+    return null;
+  }
+  try {
+    if (row.estado === 'descartado' || a.agendar === false) {
+      await G().actualizarTarea(row.evento_id, { borrar: true });
+      await q('UPDATE items SET evento_id = NULL WHERE id = ?', [row.id]);
+      return { quitado_del_calendario: true };
+    }
+    const fecha = new Date(row.fecha_limite || Date.now());
+    const cambioFecha = a.fecha_limite !== undefined && row.fecha_limite;
+    const inicio = cambioFecha ? G().momentoTarea(fecha, conHora(a.fecha_limite)).inicio : null;
+    await G().actualizarTarea(row.evento_id, {
+      texto: row.texto, persona: row.persona, proyecto: row.proyecto, importante: !!row.importante,
+      hecho: row.estado === 'hecho', ...(inicio ? { inicio } : {}),
+    });
+    return row.estado === 'hecho' ? { marcado_hecho_en_calendario: true } : { calendario_actualizado: true, ...(inicio ? { aviso: F.fmt(inicio) } : {}) };
+  } catch (e) {
+    return { calendario_error: e.message };
+  }
 }
 
 async function listarItems(a = {}) {
@@ -270,14 +351,16 @@ const DEFINICIONES = [
         proyecto: { type: 'string', description: 'Nombre del proyecto. Usa uno existente si corresponde; si no existe, se crea.' },
         razon: { type: 'string', description: 'Para decisiones: por qué se decidió y qué alternativas se descartaron.' },
         persona: { type: 'string', description: 'Con quién es el compromiso o a quién involucra.' },
-        fecha_limite: { type: 'string', description: 'YYYY-MM-DD o YYYY-MM-DD HH:MM. Resuelve "mañana", "el viernes", etc. con la fecha actual del contexto.' },
+        fecha_limite: { type: 'string', description: 'YYYY-MM-DD o YYYY-MM-DD HH:MM. Resuelve "mañana", "el viernes", etc. con la fecha actual del contexto. Pon la hora solo si Cristian la dijo.' },
+        importante: { type: 'boolean', description: 'Trámites, plazos con consecuencias, pagos, reuniones con otras personas o si él dice que es importante: además del aviso al celular, llega un correo de recordatorio.' },
+        agendar: { type: 'boolean', description: 'Por defecto los pendientes y compromisos con fecha se agendan solos en Google Calendar. Usa false solo si Cristian pide no agendarlo.' },
       },
       required: ['tipo', 'texto'],
     },
   },
   {
     name: 'actualizar_item',
-    description: 'Modifica un item existente: marcarlo hecho o descartado, cambiar fecha, texto, proyecto, persona o tipo. Busca primero el id con listar_items si no lo tienes.',
+    description: 'Modifica un item existente: marcarlo hecho o descartado, cambiar fecha, texto, proyecto, persona o tipo. Si estaba agendado, el calendario se actualiza solo (hecho queda con ✔, descartado se quita, nueva fecha mueve el aviso). Busca primero el id con listar_items si no lo tienes.',
     input_schema: {
       type: 'object',
       properties: {
@@ -289,6 +372,8 @@ const DEFINICIONES = [
         fecha_limite: { type: 'string' },
         proyecto: { type: 'string' },
         tipo: { type: 'string', enum: TIPOS },
+        importante: { type: 'boolean' },
+        agendar: { type: 'boolean', description: 'true para publicarlo en el calendario si no estaba; false para sacarlo del calendario' },
       },
       required: ['id'],
     },
@@ -405,6 +490,7 @@ async function ejecutar(nombre, input, ctx = {}) {
 }
 
 module.exports = {
+  preferencias, guardarPreferencias,
   DEFINICIONES,
   ejecutar,
   registrar,

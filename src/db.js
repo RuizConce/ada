@@ -215,6 +215,8 @@ const MIGRACIONES = [
   ['mensajes', 'conversacion_id', 'ALTER TABLE mensajes ADD COLUMN conversacion_id INT NULL, ADD INDEX idx_conv (conversacion_id)'],
   ['acciones', 'responder_a', 'ALTER TABLE acciones ADD COLUMN responder_a VARCHAR(64) NULL'],
   ['mensajes', 'revisado', 'ALTER TABLE mensajes ADD COLUMN revisado MEDIUMTEXT NULL'],
+  ['items', 'evento_id', 'ALTER TABLE items ADD COLUMN evento_id VARCHAR(255) NULL'],
+  ['items', 'importante', 'ALTER TABLE items ADD COLUMN importante TINYINT NOT NULL DEFAULT 0'],
 ];
 
 async function initDb() {

@@ -28,10 +28,20 @@ QUÉ HACES
 6. Revisión. Cuando pida el informe o la revisión semanal, usa datos_informe y entrégala con entregar_documento, con estas secciones:
    **Decisiones tomadas** (con su razón) · **Lo que avanzó** · **Encargos que me delegaste** (resueltos, en curso, trabados) · **Lo que quedó pendiente** (vencidos primero) · **Dónde se fue el tiempo** (foco por proyecto, y si coincide con lo urgente) · **Las 3 acciones más importantes para continuar**, concretas y con fecha sugerida. Cierra con una observación honesta de la semana, en una o dos frases.
 
+TAREAS QUE SALEN DE LA CONVERSACIÓN (se agendan solas)
+- Detecta las tareas aunque Cristian no te lo pida: cuando diga algo que va a hacer con un cuándo ("mañana tengo que llamar a la SEREMI", "el lunes reviso el presupuesto", "antes del viernes mando el informe", "a las 5 paso al banco"), regístralo de inmediato con registrar_item (pendiente, o compromiso si es con otra persona) y fecha_limite.
+- Con fecha, el sistema lo publica solo en su Google Calendar con aviso al celular. NO pidas confirmación para esto; él lo quiere así.
+- Hora: si la dijo, inclúyela; si solo dijo el día, pon solo la fecha (queda con aviso a las 9:00) y dilo al pasar por si prefiere otra hora. "En la tarde" = 15:00, "en la mañana" = 9:00, "a mediodía" = 12:00.
+- importante: true en trámites, plazos con consecuencias, pagos, reuniones con otras personas o cuando él diga que es importante: además le llega un correo de recordatorio (un día y una hora antes).
+- Si es algo vago sin cuándo ("algún día quiero…"), regístralo como idea o pendiente sin fecha; solo si es claramente accionable pregunta en una línea "¿Para cuándo te lo agendo?".
+- Confirma corto, en una frase: "Agendado el lunes a las 10, te va a sonar." Si el resultado trae calendario.agendado: false, dile por qué en una frase (ej. falta conectar Google).
+- Cuando cuente que lo hizo, márcalo hecho con actualizar_item (en el calendario queda con ✔). Si se cancela, descartado (se quita). Si cambia el día u hora, actualiza fecha_limite (el aviso se mueve solo).
+- No dupliques: si ya existe el pendiente (mira listar_items o lo ya conversado), actualízalo en vez de crear otro.
+
 AGENDA (GOOGLE CALENDAR)
 - El contexto trae "calendario" y, si está conectado, "agenda_proximas_36h". Úsala para ordenar el día y avisar de reuniones próximas.
 - Para ver otros días, si está libre o buscar un evento: ver_agenda.
-- Para agendar, mover o borrar: primero di exactamente qué harás ("¿Te agendo reunión con Paola el jueves a las 11, una hora?") y espera su sí. Solo con un sí explícito llamas a crear_evento / modificar_evento / eliminar_evento con confirmado: true. Si dice que sí de inmediato al pedirlo ("agéndame X el jueves a las 11"), eso ya cuenta como confirmación.
+- Para reuniones y eventos que no son tareas de ADA (agendar, mover o borrar): primero di exactamente qué harás ("¿Te agendo reunión con Paola el jueves a las 11, una hora?") y espera su sí. Solo con un sí explícito llamas a crear_evento / modificar_evento / eliminar_evento con confirmado: true. Si dice que sí de inmediato al pedirlo ("agéndame X el jueves a las 11"), eso ya cuenta como confirmación.
 - Para coordinar con otra persona: revisa la agenda, propone 2 o 3 horarios libres y redacta el mensaje con proponer_mensaje.
 - Si el calendario no está conectado, díselo una vez y sigue ayudando sin él.
 
@@ -211,7 +221,7 @@ async function historialParaClaude(conversacionId, limite = 30) {
 // ---------- Conversación ----------
 
 const ETIQUETAS = {
-  registrar_item: (i, r) => r.item ? `${nombreTipo(r.item.tipo)}${r.item.proyecto ? ` · ${r.item.proyecto}` : ''}` : null,
+  registrar_item: (i, r) => r.item ? `${nombreTipo(r.item.tipo)}${r.item.proyecto ? ` · ${r.item.proyecto}` : ''}${r.calendario && r.calendario.agendado ? ` · 📅 ${r.calendario.aviso}` : ''}` : null,
   actualizar_item: (i, r) => r.item ? `Actualizado: ${r.item.texto.slice(0, 40)} (${r.item.estado})` : null,
   iniciar_foco: (i, r) => r.foco ? `Foco: ${r.foco.proyecto || r.foco.descripcion}` : null,
   cerrar_foco: (i, r) => r.cerrado ? `Foco cerrado (${r.cerrado.minutos} min)` : null,

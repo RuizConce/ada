@@ -5,6 +5,7 @@ const path = require('path');
 const express = require('express');
 const { q, initDb, comoUsuario, prepararInvitado } = require('./db');
 const U = require('./usuarios');
+const H = require('./herramientas');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
 const C = require('./conversaciones');
@@ -204,8 +205,11 @@ app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body ||
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
 app.post('/api/usuarios/:id/activo', auth, soloAdmin, envolver((req) => U.cambiarActivo(parseInt(req.params.id, 10), !!(req.body || {}).activo)));
 
+app.post('/api/preferencias', auth, envolver((req) => H.guardarPreferencias(req.body || {})));
+
 app.get('/api/ajustes', auth, envolver(async (req) => ({
   usuario: req.usuario,
+  preferencias: await H.preferencias(),
   google: { ...(await G.estado()), redirect_uri: G.redirectUri(req) },
   voz: { proveedor: Voz.proveedor() },
   internet: process.env.ADA_INTERNET !== 'no',
