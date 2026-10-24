@@ -100,6 +100,12 @@ Tu trabajo no es solo obedecer: también es cuestionar, sin imponerte ni interru
 - Ante una DECISIÓN importante (dinero, socios, abandonar o abrir un proyecto, compromisos con terceros), antes de registrarla muestra en pocas líneas 2–3 alternativas, sus riesgos y qué se pierde con cada una. Si ya lo pensó y lo dice, registra sin sermonear.
 - Si aparece una IDEA nueva mientras hay compromisos vencidos, regístrala y recuérdalo en una línea, sin drama.
 
+HONESTIDAD SOBRE LO QUE REVISASTE
+- Solo das datos de correos, archivos, agenda o internet si salen de una herramienta: las que llamas en este turno o las que aparecen en "LO QUE YA REVISASTE EN ESTA CONVERSACIÓN". Si no está ahí, llama la herramienta antes de responder. Nunca supongas el contenido de algo que no abriste.
+- Lo que está en "LO QUE YA REVISASTE" lo leíste de verdad: úsalo con confianza. No digas que antes no lo habías revisado ni pidas perdón por eso.
+- Si de verdad te equivocaste, corrígelo en una frase y sigue. No pidas disculpas por no haber terminado algo: di qué falta y continúa.
+- "Sigue", "sigue leyendo", "continúa": retoma donde quedaste. Si el documento venía incompleto, vuelve a llamar leer_drive con para_seguir.desde; si ya lo tenías completo, sigue con lo que no alcanzaste a decir.
+
 ESTILO
 Español chileno, cercano y profesional, como una colega de confianza (no como un sistema). Evita frases de servicio al cliente y no repitas lo que Cristian acaba de decir. Breve: normalmente 1 a 4 líneas. Confirma lo registrado en forma compacta (ej: "Anotado: compromiso con Paola, enviar planos, jue 23 18:00"). No celebres por celebrar. Sin emojis salvo ✓. Usa **negrita** y listas cortas solo cuando ayuden. Resuelve fechas relativas ("mañana", "el viernes") usando la fecha actual del contexto.`;
 
@@ -156,6 +162,30 @@ async function construirContexto() {
 }
 
 // ---------- Historial ----------
+
+const recortarTexto = (t, max) => (t && t.length > max ? `${t.slice(0, max)}…[recortado]` : t);
+
+// Lo que ADA consultó con herramientas en turnos anteriores de esta conversación. Sin esto, en el
+// turno siguiente solo ve su respuesta y cree que inventó los datos ("perdona, no lo había revisado").
+async function revisadoEnConversacion(conversacionId, maxCaracteres = 16000) {
+  const filas = await q(
+    "SELECT revisado, creado_en FROM mensajes WHERE conversacion_id = ? AND rol = 'assistant' AND revisado IS NOT NULL ORDER BY id DESC LIMIT 8",
+    [conversacionId]
+  );
+  const partes = [];
+  let total = 0;
+  for (const f of filas) {
+    let lista;
+    try { lista = JSON.parse(f.revisado); } catch (_) { continue; }
+    for (const r of lista) {
+      const linea = `- ${F.fmt(f.creado_en)} · ${r.herramienta}(${r.entrada}) → ${r.resultado}`;
+      if (total + linea.length > maxCaracteres) return partes.join('\n');
+      partes.push(linea);
+      total += linea.length;
+    }
+  }
+  return partes.join('\n');
+}
 
 // Historial de la conversación actual. Si recién empieza, incluye el cierre de la anterior para dar continuidad.
 async function historialParaClaude(conversacionId, limite = 30) {
@@ -354,7 +384,12 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   if (opciones.voz && opciones.acuse) {
     system.push({ type: 'text', text: `Ya dijiste en voz "${opciones.acuse}" apenas Cristian terminó de hablar. No empieces con otra reacción ni muletilla: ve directo a lo que quieres decir.` });
   }
+  const revisadoAntes = await revisadoEnConversacion(conversacionId);
+  if (revisadoAntes) {
+    system.push({ type: 'text', text: `LO QUE YA REVISASTE EN ESTA CONVERSACIÓN (resultados reales de tus herramientas en turnos anteriores, del más reciente al más antiguo; pueden venir recortados):\n${revisadoAntes}` });
+  }
   const tools = herramientasDisponibles();
+  const revisado = []; // herramientas usadas en este turno, para recordarlas en los siguientes
 
   const acciones = [];
   const documentos = [];
@@ -382,10 +417,14 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     if (resp.stop_reason !== 'tool_use') break;
 
     messages.push({ role: 'assistant', content: resp.content });
+    for (const b of resp.content) {
+      if (b.type === 'server_tool_use') revisado.push({ herramienta: b.name, entrada: recortarTexto(JSON.stringify(b.input), 200), resultado: '(búsqueda en internet hecha; lo encontrado está en tu respuesta de ese turno)' });
+    }
     const resultados = [];
     for (const bloque of resp.content) {
       if (bloque.type !== 'tool_use') continue;
       const r = await H.ejecutar(bloque.name, bloque.input, { conversacionId });
+      revisado.push({ herramienta: bloque.name, entrada: recortarTexto(JSON.stringify(bloque.input), 300), resultado: recortarTexto(JSON.stringify(r), 4000) });
       const etiqueta = ETIQUETAS[bloque.name] && !r.error ? ETIQUETAS[bloque.name](bloque.input, r) : null;
       if (etiqueta) acciones.push({ herramienta: bloque.name, etiqueta });
       if (bloque.name === 'crear_archivo' && r.ok) {
@@ -413,8 +452,8 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     respuestaFinal = documentos.length || archivos.length ? 'Te lo dejé en pantalla.' : 'Listo.';
     alEvento('texto', { delta: respuestaFinal });
   }
-  await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('assistant', ?, ?, ?)",
-    [respuestaFinal, conversacionId, new Date()]);
+  await q("INSERT INTO mensajes (rol, contenido, conversacion_id, revisado, creado_en) VALUES ('assistant', ?, ?, ?, ?)",
+    [respuestaFinal, conversacionId, revisado.length ? JSON.stringify(revisado) : null, new Date()]);
   return { respuesta: respuestaFinal, acciones, documentos, archivos, conversacion_id: conversacionId };
 }
 

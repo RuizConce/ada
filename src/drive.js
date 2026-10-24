@@ -118,9 +118,13 @@ async function listarCarpeta(a = {}) {
 
 // ---------- Leer ----------
 
-function recortar(texto, max) {
-  if (texto.length <= max) return { texto, completo: true };
-  return { texto: `${texto.slice(0, max)}\n[…recortado: ${texto.length - max} caracteres más]`, completo: false };
+// Devuelve un tramo del texto; si queda más, indica desde dónde seguir leyendo.
+function recortar(textoCompleto, max, desdeDado = 0) {
+  const desde = Math.max(0, Math.min(desdeDado, textoCompleto.length));
+  const texto = textoCompleto.slice(desde, desde + max);
+  const fin = desde + texto.length;
+  if (fin >= textoCompleto.length) return { texto, completo: desde === 0, ...(desde ? { leido_desde: desde, hasta_el_final: true } : {}) };
+  return { texto, completo: false, leido_desde: desde, quedan_caracteres: textoCompleto.length - fin, para_seguir: { desde: fin } };
 }
 
 async function leerHoja(id, maxFilas = 300) {
@@ -139,7 +143,7 @@ async function leerHoja(id, maxFilas = 300) {
 }
 
 // Convierte una copia temporal a formato Google para poder leer Word, Excel o PDF.
-async function leerConvirtiendo(f, destino, max) {
+async function leerConvirtiendo(f, destino, max, desde = 0) {
   const copia = await gfetch(`${DRIVE}/files/${f.id}/copy?fields=id`, {
     method: 'POST',
     body: JSON.stringify({ name: `ADA temporal - ${f.name}`, mimeType: destino }),
@@ -147,7 +151,7 @@ async function leerConvirtiendo(f, destino, max) {
   try {
     if (destino.endsWith('spreadsheet')) return { tipo: TIPOS[f.mimeType], ...(await leerHoja(copia.id)) };
     const res = await gfetch(`${DRIVE}/files/${copia.id}/export?mimeType=text/plain`, { crudo: true });
-    return { tipo: TIPOS[f.mimeType], ...recortar(await res.text(), max) };
+    return { tipo: TIPOS[f.mimeType], ...recortar(await res.text(), max, desde) };
   } finally {
     gfetch(`${DRIVE}/files/${copia.id}`, { method: 'DELETE' }).catch(() => {});
   }
@@ -156,24 +160,25 @@ async function leerConvirtiendo(f, destino, max) {
 async function leer(a = {}) {
   if (!a.id) throw new Error('id es obligatorio (búscalo con buscar_drive)');
   const max = Math.min(parseInt(a.max_caracteres, 10) || 20000, 60000);
+  const desde = Math.max(0, parseInt(a.desde, 10) || 0);
   const f = await gfetch(`${DRIVE}/files/${encodeURIComponent(a.id)}?fields=${CAMPOS}&supportsAllDrives=true`);
   const base = { id: f.id, nombre: f.name, enlace: f.webViewLink };
   const m = f.mimeType;
   if (m === 'application/vnd.google-apps.spreadsheet') return { ...base, tipo: 'Google Sheets', ...(await leerHoja(f.id)) };
   if (m === 'application/vnd.google-apps.document' || m === 'application/vnd.google-apps.presentation') {
     const res = await gfetch(`${DRIVE}/files/${f.id}/export?mimeType=text/plain`, { crudo: true });
-    return { ...base, tipo: TIPOS[m], ...recortar(await res.text(), max) };
+    return { ...base, tipo: TIPOS[m], ...recortar(await res.text(), max, desde) };
   }
   if (m === 'application/vnd.google-apps.folder') return { ...base, tipo: 'Carpeta', ...(await listarCarpeta({ carpeta_id: f.id })) };
   if (m.startsWith('text/')) {
     const res = await gfetch(`${DRIVE}/files/${f.id}?alt=media`, { crudo: true });
-    return { ...base, tipo: TIPOS[m] || 'Texto', ...recortar(await res.text(), max) };
+    return { ...base, tipo: TIPOS[m] || 'Texto', ...recortar(await res.text(), max, desde) };
   }
   if (m.includes('spreadsheetml') || m === 'application/vnd.ms-excel') {
-    return { ...base, ...(await leerConvirtiendo(f, 'application/vnd.google-apps.spreadsheet', max)) };
+    return { ...base, ...(await leerConvirtiendo(f, 'application/vnd.google-apps.spreadsheet', max, desde)) };
   }
   if (m === 'application/pdf' || m.includes('wordprocessingml') || m === 'application/msword' || m.includes('opendocument.text') || m === 'application/rtf') {
-    return { ...base, ...(await leerConvirtiendo(f, 'application/vnd.google-apps.document', max)) };
+    return { ...base, ...(await leerConvirtiendo(f, 'application/vnd.google-apps.document', max, desde)) };
   }
   return { ...base, tipo: TIPOS[m] || m, nota: 'No puedo leer el contenido de este tipo de archivo; solo sus datos.' };
 }
@@ -329,8 +334,8 @@ H.registrar([
   },
   {
     name: 'leer_drive',
-    description: 'Lee el contenido de un archivo de Drive para resumirlo, analizarlo o responder preguntas: Google Docs, Sheets (con todas sus hojas), Slides, Word, Excel, PDF, CSV y texto.',
-    input_schema: { type: 'object', properties: { id: ID, max_caracteres: { type: 'integer' } }, required: ['id'] },
+    description: 'Lee el contenido de un archivo de Drive para resumirlo, analizarlo o responder preguntas: Google Docs, Sheets (con todas sus hojas), Slides, Word, Excel, PDF, CSV y texto. Si un documento largo viene incompleto, el resultado trae para_seguir.desde: vuelve a llamar con desde para leer lo que sigue.',
+    input_schema: { type: 'object', properties: { id: ID, max_caracteres: { type: 'integer' }, desde: { type: 'integer', description: 'Carácter desde el que seguir leyendo un documento largo' } }, required: ['id'] },
   },
   {
     name: 'crear_carpeta_drive',

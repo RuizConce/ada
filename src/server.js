@@ -3,7 +3,7 @@ if (!process.env.TZ) process.env.TZ = 'America/Santiago';
 
 const path = require('path');
 const express = require('express');
-const { q, initDb, comoUsuario } = require('./db');
+const { q, initDb, comoUsuario, prepararInvitado } = require('./db');
 const U = require('./usuarios');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
@@ -49,6 +49,9 @@ async function auth(req, res, next) {
   try { u = await U.desdeToken(token); } catch (_) {}
   if (!u) return res.status(401).json({ error: 'No autorizado' });
   req.usuario = u;
+  if (u.id !== 1) {
+    try { await prepararInvitado(u.id); } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
   comoUsuario(u, next);
 }
 
