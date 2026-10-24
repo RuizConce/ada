@@ -261,9 +261,11 @@ async function editarDocumento(a = {}) {
 
 // ---------- Subir lo que ADA crea ----------
 
-let carpetaAdaId = null;
+const carpetasAda = new Map(); // por persona
 async function carpetaADA() {
-  if (carpetaAdaId) return carpetaAdaId;
+  const uid = require('./db').usuario().id;
+  if (carpetasAda.has(uid)) return carpetasAda.get(uid);
+  let carpetaAdaId;
   const params = new URLSearchParams({
     q: "name = 'ADA' and mimeType = 'application/vnd.google-apps.folder' and 'root' in parents and trashed = false",
     fields: 'files(id)',
@@ -271,6 +273,7 @@ async function carpetaADA() {
   const r = await gfetch(`${DRIVE}/files?${params}`);
   if (r.files.length) carpetaAdaId = r.files[0].id;
   else carpetaAdaId = (await crearCarpeta({ nombre: 'ADA' })).carpeta.id;
+  carpetasAda.set(uid, carpetaAdaId);
   return carpetaAdaId;
 }
 

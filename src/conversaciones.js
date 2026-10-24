@@ -1,6 +1,6 @@
 // Conversaciones: cada sesión con ADA (desde que la abres hasta que la cierras) queda archivada
 // con título, resumen y proyecto. También guarda los documentos que ADA entrega en pantalla.
-const { q } = require('./db');
+const { q, usuario } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
 const { claude, MODELO } = require('./claude');
@@ -71,12 +71,12 @@ function recortar(t, n) {
 // Pide a Claude un título, resumen y proyecto para la conversación.
 async function titular(id, mensajes) {
   const proyectos = (await H.listarProyectos()).map((p) => p.nombre);
-  let transcripcion = mensajes.map((m) => `${m.rol === 'user' ? 'Cristian' : 'ADA'}: ${m.contenido}`).join('\n');
+  let transcripcion = mensajes.map((m) => `${m.rol === 'user' ? usuario().nombre : 'ADA'}: ${m.contenido}`).join('\n');
   if (transcripcion.length > 8000) transcripcion = `${transcripcion.slice(0, 3000)}\n[…]\n${transcripcion.slice(-4500)}`;
   const resp = await claude().messages.create({
     model: MODELO(),
     max_tokens: 300,
-    system: 'Archivas conversaciones entre Cristian y su asistente ADA. Respondes solo con JSON válido, sin texto adicional.',
+    system: `Archivas conversaciones entre ${usuario().nombre} y su asistente ADA. Respondes solo con JSON válido, sin texto adicional.`,
     messages: [{
       role: 'user',
       content: `Proyectos existentes: ${JSON.stringify(proyectos)}

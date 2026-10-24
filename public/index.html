@@ -23,7 +23,8 @@
       <div class="marca">ADA</div>
       <p class="lema">Lo que piensas, lo que quieres hacer y lo que logras.</p>
       <form id="login-form">
-        <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password" required>
+        <input id="nombre" type="text" placeholder="Tu nombre" autocomplete="given-name" autocapitalize="words" maxlength="40" required>
+        <input id="password" type="password" placeholder="Clave" autocomplete="current-password" autocapitalize="none" required>
         <button type="submit">Entrar</button>
         <p id="login-error" class="error" role="alert"></p>
       </form>
@@ -130,7 +131,7 @@
       </header>
       <div class="panel-cuerpo ajustes">
         <section class="ajuste">
-          <h3>Google (Calendar y Drive)</h3>
+          <h3>Google (Calendar, Drive y Gmail)</h3>
           <p id="google-estado" class="meta">Revisando…</p>
           <div id="google-acciones" class="ajuste-botones"></div>
           <div id="google-ayuda" class="ayuda" hidden></div>
@@ -148,7 +149,25 @@
           <h3>Inteligencia</h3>
           <p id="ia-estado" class="meta"></p>
         </section>
+        <section id="ajuste-personas" class="ajuste" hidden>
+          <h3>Personas de la prueba</h3>
+          <p class="meta">Cada persona entra con su nombre y la clave que le des. Tiene su propia ADA: no ve tus datos ni tú los suyos desde la app.</p>
+          <div id="lista-personas" class="lista-personas"></div>
+          <form id="form-persona" class="form-persona">
+            <input id="persona-nota" type="text" placeholder="¿Para quién? (ej: Paola)" maxlength="40" autocomplete="off">
+            <button type="submit" class="principal">Crear clave</button>
+          </form>
+          <div id="invitacion" class="invitacion" hidden>
+            <p class="meta">Clave de <strong id="inv-para"></strong> (cópiala ahora, después no se vuelve a mostrar):</p>
+            <div id="inv-clave" class="inv-clave"></div>
+            <div class="ajuste-botones">
+              <button id="inv-whatsapp" type="button" class="principal">Enviar por WhatsApp</button>
+              <button id="inv-copiar" type="button">Copiar invitación</button>
+            </div>
+          </div>
+        </section>
         <section class="ajuste">
+          <p id="sesion-de" class="meta"></p>
           <button id="cerrar-sesion" type="button" class="secundario">Cerrar sesión</button>
         </section>
       </div>

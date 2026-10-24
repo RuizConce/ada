@@ -1,6 +1,7 @@
 // Gmail: buscar, leer y resumir correos; preparar respuestas (Cristian las envía con un botón);
 // dejar borradores y archivar con confirmación.
 const G = require('./google');
+const { usuario } = require('./db');
 const H = require('./herramientas');
 
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
@@ -184,11 +185,12 @@ async function disponible() {
 }
 
 // Correos recientes no leídos para el contexto (con caché corta).
-let cache = null;
+const cache = new Map(); // por persona
 async function paraContexto() {
   try {
     if (!(await disponible())) return {};
-    if (cache && cache.hasta > Date.now()) return cache.datos;
+    const c = cache.get(usuario().id);
+    if (c && c.hasta > Date.now()) return c.datos;
     const r = await Promise.race([
       buscar({ consulta: 'in:inbox is:unread newer_than:2d -category:promotions -category:social', limite: 6 }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('tiempo')), 3000)),
@@ -197,7 +199,7 @@ async function paraContexto() {
       correo: 'Gmail conectado',
       correos_no_leidos_recientes: r.correos.map((c) => `${c.de.replace(/<.*>/, '').trim()}: ${c.asunto}`),
     };
-    cache = { datos, hasta: Date.now() + 3 * 60 * 1000 };
+    cache.set(usuario().id, { datos, hasta: Date.now() + 3 * 60 * 1000 });
     return datos;
   } catch (_) {
     return {};

@@ -108,6 +108,12 @@ ADA crea `.docx` (desde markdown: títulos, listas, negritas, tablas) y `.xlsx` 
 
 ADA busca en internet con la herramienta de búsqueda de la API de Claude (10 USD por cada 1.000 búsquedas, máximo 3 por respuesta: `ADA_MAX_BUSQUEDAS`). Se desactiva con `ADA_INTERNET=no`.
 
+## Personas de la prueba
+
+Cristian entra con su nombre y la clave `ADA_PASSWORD` (administrador). En ⚙ Ajustes → **Personas de la prueba** crea una clave para cada invitado y se la envía por WhatsApp. Cada persona entra con **su nombre y su clave**; ADA la llama por ese nombre.
+
+Cada persona tiene su **propia base de datos** (`<base>_u2`, `<base>_u3`…), así que no ve los proyectos, conversaciones, agenda ni correo de nadie más, y puede conectar su propio Google. *Quitar acceso* o *Nueva clave* cierra de inmediato sus sesiones. El usuario de MySQL debe poder crear bases (en Railway lo hace, porque usa `root`).
+
 ## Uso diario
 
 - **Al empezar**: escribe cualquier cosa; el primer mensaje del día trae tus 3 prioridades.

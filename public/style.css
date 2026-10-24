@@ -403,3 +403,22 @@ button:disabled { opacity: 0.45; cursor: default; }
 .compartido-acciones button, .compartido-form button { padding: 11px 12px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio); }
 .compartido-acciones .principal { border: 0; color: #04140d; background: linear-gradient(90deg, var(--verde), var(--verde-2)); font-weight: 700; }
 .compartido-form input { padding: 11px 12px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio); color: var(--texto); font: inherit; }
+
+/* Personas de la prueba */
+.lista-personas { display: grid; gap: 8px; margin: 10px 0; }
+.persona { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--vidrio); border: 1px solid var(--borde); }
+.persona .quien { flex: 1; min-width: 0; }
+.persona .quien strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.persona .quien small { color: var(--texto-suave); font-size: 12px; }
+.persona.inactiva { opacity: 0.55; }
+.persona button { flex: none; font-size: 13px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--borde); background: none; }
+.form-persona { display: flex; gap: 8px; }
+.form-persona input { flex: 1; min-width: 0; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio); color: var(--texto); font: inherit; }
+.form-persona button { flex: none; padding: 11px 14px; border-radius: 12px; }
+.invitacion { margin-top: 12px; padding: 12px; border-radius: 14px; border: 1px solid var(--verde); background: rgba(94, 234, 168, 0.06); }
+.inv-clave { font: 700 26px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 2px; color: var(--verde); margin: 6px 0 10px; text-align: center; }
+.persona { flex-wrap: wrap; }
+.persona .quien { flex: 1 1 100%; }
+.persona button { flex: 1; }
+.invitacion .ajuste-botones { display: flex; gap: 8px; flex-wrap: wrap; }
+.invitacion .ajuste-botones button { flex: 1 1 140px; }

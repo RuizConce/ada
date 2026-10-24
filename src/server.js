@@ -2,9 +2,9 @@
 if (!process.env.TZ) process.env.TZ = 'America/Santiago';
 
 const path = require('path');
-const crypto = require('crypto');
 const express = require('express');
-const { q, initDb } = require('./db');
+const { q, initDb, comoUsuario } = require('./db');
+const U = require('./usuarios');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
 const C = require('./conversaciones');
@@ -17,44 +17,44 @@ app.set('trust proxy', 1); // Railway está detrás de un proxy
 app.use(express.json({ limit: '200kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
 
-// ---------- Autenticación simple (una sola persona) ----------
-
-function tokenEsperado() {
-  const pass = process.env.ADA_PASSWORD;
-  if (!pass) return null;
-  return crypto.createHmac('sha256', pass).update('ada-sesion-v1').digest('hex');
-}
-
-function igualSeguro(a, b) {
-  const ba = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
-}
+// ---------- Acceso: cada persona con su nombre y su clave ----------
 
 const intentos = new Map(); // freno básico a fuerza bruta
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const ip = req.ip;
   const reg = intentos.get(ip) || { n: 0, hasta: 0 };
   if (reg.hasta > Date.now()) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos.' });
-  const esperado = tokenEsperado();
-  if (!esperado) return res.status(500).json({ error: 'Falta configurar ADA_PASSWORD' });
-  const { password } = req.body || {};
-  if (password && igualSeguro(password, process.env.ADA_PASSWORD)) {
-    intentos.delete(ip);
-    return res.json({ token: esperado });
+  if (!process.env.ADA_PASSWORD) return res.status(500).json({ error: 'Falta configurar ADA_PASSWORD' });
+  const { nombre, password } = req.body || {};
+  try {
+    const r = await U.ingresar(nombre, password);
+    if (r) {
+      intentos.delete(ip);
+      return res.json(r);
+    }
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message });
   }
   reg.n += 1;
   if (reg.n >= 5) { reg.hasta = Date.now() + 10 * 60 * 1000; reg.n = 0; }
   intentos.set(ip, reg);
-  res.status(401).json({ error: 'Contraseña incorrecta' });
+  res.status(401).json({ error: 'Clave incorrecta' });
 });
 
-function auth(req, res, next) {
-  const esperado = tokenEsperado();
+// Identifica a la persona y ejecuta todo lo que sigue con SU base de datos.
+async function auth(req, res, next) {
   const h = req.get('authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : '';
-  if (esperado && token && igualSeguro(token, esperado)) return next();
-  res.status(401).json({ error: 'No autorizado' });
+  let u = null;
+  try { u = await U.desdeToken(token); } catch (_) {}
+  if (!u) return res.status(401).json({ error: 'No autorizado' });
+  req.usuario = u;
+  comoUsuario(u, next);
+}
+
+function soloAdmin(req, res, next) {
+  if (req.usuario && req.usuario.admin) return next();
+  res.status(403).json({ error: 'Solo Cristian puede hacer esto' });
 }
 
 // ---------- API ----------
@@ -193,7 +193,16 @@ app.get('/api/archivos/:id', auth, async (req, res) => {
 
 // ---------- Ajustes y Google Calendar ----------
 
+app.get('/api/yo', auth, (req, res) => res.json(req.usuario));
+
+// Personas de la prueba (solo Cristian).
+app.get('/api/usuarios', auth, soloAdmin, envolver(() => U.listar()));
+app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
+app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
+app.post('/api/usuarios/:id/activo', auth, soloAdmin, envolver((req) => U.cambiarActivo(parseInt(req.params.id, 10), !!(req.body || {}).activo)));
+
 app.get('/api/ajustes', auth, envolver(async (req) => ({
+  usuario: req.usuario,
   google: { ...(await G.estado()), redirect_uri: G.redirectUri(req) },
   voz: { proveedor: Voz.proveedor() },
   internet: process.env.ADA_INTERNET !== 'no',
@@ -220,7 +229,7 @@ app.get('/api/google/conectar', (req, res) => {
 
 app.get('/api/google/callback', async (req, res) => {
   try {
-    await G.recibirCallback(req);
+    await G.recibirCallback(req); // la persona viene firmada en el state
     res.redirect('/?google=ok');
   } catch (e) {
     console.error('Google callback:', e.message);

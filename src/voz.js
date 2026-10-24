@@ -28,17 +28,19 @@ async function falla(res, quien) {
 }
 
 // Voz elegida por Cristian desde la app (se guarda en la base); si no hay, la de Railway o la por defecto.
-let vozElegida = null;
-let vozCargada = false;
+const vocesElegidas = new Map(); // por persona
+const uidActual = () => require('./db').usuario().id;
 async function vozGuardada() {
-  if (vozCargada) return vozElegida;
+  const uid = uidActual();
+  if (vocesElegidas.has(uid)) return vocesElegidas.get(uid);
+  let voz = null;
   try {
     const { q } = require('./db');
     const [r] = await q("SELECT datos FROM integraciones WHERE nombre = 'voz'");
-    vozElegida = r ? JSON.parse(r.datos).google : null;
-  } catch (_) {}
-  vozCargada = true;
-  return vozElegida;
+    voz = r ? JSON.parse(r.datos).google : null;
+  } catch (_) { return null; }
+  vocesElegidas.set(uid, voz);
+  return voz;
 }
 
 async function elegirVoz(nombre) {
@@ -48,8 +50,7 @@ async function elegirVoz(nombre) {
      ON DUPLICATE KEY UPDATE datos = VALUES(datos), actualizado_en = VALUES(actualizado_en)`,
     [JSON.stringify({ google: nombre }), new Date()]
   );
-  vozElegida = nombre;
-  vozCargada = true;
+  vocesElegidas.set(uidActual(), nombre);
   return { ok: true, voz: nombre };
 }
 

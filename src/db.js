@@ -1,5 +1,13 @@
 // Conexión a MySQL y creación automática del esquema.
 const mysql = require('mysql2/promise');
+const { AsyncLocalStorage } = require('async_hooks');
+
+// Cada persona tiene su propia base de datos: Cristian (id 1) usa la principal y cada invitado
+// una aparte (railway_u2, railway_u3…). Así nadie ve lo de otro, ni su agenda ni su correo.
+const sesion = new AsyncLocalStorage();
+const CRISTIAN = { id: 1, nombre: 'Cristian', admin: true };
+const usuario = () => sesion.getStore() || CRISTIAN;
+const comoUsuario = (u, fn) => sesion.run(u, fn);
 
 const PROYECTOS_INICIALES = [
   'Huayca',
@@ -10,27 +18,44 @@ const PROYECTOS_INICIALES = [
   'Personal',
 ];
 
-let pool;
+const pools = new Map();
 
-function getPool() {
-  if (!pool) {
-    const url = process.env.DATABASE_URL || process.env.MYSQL_URL;
-    if (!url) throw new Error('Falta DATABASE_URL (en Railway: ${{MySQL.MYSQL_URL}})');
-    pool = mysql.createPool({
-      uri: url,
+function urlBase() {
+  const url = process.env.DATABASE_URL || process.env.MYSQL_URL;
+  if (!url) throw new Error('Falta DATABASE_URL (en Railway: ${{MySQL.MYSQL_URL}})');
+  return new URL(url);
+}
+const basePrincipal = () => decodeURIComponent(urlBase().pathname.replace(/^\//, ''));
+const baseDe = (id) => (id === 1 ? basePrincipal() : `${basePrincipal()}_u${parseInt(id, 10)}`);
+
+function poolDe(id) {
+  if (!pools.has(id)) {
+    const u = urlBase();
+    u.pathname = `/${encodeURIComponent(baseDe(id))}`;
+    pools.set(id, mysql.createPool({
+      uri: u.toString(),
       waitForConnections: true,
-      connectionLimit: 5,
+      connectionLimit: id === 1 ? 5 : 2,
       // Las fechas se guardan y leen en la hora local del proceso (TZ=America/Santiago).
       timezone: 'local',
       dateStrings: false,
       charset: 'utf8mb4',
-    });
+    }));
   }
-  return pool;
+  return pools.get(id);
 }
 
+const getPool = () => poolDe(usuario().id);
+
+// Consulta en la base de la persona que está usando ADA.
 async function q(sql, params = []) {
   const [rows] = await getPool().query(sql, params);
+  return rows;
+}
+
+// Consulta en la base principal (lista de personas con acceso).
+async function qPrincipal(sql, params = []) {
+  const [rows] = await poolDe(1).query(sql, params);
   return rows;
 }
 
@@ -192,6 +217,32 @@ const MIGRACIONES = [
 ];
 
 async function initDb() {
+  await comoUsuario(CRISTIAN, () => prepararBase(PROYECTOS_INICIALES));
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(80) NOT NULL,
+    clave_hash VARCHAR(200) NULL,
+    admin TINYINT NOT NULL DEFAULT 0,
+    activo TINYINT NOT NULL DEFAULT 1,
+    version INT NOT NULL DEFAULT 1,
+    nota VARCHAR(160) NULL,
+    creado_en DATETIME NOT NULL,
+    ultimo_ingreso DATETIME NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Cristian es siempre el id 1 (su clave es ADA_PASSWORD, no se guarda).
+  await qPrincipal("INSERT IGNORE INTO usuarios (id, nombre, admin, creado_en) VALUES (1, 'Cristian', 1, ?)", [new Date()]);
+}
+
+const preparadas = new Set([1]);
+// Crea (una vez) la base propia de un invitado.
+async function prepararInvitado(id) {
+  if (preparadas.has(id)) return;
+  await qPrincipal(`CREATE DATABASE IF NOT EXISTS \`${baseDe(id).replace(/`/g, '')}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await comoUsuario({ id }, () => prepararBase(['Personal']));
+  preparadas.add(id);
+}
+
+async function prepararBase(proyectosIniciales) {
   for (const sql of ESQUEMA) await q(sql);
   for (const [tabla, columna, sql] of MIGRACIONES) {
     const [{ n }] = await q(
@@ -214,11 +265,11 @@ async function initDb() {
   const [{ n }] = await q('SELECT COUNT(*) AS n FROM proyectos');
   if (n === 0) {
     const ahora = new Date();
-    for (const nombre of PROYECTOS_INICIALES) {
+    for (const nombre of proyectosIniciales) {
       await q('INSERT INTO proyectos (nombre, creado_en) VALUES (?, ?)', [nombre, ahora]);
     }
-    console.log(`ADA: proyectos iniciales creados (${PROYECTOS_INICIALES.length})`);
+    console.log(`ADA: proyectos iniciales creados (${proyectosIniciales.length}) en ${baseDe(usuario().id)}`);
   }
 }
 
-module.exports = { q, initDb, getPool };
+module.exports = { q, qPrincipal, initDb, getPool, usuario, comoUsuario, prepararInvitado, baseDe };

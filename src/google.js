@@ -1,7 +1,7 @@
 // Google Calendar: conexión OAuth con la cuenta de Cristian y herramientas de agenda para ADA.
 // Ver la agenda es libre; crear, mover o eliminar exige que Cristian lo haya confirmado.
 const crypto = require('crypto');
-const { q } = require('./db');
+const { q, usuario, comoUsuario, prepararInvitado } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
 
@@ -63,7 +63,7 @@ const enlaces = new Map(); // nonce de un solo uso → vence en 10 min
 
 function crearEnlace(req) {
   const nonce = crypto.randomBytes(16).toString('hex');
-  enlaces.set(nonce, Date.now() + 10 * 60 * 1000);
+  enlaces.set(nonce, { vence: Date.now() + 10 * 60 * 1000, uid: usuario().id });
   return `${urlBase(req)}/api/google/conectar?n=${nonce}`;
 }
 
@@ -72,10 +72,11 @@ function firmar(valor) {
 }
 
 function urlAutorizacion(req, nonce) {
-  const vence = enlaces.get(nonce);
+  const e = enlaces.get(nonce);
   enlaces.delete(nonce);
-  if (!vence || vence < Date.now()) return null;
-  const ts = Date.now().toString(36);
+  if (!e || e.vence < Date.now()) return null;
+  // El state lleva quién conecta, firmado, para guardar los tokens en su propia base.
+  const ts = `${Date.now().toString(36)}-${e.uid}`;
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID,
     redirect_uri: redirectUri(req),
@@ -90,10 +91,18 @@ function urlAutorizacion(req, nonce) {
 }
 
 async function recibirCallback(req) {
-  const { code, state, error } = req.query;
+  const { state, error } = req.query;
   if (error) throw new Error(`Google respondió: ${error}`);
   const [ts, firma] = String(state || '').split('.');
-  if (!ts || firma !== firmar(ts) || Date.now() - parseInt(ts, 36) > 15 * 60 * 1000) throw new Error('Enlace vencido o inválido');
+  const [marca, uid] = String(ts || '').split('-');
+  if (!ts || !uid || firma !== firmar(ts) || Date.now() - parseInt(marca, 36) > 15 * 60 * 1000) throw new Error('Enlace vencido o inválido');
+  const id = parseInt(uid, 10);
+  if (id !== 1) await prepararInvitado(id);
+  return comoUsuario({ id }, () => guardarCallback(req));
+}
+
+async function guardarCallback(req) {
+  const { code } = req.query;
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -120,7 +129,7 @@ async function recibirCallback(req) {
     vence: Date.now() + (t.expires_in - 60) * 1000,
     email,
   });
-  cacheAgenda = null;
+  cacheAgenda.delete(usuario().id);
 }
 
 async function desconectar() {
@@ -129,7 +138,7 @@ async function desconectar() {
     fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(d.refresh_token)}`, { method: 'POST' }).catch(() => {});
   }
   await q("DELETE FROM integraciones WHERE nombre = 'google'");
-  cacheAgenda = null;
+  cacheAgenda.delete(usuario().id);
   return { ok: true };
 }
 
@@ -253,7 +262,7 @@ async function crearEvento(a) {
   if (a.descripcion) cuerpo.description = a.descripcion;
   if (a.ubicacion) cuerpo.location = a.ubicacion;
   const e = await api(`/calendars/${encodeURIComponent(CALENDARIO())}/events`, { method: 'POST', body: JSON.stringify(cuerpo) });
-  cacheAgenda = null;
+  cacheAgenda.delete(usuario().id);
   return { ok: true, evento: eventoPublico(e) };
 }
 
@@ -272,7 +281,7 @@ async function modificarEvento(a) {
     Object.assign(cuerpo, cuerpoFechas(a, { duracionMs: new Date(fin) - new Date(ini) }));
   }
   const e = await api(ruta, { method: 'PATCH', body: JSON.stringify(cuerpo) });
-  cacheAgenda = null;
+  cacheAgenda.delete(usuario().id);
   return { ok: true, evento: eventoPublico(e) };
 }
 
@@ -280,17 +289,18 @@ async function eliminarEvento(a) {
   if (a.confirmado !== true) return SIN_CONFIRMAR;
   if (!a.id) throw new Error('id es obligatorio (búscalo con ver_agenda)');
   await api(`/calendars/${encodeURIComponent(CALENDARIO())}/events/${encodeURIComponent(a.id)}`, { method: 'DELETE' });
-  cacheAgenda = null;
+  cacheAgenda.delete(usuario().id);
   return { ok: true };
 }
 
 // Agenda de las próximas horas para el contexto de ADA (con caché corta para no demorar cada mensaje).
-let cacheAgenda = null;
+const cacheAgenda = new Map(); // por persona
 async function agendaParaContexto() {
   if (!configurado()) return { calendario: 'no configurado' };
   const d = await leer();
   if (!d || !d.refresh_token) return { calendario: 'no conectado (Cristian puede conectarlo en Ajustes)' };
-  if (cacheAgenda && cacheAgenda.hasta > Date.now()) return cacheAgenda.datos;
+  const c = cacheAgenda.get(usuario().id);
+  if (c && c.hasta > Date.now()) return c.datos;
   try {
     const ahora = new Date();
     const r = await Promise.race([
@@ -298,7 +308,7 @@ async function agendaParaContexto() {
       new Promise((_, rej) => setTimeout(() => rej(new Error('tiempo')), 3000)),
     ]);
     const datos = { calendario: 'conectado', agenda_proximas_36h: r.eventos.map((e) => `${e.inicio}: ${e.titulo}`) };
-    cacheAgenda = { datos, hasta: Date.now() + 3 * 60 * 1000 };
+    cacheAgenda.set(usuario().id, { datos, hasta: Date.now() + 3 * 60 * 1000 });
     return datos;
   } catch (e) {
     return { calendario: `conectado, pero no pude leerlo ahora (${e.message})` };

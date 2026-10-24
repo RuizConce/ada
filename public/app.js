@@ -4,6 +4,7 @@
 
   let token = null;
   let convId = null;          // conversación en curso
+  let yo = null;              // persona que usa ADA: { id, nombre, admin }
   let ocupado = false;        // esperando respuesta del servidor
   let docsActuales = [];      // documentos entregados en la conversación en curso
   let archivosActuales = [];  // archivos Word/Excel creados en la conversación en curso
@@ -1292,11 +1293,82 @@
     }
     $('#voz-estado').textContent = NOMBRE_VOZ[a.voz.proveedor] || a.voz.proveedor;
     pintarVoces();
+    if (a.usuario) {
+      yo = a.usuario;
+      $('#sesion-de').textContent = `Entraste como ${a.usuario.nombre}${a.usuario.admin ? ' (administrador)' : ''}.`;
+      $('#ajuste-personas').hidden = !a.usuario.admin;
+      if (a.usuario.admin) pintarPersonas();
+    }
     $('#ia-estado').textContent = `Modelo: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
   }
 
+  // ---------- Personas de la prueba (solo Cristian) ----------
+
+  async function pintarPersonas() {
+    const cont = $('#lista-personas');
+    let lista = [];
+    try { lista = await api('/api/usuarios'); } catch (e) { cont.textContent = e.message; return; }
+    cont.innerHTML = '';
+    if (!lista.length) { cont.innerHTML = '<p class="meta">Aún no invitas a nadie.</p>'; return; }
+    for (const p of lista) {
+      const fila = document.createElement('div');
+      fila.className = `persona${p.activo ? '' : ' inactiva'}`;
+      fila.innerHTML = '<div class="quien"><strong></strong><small></small></div><button type="button" class="nueva"></button><button type="button" class="activo"></button>';
+      const nombre = p.nota && p.nota !== p.nombre && p.nombre !== 'Invitado' ? `${p.nombre} (${p.nota})` : p.nombre;
+      fila.querySelector('strong').textContent = nombre;
+      fila.querySelector('small').textContent = !p.activo ? 'Sin acceso'
+        : p.ultimo_ingreso ? `Último ingreso: ${fechaCorta(p.ultimo_ingreso)}` : 'Todavía no entra';
+      const nueva = fila.querySelector('.nueva');
+      nueva.textContent = 'Nueva clave';
+      nueva.addEventListener('click', async () => {
+        try {
+          const r = await api(`/api/usuarios/${p.id}/clave`, { method: 'POST' });
+          mostrarInvitacion(p.nota || p.nombre, r.clave);
+          pintarPersonas();
+        } catch (e) { aviso(e.message, true); }
+      });
+      const act = fila.querySelector('.activo');
+      act.textContent = p.activo ? 'Quitar acceso' : 'Devolver acceso';
+      act.addEventListener('click', async () => {
+        try {
+          await api(`/api/usuarios/${p.id}/activo`, { method: 'POST', body: JSON.stringify({ activo: !p.activo }) });
+          aviso(p.activo ? `${nombre} ya no puede entrar.` : `${nombre} puede volver a entrar.`);
+          pintarPersonas();
+        } catch (e) { aviso(e.message, true); }
+      });
+      cont.appendChild(fila);
+    }
+  }
+
+  let invitacionTexto = '';
+  function mostrarInvitacion(para, clave) {
+    $('#inv-para').textContent = para || 'la persona';
+    $('#inv-clave').textContent = clave;
+    invitacionTexto = `Hola${para ? ` ${para}` : ''}, te invito a probar ADA, mi asistente personal con IA.\n\n` +
+      `1. Entra a ${location.origin}\n2. Escribe tu nombre y esta clave: ${clave}\n` +
+      '3. Instálala en tu teléfono: en Chrome, menú ⋮ → "Instalar app" (en iPhone: Safari → Compartir → "Agregar a inicio").\n\n' +
+      'Háblale como a una asistente: cuéntale qué tienes que hacer, tus pendientes y tus ideas. Cada uno tiene su propia ADA, privada.';
+    $('#invitacion').hidden = false;
+  }
+  $('#form-persona').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nota = $('#persona-nota').value.trim();
+    try {
+      const r = await api('/api/usuarios', { method: 'POST', body: JSON.stringify({ nota }) });
+      $('#persona-nota').value = '';
+      mostrarInvitacion(nota, r.clave);
+      pintarPersonas();
+    } catch (err) { aviso(err.message, true); }
+  });
+  $('#inv-whatsapp').addEventListener('click', () => window.open(`https://wa.me/?text=${encodeURIComponent(invitacionTexto)}`, '_blank'));
+  $('#inv-copiar').addEventListener('click', async (ev) => {
+    const ok = await copiar(invitacionTexto);
+    ev.target.textContent = ok ? 'Copiada ✓' : 'No se pudo';
+    setTimeout(() => { ev.target.textContent = 'Copiar invitación'; }, 1800);
+  });
+
   // Elegir voz: escuchar cada una y dejar la que guste.
-  const MUESTRA_VOZ = 'Hola Cristian, soy ADA. ¿En qué te ayudo hoy?';
+  const muestraVoz = () => `Hola${yo && yo.nombre ? ` ${yo.nombre}` : ''}, soy ADA. ¿En qué te ayudo hoy?`;
 
   async function probarVoz(nombre, boton) {
     desbloquearVoz();
@@ -1307,7 +1379,7 @@
       const res = await fetch('/api/voz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ texto: MUESTRA_VOZ, voz: nombre }),
+        body: JSON.stringify({ texto: muestraVoz(), voz: nombre }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
       const url = URL.createObjectURL(await res.blob());
@@ -1476,7 +1548,10 @@
   function salir() {
     token = null;
     detenerVoz();
+    yo = null;
+    guardarConv(null);
     try { localStorage.removeItem('ada_token'); } catch (_) {}
+    try { $('#nombre').value = localStorage.getItem('ada_nombre') || ''; } catch (_) {}
     $('#app').hidden = true;
     $('#login').hidden = false;
   }
@@ -1515,9 +1590,12 @@
     e.preventDefault();
     $('#login-error').textContent = '';
     try {
-      const r = await api('/api/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) });
+      const nombre = $('#nombre').value.trim();
+      const r = await api('/api/login', { method: 'POST', body: JSON.stringify({ nombre, password: $('#password').value.trim() }) });
       token = r.token;
-      try { localStorage.setItem('ada_token', token); } catch (_) {}
+      yo = r.usuario;
+      try { localStorage.setItem('ada_token', token); localStorage.setItem('ada_nombre', nombre); } catch (_) {}
+      $('#password').value = '';
       entrar();
     } catch (err) {
       $('#login-error').textContent = err.message;

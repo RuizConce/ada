@@ -1,5 +1,5 @@
 // Cerebro de ADA: arma el contexto, llama a Claude con herramientas y guarda la conversación.
-const { q } = require('./db');
+const { q, usuario } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
 const E = require('./encargos'); // registra las herramientas de contactos y encargos
@@ -284,7 +284,30 @@ function herramientasDisponibles() {
 }
 
 // Llama a Claude en modo streaming: va entregando el texto a medida que se genera.
+// ADA está escrita para Cristian; con otra persona se reemplaza el nombre en las instrucciones,
+// en las herramientas y en los resultados que ADA recibe (no en lo que la persona escribió).
+const INTRO_CRISTIAN = 'Cristian, fundador y desarrollador en Iquique, Chile. Lleva varios proyectos en paralelo.';
+function personalizar(texto, u) {
+  if (u.id === 1 && u.nombre === 'Cristian') return texto;
+  let t = texto;
+  if (u.id !== 1) {
+    t = t.replace(INTRO_CRISTIAN, `${u.nombre}. Está probando ADA por una semana como su asistente personal. Todavía no sabes a qué se dedica ni dónde vive: averígualo conversando y guárdalo en su proyecto "Personal" con guardar_proyecto. Háblale en femenino o masculino según su nombre.`);
+  }
+  return t.replace(/\bCristian\b/g, u.nombre);
+}
+const personalizarJSON = (obj, u) => JSON.parse(personalizar(JSON.stringify(obj), { ...u, nombre: JSON.stringify(u.nombre).slice(1, -1) }));
+
 async function llamarClaude(params, alEvento) {
+  const u = usuario();
+  if (u.id !== 1 || u.nombre !== 'Cristian') {
+    params = {
+      ...params,
+      system: params.system.map((b) => ({ ...b, text: personalizar(b.text, u) })),
+      tools: personalizarJSON(params.tools, u),
+      messages: params.messages.map((m) => (Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result')
+        ? { ...m, content: personalizarJSON(m.content, u) } : m)),
+    };
+  }
   const cli = claude();
   if (typeof cli.messages.stream !== 'function') {
     const r = await cli.messages.create(params);
