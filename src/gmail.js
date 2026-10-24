@@ -18,7 +18,9 @@ async function gfetch(ruta, opciones = {}) {
     if (res.status === 403 && /insufficient|scope/i.test(msg)) {
       throw new Error('Falta el permiso de Gmail. Cristian debe reconectar Google en Ajustes para activarlo.');
     }
-    if (/has not been used|is disabled/i.test(msg)) throw new Error('Falta habilitar la Gmail API en Google Cloud.');
+    if (/has not been used|is disabled/i.test(msg)) {
+      throw new Error('La Gmail API no está habilitada. Cristian mismo puede activarla (es su proyecto): Google Cloud → proyecto ADAIA → APIs y servicios → Biblioteca → Gmail API → Habilitar. Después hay que esperar unos minutos; no hace falta reconectar.');
+    }
     throw new Error(msg);
   }
   return data;
