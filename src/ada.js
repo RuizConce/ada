@@ -536,8 +536,22 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     alEvento(tipo, datos);
   };
 
-  for (let vuelta = 0; vuelta < 10; vuelta++) {
-    const resp = await llamarClaude({ model: eleccion.modelo, max_tokens: eleccion.nivel === 'profundo' ? 4000 : 2000, system, tools, messages }, emitir);
+  const MAX_VUELTAS = 10;
+  const paradas = []; // por qué terminó cada paso (para los logs)
+  let ultimaConTexto = false;
+  let usoHerramientas = false;
+  let rescatado = false;
+  for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
+    // En el último paso permitido, se le pide responder sin más herramientas (antes podía quedarse callada).
+    const sinHerramientas = vuelta === MAX_VUELTAS - 1;
+    const resp = await llamarClaude({
+      model: eleccion.modelo,
+      max_tokens: eleccion.nivel === 'profundo' ? 6000 : 3000,
+      system, tools, messages,
+      ...(sinHerramientas ? { tool_choice: { type: 'none' } } : {}),
+    }, emitir);
+    paradas.push(resp.stop_reason);
+    ultimaConTexto = (resp.content || []).some((b) => b.type === 'text' && b.text && b.text.trim());
     for (const k of Object.keys(uso)) uso[k] += (resp.usage && resp.usage[k]) || 0;
     separar = true;
     // Búsquedas en internet: se anotan siempre (antes se perdían si la respuesta terminaba en el mismo paso).
@@ -556,7 +570,19 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
       messages.push({ role: 'assistant', content: resp.content });
       continue;
     }
-    if (resp.stop_reason !== 'tool_use') break;
+    if (resp.stop_reason !== 'tool_use') {
+      // Usó herramientas y terminó sin decir nada: se le pide una vez que responda con lo que encontró.
+      if (!ultimaConTexto && usoHerramientas && !rescatado && vuelta < MAX_VUELTAS - 1) {
+        rescatado = true;
+        const ultimo = messages[messages.length - 1];
+        if (ultimo && ultimo.role === 'user' && Array.isArray(ultimo.content)) {
+          ultimo.content.push({ type: 'text', text: '[Sistema: no alcanzaste a responder. Respóndele ahora con lo que encontraste en las herramientas; si algo falló o no está, dilo claro y qué propones.]' });
+          continue;
+        }
+      }
+      break;
+    }
+    usoHerramientas = true;
 
     messages.push({ role: 'assistant', content: resp.content });
     const resultados = [];
@@ -594,7 +620,13 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   let respuestaFinal = (corte >= 0 ? completo.slice(0, corte) : completo).trim();
   const detalle = corte >= 0 ? completo.slice(corte + MARCA_PANTALLA.length).trim() : '';
   if (!respuestaFinal) {
-    respuestaFinal = detalle || documentos.length || archivos.length ? 'Te lo dejé en pantalla.' : 'Listo.';
+    // Nunca un "Listo." vacío: si no hubo respuesta, se dice con honestidad qué pasó.
+    const usadas = [...new Set(revisado.map((r) => r.herramienta))];
+    if (detalle || documentos.length || archivos.length) respuestaFinal = 'Te lo dejé en pantalla.';
+    else if (acciones.length) respuestaFinal = `Hecho: ${acciones.map((a) => a.etiqueta).join(', ')}.`;
+    else if (usadas.length) respuestaFinal = `Revisé (${usadas.join(', ')}) pero no alcancé a armarte la respuesta. ¿Me lo pides de nuevo?`;
+    else respuestaFinal = 'Se me fue la respuesta. ¿Me lo repites?';
+    console.warn(`ADA sin respuesta u${usuario().id}: pasos ${paradas.join(' → ')}; herramientas ${usadas.join(', ') || 'ninguna'}`);
     alEvento('texto', { delta: respuestaFinal });
   }
   const guardado = detalle ? `${respuestaFinal}\n\n[En pantalla]\n${detalle}` : respuestaFinal;

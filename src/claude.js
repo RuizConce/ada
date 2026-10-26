@@ -20,7 +20,7 @@ function claude() {
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 // Pensar, opinar, analizar, decidir, explorar ideas.
-const PROFUNDO = /\b(piensalo|pensemos|ayudame a pensar|que opinas|que piensas|tu opinion|que harias|analiza|analisis|analicemos|estrategi|conviene|convendria|deberia|decidir|decision|compara|comparar|evalua|evaluar|propuesta|plan de|planifi|ideas?|lluvia de ideas|por que|como podria|como puedo|que hago|recomienda|recomendarias|riesgo|pros y contras|alternativa|negocio|vender|ventas|precio|cobrar|crecer|clientes|informe|revisa como va|diagnostic|prioriza|priorizar|en que me enfoco|cuestiona)\b/;
+const PROFUNDO = /\b(piensalo|pensemos|ayudame a pensar|que opinas|que piensas|tu opinion|que harias|analiza|analisis|analicemos|estrategi|conviene|convendria|deberia|decidir|decision|compara|comparar|evalua|evaluar|propuesta|plan de|planifi|ideas?|lluvia de ideas|por que|como podria|como puedo|que hago|recomienda|recomendarias|riesgo|pros y contras|alternativa|negocio|vender|ventas|precio|cobrar|crecer|clientes|informe|revisa como va|diagnostic|prioriza|priorizar|en que me enfoco|cuestiona|excel|planilla|listado|resume|resumeme|resumen de)\b/;
 // Órdenes simples y rápidas.
 const COMANDO = /^(anota|anotame|apunta|registra|recuerdame|agenda|agendame|marca|marcalo|listo|ya lo hice|hecho|lo hice|borra|elimina|que hora|que dia|que tengo|chao|gracias|hola|buenos dias|buenas)\b/;
 // Respuestas cortas que siguen el hilo anterior ("sí", "dale").
