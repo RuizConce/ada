@@ -480,6 +480,7 @@
     const cola = [];
     let sono = false;
     const medida = { tts_ms: null };
+    const dichas = []; // frases que alcanzaron a sonar (para saber qué escuchó si la interrumpen)
     let cerrado = false;
     let detenido = false;
     let trabajando = false;
@@ -499,6 +500,7 @@
         const url = item.audio ? await item.audio : null;
         if (detenido) { if (url) URL.revokeObjectURL(url); break; }
         if (!sono) { sono = true; if (alSonar) alSonar(medida); }
+        dichas.push(item.frase);
         if (url) { await reproducir(url, cancelado); URL.revokeObjectURL(url); }
         else await decirConNavegador(item.frase, cancelado);
       }
@@ -526,6 +528,8 @@
       },
       detener() {
         if (detenido) return;
+        // Interrumpida: quedaba algo por decir (en la cola, sin cerrar, o sonando ahora).
+        locutor.interrumpida = cola.length > 0 || !cerrado || trabajando;
         detenido = true;
         cola.length = 0;
         control.abort();
@@ -534,6 +538,8 @@
         resolverFin();
       },
       get hablando() { return empezo && !detenido; },
+      dichas,
+      interrumpida: false,
       fin,
     };
     locutorActual = locutor;
@@ -766,6 +772,15 @@
       if (locutor) locutor.cerrar();
       mostrarAda(resultado.respuesta);
       if (resultado.detalle) mostrarDetalle(resultado.detalle);
+      if (locutor) {
+        const convInt = convId;
+        locutor.fin.then(() => {
+          if (!locutor.interrumpida || !convInt) return;
+          // La última frase quedó a medias: lo seguro es contar solo las anteriores como escuchadas.
+          const escuchado = locutor.dichas.slice(0, -1).join(' ');
+          api(`/api/conversaciones/${convInt}/interrumpida`, { method: 'POST', body: JSON.stringify({ escuchado }) }).catch(() => {});
+        });
+      }
       if (locutor && opciones.voz) {
         const convMedida = convId;
         locutor.fin.then(() => {
@@ -1370,10 +1385,10 @@
       $('#ajuste-personas').hidden = !a.usuario.admin;
       if (a.usuario.admin) pintarPersonas();
     }
-    const seg = (ms) => (typeof ms === 'number' ? `${(ms / 1000).toFixed(1)} s` : '—');
-    const t = a.tiempos && a.tiempos.turnos ? a.tiempos.ms : null;
-    $('#ia-estado').textContent = `Modelo: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}` +
-      (t ? `\nTiempos (últimos ${a.tiempos.turnos} turnos): ADA empieza a hablar en ${seg(t.hasta_que_habla)} · contexto ${seg(t.contexto)} · primera palabra del modelo ${seg(t.primer_texto)} · herramientas ${seg(t.herramientas)} · voz ${seg(t.voz_primera_frase)}` : '');
+    $('#ia-estado').textContent = `Modelos: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
+    const modo = (a.preferencias && a.preferencias.modelo_modo) || 'auto';
+    $$('#modelo-modo [data-modo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.modo === modo)));
+    pintarTiempos(a.tiempos);
   }
 
   $('#op-tareas').addEventListener('change', async (e) => {
@@ -1385,6 +1400,41 @@
       aviso(err.message, true);
     }
   });
+
+  // Tiempos y costos medidos (para comparar y saber dónde se va la demora).
+  function pintarTiempos(t) {
+    const cont = $('#ia-tiempos');
+    cont.innerHTML = '';
+    if (!t || !t.turnos) { cont.innerHTML = '<p class="meta">Conversa unos turnos por voz y aquí verás los tiempos.</p>'; return; }
+    const seg = (ms) => (typeof ms === 'number' ? `${(ms / 1000).toFixed(1)} s` : '—');
+    const e = t.etapas || {};
+    const filas = [
+      ['ADA empieza a hablar', e.hasta_que_habla], ['Preparar contexto', e.contexto], ['Primera palabra del modelo', e.primer_texto],
+      ['Herramientas', e.herramientas], ['Voz (primera frase)', e.voz_primera_frase], ['Respuesta completa', e.total_servidor],
+    ];
+    const t1 = document.createElement('table');
+    t1.innerHTML = `<caption>Últimos ${t.turnos} turnos</caption><tr><th>Etapa</th><th>Mediana</th><th>Peor 5%</th></tr>` +
+      filas.map(([n, v]) => `<tr><td>${n}</td><td>${seg(v && v.mediana)}</td><td>${seg(v && v.p95)}</td></tr>`).join('');
+    cont.appendChild(t1);
+    if (t.modelos && t.modelos.length) {
+      const t2 = document.createElement('table');
+      const nombre = (m) => (m.nivel === 'profundo' ? 'A fondo' : m.nivel === 'rapido' ? 'Rápido' : m.nivel);
+      t2.innerHTML = '<caption>Por modelo</caption><tr><th>Modo</th><th>Turnos</th><th>Empieza a hablar</th><th>Costo por turno</th></tr>' +
+        t.modelos.map((m) => `<tr><td>${nombre(m)}<br><small>${m.modelo}</small></td><td>${m.turnos}</td><td>${seg(m.hasta_que_habla_ms ?? m.primer_texto_ms)}</td><td>${(m.costo_promedio_usd * 950).toFixed(1)} pesos</td></tr>`).join('');
+      cont.appendChild(t2);
+      const nota = document.createElement('p');
+      nota.className = 'meta';
+      nota.textContent = 'Costo aproximado (dólar a 950 pesos), según los precios publicados de cada modelo.';
+      cont.appendChild(nota);
+    }
+  }
+  $$('#modelo-modo [data-modo]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await api('/api/preferencias', { method: 'POST', body: JSON.stringify({ modelo_modo: b.dataset.modo }) });
+      $$('#modelo-modo [data-modo]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      aviso(b.dataset.modo === 'auto' ? 'ADA elegirá el modelo según la conversación.' : b.dataset.modo === 'rapido' ? 'ADA usará siempre el modelo rápido.' : 'ADA usará siempre el modelo para pensar a fondo.');
+    } catch (e) { aviso(e.message, true); }
+  }));
 
   // ---------- Personas de la prueba (solo Cristian) ----------
 

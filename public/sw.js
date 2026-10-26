@@ -1,6 +1,6 @@
 // Service worker mínimo: permite instalar la app y abrirla aunque la red falle.
 // La API nunca se guarda en caché.
-const CACHE = 'ada-v20';
+const CACHE = 'ada-v21';
 const COMPARTIDO = 'ada-compartido';
 const ARCHIVOS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg'];
 

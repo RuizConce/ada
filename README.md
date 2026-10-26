@@ -98,6 +98,10 @@ Con Contactos, ADA encuentra a las personas aunque se digan distinto: apodos, re
 
 En modo voz, ADA habla en una o dos frases y deja el detalle (listas, cifras, varios correos) en un recuadro en pantalla que no se lee en voz. Si dejas una frase a medias ("el correo de…"), espera unos segundos más antes de responder. En ⚙ Ajustes → Inteligencia aparecen los tiempos de los últimos turnos (cuánto tarda en empezar a hablar y en qué se va la demora); en los logs de Railway, cada turno muestra `ADA tiempos`.
 
+## Modelos: rápido y a fondo
+
+ADA elige el modelo en cada turno, sin llamadas extra: **Haiku** (`ADA_MODEL`, o `ADA_MODEL_RAPIDO`) para lo simple —anotar, agendar, confirmar— y **Sonnet** (`ADA_MODEL_PROFUNDO`, por defecto `claude-sonnet-5-5`) cuando conversan a fondo, piden opinión, analizan o deciden; una respuesta corta dentro de esa conversación sigue en Sonnet. En ⚙ Ajustes → Inteligencia se puede fijar *Automático*, *Siempre rápido* o *Siempre a fondo*, y se ven los tiempos por etapa (mediana y peor 5%) y el costo aproximado por turno de cada modo. Los precios se pueden ajustar con `ADA_PRECIOS` (JSON por modelo o familia, en dólares por millón de tokens).
+
 ## Avisos y agenda
 
 **Avisos al teléfono** (⚙ Ajustes → Avisos → *Activar avisos en este teléfono*): despertar (7:30), resumen del día (7:45, armado solo con datos reales), seguimiento de encargos cuando toca revisar, respuestas por correo de personas con encargos abiertos y lo que quedó de hoy (18:30). Silencio desde las 22:00 hasta el despertar y máximo 3 avisos al día además del despertar y el resumen. Al tocar un aviso, ADA se abre con una tarjeta para escucharlo. Las claves VAPID se crean solas y quedan en la base (o define `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`). En iPhone, solo con ADA instalada en la pantalla de inicio.

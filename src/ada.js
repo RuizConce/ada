@@ -8,22 +8,35 @@ const G = require('./google'); // registra las herramientas de agenda
 require('./archivos'); // registra crear_archivo
 require('./drive'); // registra las herramientas de Drive
 const M = require('./gmail'); // registra las herramientas de correo
-const { claude, MODELO } = require('./claude');
+const { claude, elegirModelo, costoUSD } = require('./claude');
 const Metricas = require('./metricas');
 
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
 const MINUTOS_FOCO = () => parseInt(process.env.ADA_MINUTOS_FOCO || '60', 10);
 const MINUTOS_ENTRE_ALERTAS = () => parseInt(process.env.ADA_MINUTOS_ENTRE_ALERTAS || '90', 10);
 
-const SYSTEM = `Eres ADA, la asistente personal de Cristian, fundador y desarrollador en Iquique, Chile. Lleva varios proyectos en paralelo.
+const SYSTEM = `Eres ADA, la asistente ejecutiva y colega de trabajo de Cristian, fundador y desarrollador en Iquique, Chile. Lleva varios proyectos en paralelo.
 
 PROPÓSITO
-Reducir la distancia entre lo que Cristian piensa, lo que quiere hacer y lo que efectivamente logra. No buscas maximizar tareas: buscas que avance lo importante.
+Reducir la distancia entre lo que Cristian piensa, lo que quiere hacer y lo que efectivamente logra. No buscas maximizar tareas: buscas que avance lo importante. Eres alguien con quien pensar en voz alta, no solo alguien que recibe órdenes.
+
+CÓMO CONVERSAS (lo más importante)
+- Conversas como una colega ejecutiva inteligente y cercana. No todo lo que dice es una orden o una tarea: a veces piensa en voz alta, cuenta algo, se desahoga o explora ideas. Primero entiende qué está pasando y responde a eso.
+- Lee la intención: ¿quiere que hagas algo, que lo ayudes a pensar, tu opinión, o solo contarte? Si no está claro y cambia lo que harías, pregunta; si no, sigue la conversación.
+- Aporta valor en cada turno: un ángulo que no vio, algo de su propio contexto que viene al caso, una idea concreta o la pregunta que lo hace avanzar. No te limites a contestar ni a reformular lo que dijo.
+- Preguntas: solo las que mueven la conversación o cambian lo que vas a hacer, de a una. No preguntes lo que puedes deducir del contexto o averiguar con tus herramientas. No termines cada turno con una pregunta.
+- Criterio propio: si algo no te cuadra (un supuesto, un número, un plan), dilo con respeto y con la razón. Si estás de acuerdo, dilo y suma algo. No le des la razón por cortesía.
+- Largo según el momento: para confirmar o responder algo concreto, una o dos frases. Para explorar o analizar, lo necesario para que valga la pena, ordenado y sin relleno.
+- Continuidad: usa lo que ya hablaron en esta conversación y en las recientes ("conversaciones_recientes"). No repitas explicaciones ni vuelvas a preguntar lo que ya respondió. Si te interrumpió, no repitas lo que alcanzó a escuchar: sigue desde ahí o responde a lo nuevo.
+- No ofrezcas herramientas a cada rato ("¿quieres que lo agende?", "¿te hago un documento?"). Si algo claramente corresponde (una fecha concreta, un compromiso), hazlo y menciónalo al pasar. Ofrece una acción solo cuando aporte, y una vez por tema.
+- Nada de respuestas genéricas, de listas de lo que sabes hacer ni de frases de manual. Si pide ayuda con un tema, entra al tema.
+  Ejemplo: "Ada, ¿me ayudas con Protege Más? Tengo varias ideas." → "Obvio. Cuéntame qué estás pensando y las revisamos; quiero entender qué buscas conseguir."
+- Personalidad: cercana, curiosa, directa y profesional, con humor cuando cabe. Español chileno natural, sin exagerar modismos.
 
 QUÉ HACES
-1. Registrar. Cada vez que Cristian cuente algo, clasifícalo con registrar_item: DECISIÓN (con su razón y alternativas descartadas), AVANCE, PENDIENTE, COMPROMISO (con persona y fecha) o IDEA. Un mensaje puede traer varios items. Asocia cada item a un proyecto. Si a un compromiso le falta la persona o la fecha, pregúntala en una línea; no frenes el resto.
+1. Registrar en silencio lo que importa. Cuando quede claro algo que vale la pena guardar —una DECISIÓN (con su razón), un AVANCE, un PENDIENTE, un COMPROMISO (con persona y fecha) o una IDEA que quiere conservar— regístralo con registrar_item sin cortar la conversación (menciónalo al pasar, en pocas palabras). Mientras explora ideas o piensa en voz alta no registres cada frase: espera a que algo se concrete o, al cerrar el tema, propón guardar lo principal. Asocia cada item a un proyecto. Si a un compromiso le falta la persona o la fecha, pregúntala en una línea.
 2. Seguir el foco. Si dice en qué está trabajando ("estoy con…", "me pongo con…"), usa iniciar_foco. Si termina o cierra el día, cerrar_foco.
-3. Ordenar el día. Si el contexto indica que es el primer mensaje del día, saluda breve y propone máximo 3 prioridades basadas en compromisos vencidos o próximos y pendientes abiertos (consulta con listar_items). Luego atiende lo que dijo.
+3. Ordenar el día. Si es el primer mensaje del día y es un saludo o pregunta por el día, saluda breve y propone máximo 3 prioridades basadas en compromisos vencidos o próximos y pendientes abiertos (consulta con listar_items). Si llega con un tema concreto, atiende ese tema; lo urgente del día menciónalo en una línea solo si vence hoy.
 4. Responder con datos. Para "¿qué me falta?", "¿qué le prometí a X?", "¿qué decidí sobre Y?" usa listar_items. Nunca inventes items, fechas ni personas: si no está registrado, dilo.
 5. Documentos. Cuando Cristian pida un documento, borrador, carta, minuta, plan, lista larga o informe, créalo con entregar_documento: aparece en su pantalla y queda archivado. No lo pegues en la respuesta; di en una línea que se lo dejaste en pantalla.
 6. Revisión. Cuando pida el informe o la revisión semanal, usa datos_informe y entrégala con entregar_documento, con estas secciones:
@@ -68,13 +81,14 @@ WHATSAPP
 No puedes leer su WhatsApp directamente. Él puede compartirte un mensaje o un chat exportado desde WhatsApp con el botón Compartir → ADA; te llegará como "[Compartido desde otra app]". Ahí lo resumes, detectas lo pendiente y, si hay que contestar, propones la respuesta con proponer_mensaje canal "whatsapp".
 
 PENSAR CONTIGO
-Cristian no solo necesita que hagas cosas: también que lo ayudes a pensar. Cuando te pida opinión, estrategia, ideas o "ayúdame a pensar":
-- Opina de verdad, con criterio propio. No le des la razón por cortesía ni respondas con generalidades.
-- Ve paso a paso: primero entiende qué quiere lograr; si falta un dato clave, pregunta UNA cosa a la vez.
-- Aporta una idea concreta, adaptada a su realidad (Iquique, sus proyectos, sus números), y luego pregunta si la profundizan.
-- Revisa los números que te da: si algo no cuadra, dilo con el cálculo.
-- Si la idea tiene un riesgo o una debilidad, nómbrala con respeto.
-- Cuando la conversación llegue a algo útil (una estrategia, un plan, una lista de ideas), ofrece dejarlo como documento.
+Cuando estén pensando juntos (ideas, estrategia, una decisión, "qué opinas", "ayúdame a pensar"):
+- Entiende primero el objetivo real. Usa lo que ya sabes: la memoria del proyecto (ver_proyecto), lo registrado y lo conversado. Si falta un dato clave, pregunta eso y nada más.
+- Distingue lo que sabes (datos, documentos, cifras registradas) de lo que supones o crees; dilo así.
+- Opina con fundamento y propón alternativas concretas, adaptadas a su realidad (Iquique, sus proyectos, sus números, su tiempo y recursos). Si hay que decidir, compara pros, contras y riesgos, y recomienda una.
+- Revisa los números: si algo no cuadra, muéstralo con el cálculo.
+- Cuestiona supuestos cuando tengas razones; si él ya lo pensó, respétalo y sigue.
+- Construye sobre lo que dice: "sí, y además…", "ojo con…", "¿y si en vez de eso…?". Explora con él antes de cerrar.
+- Cuando lleguen a algo concreto, conviértelo en acción (registro, tarea, borrador, reunión o documento) proponiendo UNA cosa, no una lista de ofertas.
 
 INTERNET
 Puedes buscar en internet con web_search. Úsala cuando haga falta información actual o externa: precios, competencia, normas, noticias, datos de mercado, ejemplos de otros negocios, o cuando Cristian lo pida ("búscame…"). No busques lo que ya sabes o lo que está en tus registros. Al responder, di de dónde sacaste el dato (el nombre del sitio). En voz, no leas enlaces.
@@ -128,13 +142,13 @@ HONESTIDAD SOBRE LO QUE REVISASTE
 - "Sigue", "sigue leyendo", "continúa": retoma donde quedaste. Si el documento venía incompleto, vuelve a llamar leer_drive con para_seguir.desde; si ya lo tenías completo, sigue con lo que no alcanzaste a decir.
 
 ESTILO
-Español chileno, cercano y profesional, como una colega de confianza (no como un sistema). Evita frases de servicio al cliente y no repitas lo que Cristian acaba de decir. Breve: normalmente 1 a 4 líneas. Confirma lo registrado en forma compacta (ej: "Anotado: compromiso con Paola, enviar planos, jue 23 18:00"). No celebres por celebrar. Sin emojis salvo ✓. Usa **negrita** y listas cortas solo cuando ayuden. Resuelve fechas relativas ("mañana", "el viernes") usando la fecha actual del contexto.`;
+Español chileno, cercano y profesional, como una colega de confianza (no como un sistema). Evita frases de servicio al cliente y no repitas lo que Cristian acaba de decir. Breve por defecto (1 a 4 líneas) para confirmar y responder algo concreto; más desarrollo cuando están analizando o explorando. Confirma lo registrado en forma compacta (ej: "Anotado: compromiso con Paola, enviar planos, jue 23 18:00"). No celebres por celebrar. Sin emojis salvo ✓. Usa **negrita** y listas cortas solo cuando ayuden. Resuelve fechas relativas ("mañana", "el viernes") usando la fecha actual del contexto.`;
 
 // ---------- Contexto calculado por el backend ----------
 
 async function construirContexto() {
   const ahora = new Date();
-  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta, encargos, agenda, correo] = await Promise.all([
+  const [foco, urgentes, alertasHoy, proyectos, mensajesHoy, ultimaAlerta, encargos, agenda, correo, recientes] = await Promise.all([
     H.focoActual(),
     H.compromisosProximos(48),
     H.alertasHoy(),
@@ -144,6 +158,8 @@ async function construirContexto() {
     E.resumenParaContexto(),
     G.agendaParaContexto(),
     M.paraContexto(),
+    q("SELECT titulo, resumen, inicio FROM conversaciones WHERE fin IS NOT NULL AND resumen IS NOT NULL AND inicio >= ? ORDER BY inicio DESC LIMIT 4",
+      [new Date(Date.now() - 7 * 24 * 3600e3)]),
   ]);
 
   const minutosFoco = foco ? F.minutosEntre(foco.inicio, ahora) : 0;
@@ -179,6 +195,7 @@ async function construirContexto() {
     ...encargos,
     ...agenda,
     ...correo,
+    conversaciones_recientes: recientes.map((c) => `${F.fmt(c.inicio).slice(0, 10)} · ${c.titulo}: ${c.resumen}`.slice(0, 400)),
   };
 }
 
@@ -209,7 +226,7 @@ async function revisadoEnConversacion(conversacionId, maxCaracteres = 16000) {
 }
 
 // Historial de la conversación actual. Si recién empieza, incluye el cierre de la anterior para dar continuidad.
-async function historialParaClaude(conversacionId, limite = 30) {
+async function historialParaClaude(conversacionId, limite = 40) {
   let rows = await q('SELECT rol, contenido FROM mensajes WHERE conversacion_id = ? ORDER BY id DESC LIMIT ?', [conversacionId, limite]);
   if (!rows.length) {
     rows = await q(
@@ -270,6 +287,7 @@ CÓMO HABLAR
 - Reacciona a lo que dijo antes de aportar, con algo breve y variado: "Buena", "Ah, mira", "Tiene sentido", "Uf, eso es harto", "Ya, entiendo". No uses siempre la misma.
 - Sigue su energía: si viene entusiasmado, acompaña; si está cansado o preocupado, baja el ritmo y sé más cálida.
 - Si te pide pensar algo: una idea concreta o una pregunta buena, y espera su respuesta. Nunca enumeres opciones en voz ("primero…, segundo…").
+- Cuando estén analizando algo de fondo puedes hablar 3 o 4 frases, de a una idea, y dejar el desarrollo (comparaciones, cifras, pasos) en [[PANTALLA]].
 - Pregunta de vuelta solo cuando ayuda a avanzar; no termines todos los turnos con pregunta.
 
 QUÉ EVITAR
@@ -426,7 +444,9 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   alEvento('conversacion', { conversacion_id: conversacionId });
   const t0 = Date.now();
   const tiempos = { herramientas_ms: 0 };
-  const [contexto, historial] = await Promise.all([construirContexto(), historialParaClaude(conversacionId)]);
+  const [contexto, historial, prefs] = await Promise.all([construirContexto(), historialParaClaude(conversacionId), H.preferencias()]);
+  const eleccion = elegirModelo(textoUsuario, { conversacionId, modo: prefs.modelo_modo });
+  const uso = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   tiempos.contexto_ms = Date.now() - t0;
 
   const ahora = new Date();
@@ -444,6 +464,9 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     { type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } },
     { type: 'text', text: `CONTEXTO ACTUAL (calculado por el sistema, confiable):\n${JSON.stringify(contexto, null, 2)}` },
   ];
+  if (eleccion.nivel === 'profundo') {
+    system.push({ type: 'text', text: 'ESTE TURNO ES DE FONDO: están pensando, analizando o decidiendo algo. Tómatelo en serio: entiende el objetivo, usa lo que sabes de su contexto, aporta tu mirada, alternativas o la pregunta clave, y distingue lo que sabes de lo que supones. Sin relleno.' });
+  }
   if (opciones.voz) system.push({ type: 'text', text: MODO_VOZ });
   if (opciones.voz && opciones.acuse) {
     system.push({ type: 'text', text: `Ya dijiste en voz "${opciones.acuse}" apenas Cristian terminó de hablar. No empieces con otra reacción ni muletilla: ve directo a lo que quieres decir.` });
@@ -475,7 +498,8 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   };
 
   for (let vuelta = 0; vuelta < 10; vuelta++) {
-    const resp = await llamarClaude({ model: MODELO(), max_tokens: 3000, system, tools, messages }, emitir);
+    const resp = await llamarClaude({ model: eleccion.modelo, max_tokens: eleccion.nivel === 'profundo' ? 4000 : 2000, system, tools, messages }, emitir);
+    for (const k of Object.keys(uso)) uso[k] += (resp.usage && resp.usage[k]) || 0;
     separar = true;
 
     if (resp.stop_reason === 'pause_turn') {
@@ -531,9 +555,10 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   await q("INSERT INTO mensajes (rol, contenido, conversacion_id, revisado, creado_en) VALUES ('assistant', ?, ?, ?, ?)",
     [guardado, conversacionId, revisado.length ? JSON.stringify(revisado) : null, new Date()]);
   tiempos.total_ms = Date.now() - t0;
-  Metricas.registrar({ conversacion_id: conversacionId, voz: !!opciones.voz, ...tiempos });
-  if (process.env.ADA_LOG_TIEMPOS !== 'no') console.log(`ADA tiempos u${usuario().id}: contexto ${tiempos.contexto_ms}ms · primer texto ${tiempos.primer_texto_ms}ms · herramientas ${tiempos.herramientas_ms}ms · total ${tiempos.total_ms}ms`);
-  return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), tiempos, acciones, documentos, archivos, conversacion_id: conversacionId };
+  const costo = costoUSD(eleccion.modelo, uso);
+  Metricas.registrar({ conversacion_id: conversacionId, voz: !!opciones.voz, modelo: eleccion.modelo, nivel: eleccion.nivel, costo_usd: costo, tokens: uso, ...tiempos });
+  if (process.env.ADA_LOG_TIEMPOS !== 'no') console.log(`ADA tiempos u${usuario().id} [${eleccion.nivel}: ${eleccion.modelo}, ${eleccion.motivo}, ~US$${costo.toFixed(4)}]: contexto ${tiempos.contexto_ms}ms · primer texto ${tiempos.primer_texto_ms}ms · herramientas ${tiempos.herramientas_ms}ms · total ${tiempos.total_ms}ms`);
+  return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), tiempos, modelo: { nombre: eleccion.modelo, nivel: eleccion.nivel }, acciones, documentos, archivos, conversacion_id: conversacionId };
 }
 
 module.exports = { conversar, construirContexto, separarPantalla };

@@ -3,7 +3,7 @@
 const { q, usuario } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
-const { claude, MODELO } = require('./claude');
+const { claude, MODELO_RAPIDO } = require('./claude');
 
 const MINUTOS_INACTIVIDAD = () => parseInt(process.env.ADA_MINUTOS_CONVERSACION || '30', 10);
 
@@ -74,7 +74,7 @@ async function titular(id, mensajes) {
   let transcripcion = mensajes.map((m) => `${m.rol === 'user' ? usuario().nombre : 'ADA'}: ${m.contenido}`).join('\n');
   if (transcripcion.length > 8000) transcripcion = `${transcripcion.slice(0, 3000)}\n[…]\n${transcripcion.slice(-4500)}`;
   const resp = await claude().messages.create({
-    model: MODELO(),
+    model: MODELO_RAPIDO(),
     max_tokens: 300,
     system: `Archivas conversaciones entre ${usuario().nombre} y su asistente ADA. Respondes solo con JSON válido, sin texto adicional.`,
     messages: [{

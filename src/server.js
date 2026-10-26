@@ -8,6 +8,7 @@ const U = require('./usuarios');
 const H = require('./herramientas');
 const Metricas = require('./metricas');
 const Avisos = require('./avisos');
+const { MODELO_RAPIDO, MODELO_PROFUNDO } = require('./claude');
 const Agenda = require('./agenda');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
@@ -192,6 +193,16 @@ const envolver = (fn) => async (req, res) => {
 app.get('/api/carpetas', auth, envolver(() => C.carpetas()));
 app.get('/api/conversaciones', auth, envolver((req) => C.listar({ proyecto_id: req.query.proyecto, texto: req.query.q })));
 app.get('/api/conversaciones/:id', auth, envolver((req) => C.detalle(parseInt(req.params.id, 10))));
+// ADA fue interrumpida: se anota qué alcanzó a escuchar, para que no lo repita ni dé por dicho lo demás.
+app.post('/api/conversaciones/:id/interrumpida', auth, envolver(async (req) => {
+  const escuchado = String((req.body || {}).escuchado || '').slice(0, 1500);
+  const [m] = await q("SELECT id, contenido FROM mensajes WHERE conversacion_id = ? AND rol = 'assistant' ORDER BY id DESC LIMIT 1", [parseInt(req.params.id, 10)]);
+  if (!m || m.contenido.includes('[Te interrumpió')) return { ok: false };
+  const nota = escuchado ? `[Te interrumpió; alcanzó a escuchar solo: «${escuchado}»]` : '[Te interrumpió antes de que alcanzaras a hablar]';
+  await q('UPDATE mensajes SET contenido = ? WHERE id = ?', [`${m.contenido}\n${nota}`, m.id]);
+  return { ok: true };
+}));
+
 app.post('/api/conversaciones/:id/cerrar', auth, envolver((req) => C.cerrar(parseInt(req.params.id, 10))));
 app.post('/api/conversaciones/:id/proyecto', auth,
   envolver((req) => C.moverConversacion(parseInt(req.params.id, 10), (req.body || {}).proyecto || null)));
@@ -251,7 +262,7 @@ app.get('/api/ajustes', auth, envolver(async (req) => ({
   google: { ...(await G.estado()), redirect_uri: G.redirectUri(req) },
   voz: { proveedor: Voz.proveedor() },
   internet: process.env.ADA_INTERNET !== 'no',
-  modelo: process.env.ADA_MODEL || 'claude-sonnet-5-5',
+  modelo: `${MODELO_RAPIDO()} (rápido) · ${MODELO_PROFUNDO()} (para pensar)`,
 })));
 
 app.get('/api/voces', auth, envolver(() => Voz.listarVoces()));

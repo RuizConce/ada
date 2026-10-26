@@ -92,7 +92,7 @@ const AVISOS_DEFECTO = {
   correos: true,
   cierre_activo: true,
 };
-const PREF_DEFECTO = { tareas_auto: true };
+const PREF_DEFECTO = { tareas_auto: true, modelo_modo: 'auto' };
 async function preferencias() {
   const [r] = await q("SELECT datos FROM integraciones WHERE nombre = 'preferencias'");
   const guardadas = r ? JSON.parse(r.datos) : {};
@@ -102,6 +102,10 @@ const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 async function guardarPreferencias(cambios = {}) {
   const nuevas = { ...(await preferencias()) };
   if (cambios.tareas_auto !== undefined) nuevas.tareas_auto = !!cambios.tareas_auto;
+  if (cambios.modelo_modo !== undefined) {
+    if (!['auto', 'rapido', 'profundo'].includes(cambios.modelo_modo)) throw new Error('modelo_modo debe ser auto, rapido o profundo');
+    nuevas.modelo_modo = cambios.modelo_modo;
+  }
   if (cambios.avisos && typeof cambios.avisos === 'object') {
     const a = { ...nuevas.avisos };
     for (const k of ['despertar', 'resumen', 'silencio_desde', 'cierre']) {

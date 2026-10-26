@@ -437,6 +437,13 @@ button:disabled { opacity: 0.45; cursor: default; }
 .app.escribiendo .detalle { max-height: 18dvh; }
 .app.escribiendo .atajos { display: none; }
 #ia-estado { white-space: pre-line; }
+#modelo-modo { margin: 10px 0 6px; }
+.ia-tiempos { margin-top: 10px; display: grid; gap: 10px; }
+.ia-tiempos table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ia-tiempos th, .ia-tiempos td { text-align: left; padding: 5px 4px; border-bottom: 1px solid var(--borde); }
+.ia-tiempos th { color: var(--texto-suave); font-weight: 500; }
+.ia-tiempos td:not(:first-child), .ia-tiempos th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.ia-tiempos caption { text-align: left; font-size: 13px; color: var(--texto-suave); padding-bottom: 4px; }
 
 /* Llamado al abrir desde un aviso */
 .llamado { width: 100%; max-width: 560px; margin-top: 12px; padding: 14px; border-radius: 16px; border: 1px solid var(--verde); background: rgba(94, 234, 168, 0.07); }
