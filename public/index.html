@@ -24,7 +24,10 @@
       <p class="lema">Lo que piensas, lo que quieres hacer y lo que logras.</p>
       <form id="login-form">
         <input id="nombre" type="text" placeholder="Tu nombre" autocomplete="given-name" autocapitalize="words" maxlength="40" required>
-        <input id="password" type="password" placeholder="Clave" autocomplete="current-password" autocapitalize="none" required>
+        <div class="clave-campo">
+          <input id="password" type="password" placeholder="Clave" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          <button id="ver-clave" type="button" aria-label="Mostrar clave">Ver</button>
+        </div>
         <button type="submit">Entrar</button>
         <p id="login-error" class="error" role="alert"></p>
       </form>

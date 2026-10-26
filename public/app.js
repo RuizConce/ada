@@ -1988,6 +1988,12 @@
     if (aj && aj.usuario && aj.usuario.id !== 1 && !(aj.preferencias && aj.preferencias.bienvenida_vista)) mostrarBienvenida();
   }
 
+  $('#ver-clave').addEventListener('click', () => {
+    const c = $('#password');
+    c.type = c.type === 'password' ? 'text' : 'password';
+    $('#ver-clave').textContent = c.type === 'password' ? 'Ver' : 'Ocultar';
+  });
+
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('#login-error').textContent = '';

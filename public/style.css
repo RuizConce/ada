@@ -505,3 +505,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .bienvenida-botones button { padding: 14px; border-radius: 14px; border: 1px solid var(--borde); background: var(--vidrio); font-size: 16px; }
 .bienvenida-botones .principal { border: 0; background: linear-gradient(90deg, var(--verde), var(--verde-2)); color: #04140d; font-weight: 700; }
 #ver-bienvenida { margin-bottom: 10px; }
+
+.clave-campo { position: relative; }
+.clave-campo input { width: 100%; padding-right: 76px; }
+.clave-campo button { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--texto-suave); font-size: 14px; padding: 8px; }

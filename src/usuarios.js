@@ -29,6 +29,17 @@ function generarClave() {
   return `${elegir(letras, 4)}-${elegir(num, 4)}`;
 }
 
+// Lo que escribe la persona puede venir con mayúsculas, espacios o un guion "largo" que pone el teclado
+// (crzp–8874, Crzp 8874, crzp8874): todo eso se lleva a la forma de la clave (crzp-8874).
+function normalizarClave(t) {
+  let c = String(t || '').toLowerCase().normalize('NFKC')
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D_.]/g, '-')
+    .replace(/\s+/g, '');
+  const m = c.match(/^([a-z]{4})-?(\d{4})$/);
+  if (m) c = `${m[1]}-${m[2]}`;
+  return c;
+}
+
 // ---------- Sesiones ----------
 
 const firma = (id, version) => crypto.createHmac('sha256', secreto()).update(`ada-sesion-v2:${id}:${version}`).digest('hex');
@@ -65,7 +76,8 @@ async function ingresar(nombreDado, clave) {
     [u] = await qPrincipal('SELECT * FROM usuarios WHERE id = 1');
   } else {
     const filas = await qPrincipal('SELECT * FROM usuarios WHERE id <> 1 AND activo = 1 AND clave_hash IS NOT NULL');
-    u = filas.find((x) => claveCorrecta(String(clave).trim().toLowerCase(), x.clave_hash)) || null;
+    const limpia = normalizarClave(clave);
+    u = filas.find((x) => claveCorrecta(limpia, x.clave_hash)) || null;
   }
   if (!u) return null;
   if (u.id !== 1) await prepararInvitado(u.id);
@@ -108,4 +120,4 @@ async function cambiarActivo(id, activo) {
   return { ok: true, activo: !!activo };
 }
 
-module.exports = { ingresar, desdeToken, listar, crear, nuevaClave, cambiarActivo, generarClave };
+module.exports = { normalizarClave, ingresar, desdeToken, listar, crear, nuevaClave, cambiarActivo, generarClave };
