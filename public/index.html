@@ -42,6 +42,9 @@
       <button id="abrir-ajustes" class="icono" type="button" aria-label="Ajustes" title="Ajustes">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
+      <button id="abrir-agenda" class="icono" type="button" aria-label="Agenda" title="Agenda">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8.5 14.5l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
       <button id="abrir-archivo" class="icono" type="button" aria-label="Archivo de conversaciones" title="Archivo">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
       </button>
@@ -59,6 +62,13 @@
           <p id="sub-yo" class="sub-yo"></p>
           <div id="sub-ada" class="sub-ada"></div>
           <div id="detalle" class="detalle" hidden><div class="detalle-cuerpo"></div></div>
+          <div id="llamado" class="llamado" hidden>
+            <p class="llamado-texto"></p>
+            <div class="llamado-botones">
+              <button type="button" class="principal" id="llamado-si">Escuchar</button>
+              <button type="button" id="llamado-no">Ahora no</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -95,6 +105,23 @@
     </footer>
 
     <!-- ============ Archivo ============ -->
+    <section id="vista-agenda" class="panel" hidden aria-label="Agenda">
+      <header class="panel-cab">
+        <button class="volver" type="button" data-volver aria-label="Volver">‹</button>
+        <h2>Agenda</h2>
+        <div class="agenda-nav">
+          <button id="agenda-antes" type="button" class="icono" aria-label="Semana anterior">‹</button>
+          <button id="agenda-hoy" type="button">Hoy</button>
+          <button id="agenda-despues" type="button" class="icono" aria-label="Semana siguiente">›</button>
+        </div>
+      </header>
+      <div class="panel-cuerpo">
+        <div id="agenda-resumen" class="agenda-resumen"></div>
+        <div id="agenda-vencidas" class="agenda-vencidas" hidden></div>
+        <div id="agenda-dias" class="agenda-dias"></div>
+      </div>
+    </section>
+
     <section id="vista-archivo" class="panel" hidden aria-label="Archivo">
       <header class="panel-cab">
         <button class="volver" type="button" data-volver aria-label="Volver">‹</button>
@@ -140,6 +167,21 @@
             <input id="op-tareas" type="checkbox">
             <span>Agendar tareas automáticamente <small>Lo que salga de la conversación con fecha queda en tu Google Calendar con aviso al celular. Lo importante, además, te llega por correo.</small></span>
           </label>
+        </section>
+        <section class="ajuste">
+          <h3>Avisos al teléfono</h3>
+          <p id="avisos-estado" class="meta">Revisando…</p>
+          <div id="avisos-acciones" class="ajuste-botones"></div>
+          <div id="avisos-config" class="avisos-config">
+            <label>Despertar <input id="av-despertar" type="time"></label>
+            <label>Resumen del día <input id="av-resumen" type="time"></label>
+            <label>Cierre de la tarde <input id="av-cierre" type="time"></label>
+            <label>Silencio desde <input id="av-silencio" type="time"></label>
+          </div>
+          <label class="interruptor"><input id="av-seguimiento" type="checkbox"><span>Seguimiento de encargos <small>Cuando toca revisar algo que delegaste.</small></span></label>
+          <label class="interruptor"><input id="av-correos" type="checkbox"><span>Respuestas por correo <small>Solo de personas con encargos abiertos.</small></span></label>
+          <label class="interruptor"><input id="av-cierre-activo" type="checkbox"><span>Lo que quedó de hoy <small>A la hora de cierre, si algo de hoy sigue abierto.</small></span></label>
+          <p class="meta">Máximo 3 avisos al día además del despertar y el resumen. Nada entre la hora de silencio y el despertar.</p>
         </section>
         <section class="ajuste">
           <h3>Voz de ADA</h3>

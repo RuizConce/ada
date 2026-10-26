@@ -1363,6 +1363,7 @@
     $('#voz-estado').textContent = NOMBRE_VOZ[a.voz.proveedor] || a.voz.proveedor;
     pintarVoces();
     $('#op-tareas').checked = !a.preferencias || a.preferencias.tareas_auto !== false;
+    pintarAvisos(a);
     if (a.usuario) {
       yo = a.usuario;
       $('#sesion-de').textContent = `Entraste como ${a.usuario.nombre}${a.usuario.admin ? ' (administrador)' : ''}.`;
@@ -1572,6 +1573,214 @@
   $('#mensaje').addEventListener('focus', () => { if (window.matchMedia('(max-width: 700px)').matches) $('#app').classList.add('escribiendo'); });
   $('#mensaje').addEventListener('blur', () => setTimeout(() => $('#app').classList.remove('escribiendo'), 150));
 
+  // ---------- Avisos al teléfono ----------
+  const soportaPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const b64aBytes = (b64) => {
+    const s = (b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  };
+  async function suscripcionActual() {
+    if (!soportaPush()) return null;
+    const reg = await navigator.serviceWorker.ready;
+    return reg.pushManager.getSubscription();
+  }
+  async function activarAvisos() {
+    if (!soportaPush()) throw new Error('Este navegador no permite avisos. En Android usa Chrome; en iPhone, instala ADA en la pantalla de inicio.');
+    const permiso = await Notification.requestPermission();
+    if (permiso !== 'granted') throw new Error('No diste permiso para avisos. Puedes activarlo en los ajustes del navegador (Notificaciones).');
+    const { publicKey } = await api('/api/push/clave');
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aBytes(publicKey) });
+    const dispositivo = /android/i.test(navigator.userAgent) ? 'Android' : /iphone|ipad/i.test(navigator.userAgent) ? 'iPhone/iPad' : 'Computador';
+    await api('/api/push/suscribir', { method: 'POST', body: JSON.stringify({ suscripcion: sub.toJSON(), dispositivo }) });
+  }
+
+  async function pintarAvisos(a) {
+    const estado = $('#avisos-estado');
+    const acciones = $('#avisos-acciones');
+    acciones.innerHTML = '';
+    const av = (a.preferencias && a.preferencias.avisos) || {};
+    $('#av-despertar').value = av.despertar || '';
+    $('#av-resumen').value = av.resumen || '';
+    $('#av-cierre').value = av.cierre || '';
+    $('#av-silencio').value = av.silencio_desde || '';
+    $('#av-seguimiento').checked = av.seguimiento !== false;
+    $('#av-correos').checked = av.correos !== false;
+    $('#av-cierre-activo').checked = av.cierre_activo !== false;
+    let sub = null;
+    try { sub = await suscripcionActual(); } catch (_) {}
+    const permitido = soportaPush() && Notification.permission === 'granted';
+    if (sub && permitido) {
+      estado.innerHTML = '<span class="estado-ok">Activados en este dispositivo ✓</span>';
+      const probar = document.createElement('button');
+      probar.type = 'button';
+      probar.textContent = 'Probar aviso';
+      probar.addEventListener('click', async () => {
+        try { await api('/api/push/probar', { method: 'POST' }); aviso('Listo, debería llegarte un aviso ahora.'); } catch (e) { aviso(e.message, true); }
+      });
+      const apagar = document.createElement('button');
+      apagar.type = 'button';
+      apagar.textContent = 'Desactivar aquí';
+      apagar.addEventListener('click', async () => {
+        try { await api('/api/push/desuscribir', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }) }); await sub.unsubscribe(); } catch (_) {}
+        aviso('Avisos desactivados en este dispositivo.');
+        abrirAjustes();
+      });
+      acciones.append(probar, apagar);
+      // Por si el servidor no la tenía (otra persona en el mismo teléfono, o se borró).
+      api('/api/push/suscribir', { method: 'POST', body: JSON.stringify({ suscripcion: sub.toJSON() }) }).catch(() => {});
+    } else {
+      estado.textContent = soportaPush() ? 'Desactivados en este dispositivo.' : 'Este navegador no permite avisos.';
+      if (soportaPush()) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'principal';
+        b.textContent = 'Activar avisos en este teléfono';
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          try { await activarAvisos(); aviso('Avisos activados ✓'); abrirAjustes(); } catch (e) { aviso(e.message, true); b.disabled = false; }
+        });
+        acciones.appendChild(b);
+      }
+    }
+  }
+
+  async function guardarAvisos() {
+    try {
+      await api('/api/preferencias', { method: 'POST', body: JSON.stringify({ avisos: {
+        despertar: $('#av-despertar').value, resumen: $('#av-resumen').value, cierre: $('#av-cierre').value,
+        silencio_desde: $('#av-silencio').value, seguimiento: $('#av-seguimiento').checked,
+        correos: $('#av-correos').checked, cierre_activo: $('#av-cierre-activo').checked,
+      } }) });
+      aviso('Avisos guardados.');
+    } catch (e) { aviso(e.message, true); }
+  }
+  ['#av-despertar', '#av-resumen', '#av-cierre', '#av-silencio', '#av-seguimiento', '#av-correos', '#av-cierre-activo']
+    .forEach((id) => $(id).addEventListener('change', guardarAvisos));
+
+  // Al abrir ADA desde un aviso: una tarjeta para escuchar lo que corresponde (el toque permite el sonido).
+  const LLAMADOS = {
+    despertar: { texto: 'Buenos días ☀️ ¿Vemos el día?', pedido: 'Buenos días. ¿Qué tengo hoy?' },
+    resumen: { texto: 'Tu resumen del día está listo.', pedido: 'Dame el resumen de hoy: reuniones, tareas, lo atrasado y los encargos por revisar. Corto, con el detalle en pantalla, y dime por dónde partirías.' },
+    encargo: { texto: 'Hay un encargo para revisar.', pedido: (id) => `Revisemos el encargo #${id}: en qué está y cuál es el siguiente paso.` },
+    correo: { texto: 'Te respondieron un correo.', pedido: (id) => `Léeme el correo nuevo (id ${id}) y dime si hay que responder.` },
+    cierre: { texto: 'Quedan cosas de hoy por cerrar.', pedido: '¿Qué me quedó pendiente de hoy? Ayúdame a cerrar el día: qué muevo y qué marco hecho.' },
+  };
+  let pedidoLlamado = null;
+  function mostrarLlamado(url) {
+    let p;
+    try { p = new URL(url, location.origin).searchParams; } catch (_) { return; }
+    const tipo = p.get('aviso');
+    const l = LLAMADOS[tipo];
+    if (!l) return;
+    const id = (p.get('id') || '').slice(0, 80);
+    pedidoLlamado = typeof l.pedido === 'function' ? l.pedido(id) : l.pedido;
+    $('#llamado .llamado-texto').textContent = l.texto;
+    $('#llamado').hidden = false;
+    if (location.search) history.replaceState(null, '', '/');
+  }
+  $('#llamado-si').addEventListener('click', () => {
+    $('#llamado').hidden = true;
+    if (pedidoLlamado) enviar(pedidoLlamado, { voz: true });
+    pedidoLlamado = null;
+  });
+  $('#llamado-no').addEventListener('click', () => { $('#llamado').hidden = true; pedidoLlamado = null; });
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.tipo === 'aviso' && token) mostrarLlamado(e.data.url); });
+  }
+
+  // ---------- Agenda ----------
+  let agendaDesde = null; // lunes de la semana que se muestra
+  const claveDia = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  function lunesDe(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+
+  function filaTarea(t, conFecha) {
+    const f = document.createElement('div');
+    f.className = `fila-agenda${t.estado === 'hecho' ? ' hecha' : ''}`;
+    f.innerHTML = '<span class="hora"></span><button type="button" class="marca"></button><div class="que"><span class="txt"></span><small></small></div>';
+    f.querySelector('.hora').textContent = t.hora || (conFecha ? '' : 'Día');
+    if (conFecha) f.querySelector('.hora').textContent = t.fecha.slice(8, 10) + '/' + t.fecha.slice(5, 7);
+    const marca = f.querySelector('.marca');
+    marca.innerHTML = t.estado === 'hecho' ? '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '';
+    marca.setAttribute('aria-label', t.estado === 'hecho' ? 'Marcar pendiente' : 'Marcar hecha');
+    f.querySelector('.txt').textContent = `${t.importante ? '⭐ ' : ''}${t.texto}`;
+    f.querySelector('small').textContent = [t.proyecto, t.persona && `con ${t.persona}`, t.en_calendario && '📅'].filter(Boolean).join(' · ');
+    marca.addEventListener('click', async () => {
+      marca.disabled = true;
+      try {
+        await api(`/api/items/${t.id}`, { method: 'POST', body: JSON.stringify({ estado: t.estado === 'hecho' ? 'abierto' : 'hecho' }) });
+        pintarAgenda();
+        actualizarEstado();
+      } catch (e) { aviso(e.message, true); marca.disabled = false; }
+    });
+    return f;
+  }
+
+  function filaEvento(e) {
+    const f = document.createElement('div');
+    f.className = 'fila-agenda evento';
+    f.innerHTML = '<span class="hora"></span><span class="punto-evento"></span><div class="que"><span class="txt"></span><small></small></div>';
+    f.querySelector('.hora').textContent = e.hora || 'Día';
+    f.querySelector('.txt').textContent = e.titulo;
+    f.querySelector('small').textContent = [e.fin && e.hora ? `hasta ${e.fin}` : '', e.ubicacion].filter(Boolean).join(' · ');
+    return f;
+  }
+
+  async function pintarAgenda() {
+    if (!agendaDesde) agendaDesde = lunesDe(new Date());
+    const cont = $('#agenda-dias');
+    let s;
+    try { s = await api(`/api/agenda?desde=${claveDia(agendaDesde)}&dias=7`); } catch (e) { cont.textContent = e.message; return; }
+    const hechas = s.dias.reduce((n, d) => n + d.tareas.filter((t) => t.estado === 'hecho').length, 0);
+    const total = s.dias.reduce((n, d) => n + d.tareas.length, 0);
+    $('#agenda-resumen').textContent = `${total ? `${hechas} de ${total} tareas hechas esta semana` : 'Sin tareas con fecha esta semana'}` +
+      (s.calendario === 'conectado' ? ' · con tu Google Calendar' : s.calendario === 'no conectado' ? ' · conecta Google en Ajustes para ver tus reuniones' : '');
+    const venc = $('#agenda-vencidas');
+    venc.innerHTML = '';
+    venc.hidden = !s.vencidas.length;
+    if (s.vencidas.length) {
+      const h = document.createElement('h3');
+      h.textContent = `Atrasadas (${s.vencidas.length})`;
+      venc.appendChild(h);
+      for (const t of s.vencidas) venc.appendChild(filaTarea(t, true));
+    }
+    cont.innerHTML = '';
+    for (const d of s.dias) {
+      const caja = document.createElement('section');
+      caja.className = `dia${d.hoy ? ' hoy' : ''}${d.pasado ? ' pasado' : ''}`;
+      const h = document.createElement('h3');
+      h.innerHTML = '<span></span><small></small>';
+      h.querySelector('span').textContent = d.hoy ? `Hoy · ${d.nombre}` : d.nombre;
+      const pend = d.tareas.filter((t) => t.estado !== 'hecho').length;
+      h.querySelector('small').textContent = d.tareas.length ? `${d.tareas.length - pend}/${d.tareas.length} hechas` : '';
+      caja.appendChild(h);
+      // Eventos y tareas juntos, por hora (lo "del día" al final).
+      const filas = [
+        ...d.eventos.map((e) => ({ hora: e.hora || '99', el: filaEvento(e) })),
+        ...d.tareas.map((t) => ({ hora: t.hora || '99', el: filaTarea(t) })),
+      ].sort((a, b) => a.hora.localeCompare(b.hora));
+      if (!filas.length) {
+        const p = document.createElement('p');
+        p.className = 'dia-vacio';
+        p.textContent = 'Libre';
+        caja.appendChild(p);
+      }
+      for (const f of filas) caja.appendChild(f.el);
+      cont.appendChild(caja);
+      if (d.hoy && !s.vencidas.length) setTimeout(() => caja.scrollIntoView({ block: 'start' }), 50);
+    }
+  }
+  async function abrirAgenda() {
+    abrirPanel('#vista-agenda');
+    agendaDesde = lunesDe(new Date());
+    pintarAgenda();
+  }
+  $('#abrir-agenda').addEventListener('click', abrirAgenda);
+  $('#agenda-antes').addEventListener('click', () => { agendaDesde.setDate(agendaDesde.getDate() - 7); pintarAgenda(); });
+  $('#agenda-despues').addEventListener('click', () => { agendaDesde.setDate(agendaDesde.getDate() + 7); pintarAgenda(); });
+  $('#agenda-hoy').addEventListener('click', () => { agendaDesde = lunesDe(new Date()); pintarAgenda(); });
+
   // ---------- Compartido desde WhatsApp u otra app ----------
   const MAX_COMPARTIDO = 20000;
   let compartido = null;
@@ -1671,6 +1880,7 @@
     actualizarEstado();
     cargarAutorizaciones();
     revisarCompartido();
+    if (new URLSearchParams(location.search).has('aviso')) mostrarLlamado(location.href);
   }
 
   $('#login-form').addEventListener('submit', async (e) => {

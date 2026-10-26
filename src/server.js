@@ -7,6 +7,8 @@ const { q, initDb, comoUsuario, prepararInvitado } = require('./db');
 const U = require('./usuarios');
 const H = require('./herramientas');
 const Metricas = require('./metricas');
+const Avisos = require('./avisos');
+const Agenda = require('./agenda');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
 const C = require('./conversaciones');
@@ -219,12 +221,33 @@ app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body ||
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
 app.post('/api/usuarios/:id/activo', auth, soloAdmin, envolver((req) => U.cambiarActivo(parseInt(req.params.id, 10), !!(req.body || {}).activo)));
 
+// ---------- Avisos al teléfono ----------
+app.get('/api/push/clave', auth, envolver(async () => ({ publicKey: (await Avisos.clavesVapid()).publicKey })));
+app.post('/api/push/suscribir', auth, envolver((req) => Avisos.suscribir((req.body || {}).suscripcion, (req.body || {}).dispositivo)));
+app.post('/api/push/desuscribir', auth, envolver((req) => Avisos.desuscribir((req.body || {}).endpoint)));
+app.post('/api/push/probar', auth, envolver(async (req) => {
+  const r = await Avisos.enviar({ titulo: 'ADA', cuerpo: `Así te voy a avisar, ${req.usuario.nombre}. ✓`, url: '/', tag: 'prueba' });
+  if (!r.dispositivos) throw new Error('Este teléfono todavía no tiene los avisos activados');
+  return r;
+}));
+
+// ---------- Agenda visual ----------
+app.get('/api/agenda', auth, envolver((req) => Agenda.semana({ desde: req.query.desde, dias: req.query.dias })));
+app.post('/api/items/:id', auth, envolver(async (req) => {
+  const estado = (req.body || {}).estado;
+  if (!['hecho', 'abierto', 'descartado'].includes(estado)) throw new Error('Estado no válido');
+  const r = await H.ejecutar('actualizar_item', { id: parseInt(req.params.id, 10), estado });
+  if (r.error) throw new Error(r.error);
+  return r;
+}));
+
 app.post('/api/preferencias', auth, envolver((req) => H.guardarPreferencias(req.body || {})));
 
 app.get('/api/ajustes', auth, envolver(async (req) => ({
   usuario: req.usuario,
   preferencias: await H.preferencias(),
   tiempos: Metricas.resumen(),
+  avisos: await Avisos.estado(),
   google: { ...(await G.estado()), redirect_uri: G.redirectUri(req) },
   voz: { proveedor: Voz.proveedor() },
   internet: process.env.ADA_INTERNET !== 'no',
@@ -290,7 +313,10 @@ app.get('/api/estado', auth, async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 initDb()
-  .then(() => app.listen(PORT, () => console.log(`ADA escuchando en :${PORT} (TZ ${process.env.TZ})`)))
+  .then(() => {
+    app.listen(PORT, () => console.log(`ADA escuchando en :${PORT} (TZ ${process.env.TZ})`));
+    Avisos.iniciar();
+  })
   .catch((e) => {
     console.error('No pude iniciar la base de datos:', e.message);
     process.exit(1);

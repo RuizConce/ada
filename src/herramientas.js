@@ -81,14 +81,40 @@ function itemPublico(r) {
 
 // ---------- Preferencias de la persona ----------
 
+const AVISOS_DEFECTO = {
+  activos: true,
+  despertar: '07:30',
+  resumen: '07:45',
+  silencio_desde: '22:00',
+  cierre: '18:30',
+  max_dia: 3,
+  seguimiento: true,
+  correos: true,
+  cierre_activo: true,
+};
 const PREF_DEFECTO = { tareas_auto: true };
 async function preferencias() {
   const [r] = await q("SELECT datos FROM integraciones WHERE nombre = 'preferencias'");
-  return { ...PREF_DEFECTO, ...(r ? JSON.parse(r.datos) : {}) };
+  const guardadas = r ? JSON.parse(r.datos) : {};
+  return { ...PREF_DEFECTO, ...guardadas, avisos: { ...AVISOS_DEFECTO, ...(guardadas.avisos || {}) } };
 }
-async function guardarPreferencias(cambios) {
+const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+async function guardarPreferencias(cambios = {}) {
   const nuevas = { ...(await preferencias()) };
   if (cambios.tareas_auto !== undefined) nuevas.tareas_auto = !!cambios.tareas_auto;
+  if (cambios.avisos && typeof cambios.avisos === 'object') {
+    const a = { ...nuevas.avisos };
+    for (const k of ['despertar', 'resumen', 'silencio_desde', 'cierre']) {
+      const v = cambios.avisos[k];
+      if (v === undefined) continue;
+      if (v === '' || v === null) a[k] = ''; // vacío = desactivado
+      else if (HORA.test(v)) a[k] = v;
+      else throw new Error(`Hora no válida para ${k}: usa HH:MM`);
+    }
+    for (const k of ['activos', 'seguimiento', 'correos', 'cierre_activo']) if (cambios.avisos[k] !== undefined) a[k] = !!cambios.avisos[k];
+    if (cambios.avisos.max_dia !== undefined) a.max_dia = Math.max(0, Math.min(10, parseInt(cambios.avisos.max_dia, 10) || 0));
+    nuevas.avisos = a;
+  }
   await q(
     `INSERT INTO integraciones (nombre, datos, actualizado_en) VALUES ('preferencias', ?, ?)
      ON DUPLICATE KEY UPDATE datos = VALUES(datos), actualizado_en = VALUES(actualizado_en)`,

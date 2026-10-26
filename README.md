@@ -98,6 +98,12 @@ Con Contactos, ADA encuentra a las personas aunque se digan distinto: apodos, re
 
 En modo voz, ADA habla en una o dos frases y deja el detalle (listas, cifras, varios correos) en un recuadro en pantalla que no se lee en voz. Si dejas una frase a medias ("el correo de…"), espera unos segundos más antes de responder. En ⚙ Ajustes → Inteligencia aparecen los tiempos de los últimos turnos (cuánto tarda en empezar a hablar y en qué se va la demora); en los logs de Railway, cada turno muestra `ADA tiempos`.
 
+## Avisos y agenda
+
+**Avisos al teléfono** (⚙ Ajustes → Avisos → *Activar avisos en este teléfono*): despertar (7:30), resumen del día (7:45, armado solo con datos reales), seguimiento de encargos cuando toca revisar, respuestas por correo de personas con encargos abiertos y lo que quedó de hoy (18:30). Silencio desde las 22:00 hasta el despertar y máximo 3 avisos al día además del despertar y el resumen. Al tocar un aviso, ADA se abre con una tarjeta para escucharlo. Las claves VAPID se crean solas y quedan en la base (o define `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`). En iPhone, solo con ADA instalada en la pantalla de inicio.
+
+**Agenda** (ícono de calendario): la semana con las tareas por día —hechas tachadas, pendientes para marcar—, las atrasadas arriba y tus reuniones de Google Calendar en azul.
+
 ## WhatsApp: Compartir con ADA
 
 WhatsApp personal no permite que otra app lea tus chats. En Android, con ADA instalada como app (menú del navegador → *Instalar app*), aparece en el menú **Compartir**:

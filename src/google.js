@@ -444,6 +444,6 @@ H.registrar([
 });
 
 module.exports = {
-  calendarioDisponible, momentoTarea, agendarTarea, actualizarTarea,
+  calendarioDisponible, momentoTarea, agendarTarea, actualizarTarea, verAgenda,
   configurado, estado, crearEnlace, urlAutorizacion, recibirCallback, desconectar, agendaParaContexto, redirectUri, tokenAcceso, tienePermiso,
 };

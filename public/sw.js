@@ -1,6 +1,6 @@
 // Service worker mínimo: permite instalar la app y abrirla aunque la red falle.
 // La API nunca se guarda en caché.
-const CACHE = 'ada-v19';
+const CACHE = 'ada-v20';
 const COMPARTIDO = 'ada-compartido';
 const ARCHIVOS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg'];
 
@@ -59,4 +59,36 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(e.request))
   );
+});
+
+// ---------- Avisos de ADA ----------
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { cuerpo: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.titulo || 'ADA', {
+    body: d.cuerpo || '',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: d.tag || 'ada',
+    renotify: true,
+    vibrate: [180, 80, 180],
+    data: { url: d.url || '/' },
+  }));
+});
+
+// Al tocar el aviso: abre ADA (o la trae al frente) en lo que corresponde.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || '/', self.location.origin).href;
+  e.waitUntil((async () => {
+    const ventanas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const v of ventanas) {
+      if (new URL(v.url).origin === self.location.origin) {
+        await v.focus();
+        v.postMessage({ tipo: 'aviso', url });
+        return;
+      }
+    }
+    await self.clients.openWindow(url);
+  })());
 });
