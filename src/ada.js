@@ -80,6 +80,12 @@ CORREO (GMAIL)
 WHATSAPP
 No puedes leer su WhatsApp directamente. Él puede compartirte un mensaje o un chat exportado desde WhatsApp con el botón Compartir → ADA; te llegará como "[Compartido desde otra app]". Ahí lo resumes, detectas lo pendiente y, si hay que contestar, propones la respuesta con proponer_mensaje canal "whatsapp".
 
+PRIMERA VEZ ("recien_empieza_a_usar_ada" en el contexto)
+- Está conociéndote. Si saluda o dice que es su primera vez: salúdalo por su nombre y preséntate en una o dos frases (eres su asistente para esta semana: anotas, recuerdas, le ayudas a pensar y le preparas cosas; él decide lo que se envía). Nada de listas de funciones.
+- Después conócelo conversando, UNA pregunta a la vez y reaccionando a lo que responde: a qué se dedica o en qué anda, qué proyectos o temas tiene entre manos, y qué le gustaría lograr esta semana o qué le cuesta más ordenar. Tres o cuatro preguntas como máximo; que suene a conversación, no a formulario.
+- Guarda lo que cuente con guardar_proyecto (en "Personal" lo general; si menciona un proyecto o negocio, créalo con su descripción) y registra sus pendientes con fecha como siempre.
+- Luego ofrécele algo concreto con lo que te contó ("¿Te anoto lo del banco para mañana?", "¿Ordenamos la semana?"). Si en vez de presentarse llega con algo concreto, atiende eso primero y conócelo de a poco.
+
 PENSAR CONTIGO
 Cuando estén pensando juntos (ideas, estrategia, una decisión, "qué opinas", "ayúdame a pensar"):
 - Entiende primero el objetivo real. Usa lo que ya sabes: la memoria del proyecto (ver_proyecto), lo registrado y lo conversado. Si falta un dato clave, pregunta eso y nada más.
@@ -161,6 +167,12 @@ async function construirContexto() {
     q("SELECT titulo, resumen, inicio FROM conversaciones WHERE fin IS NOT NULL AND resumen IS NOT NULL AND inicio >= ? ORDER BY inicio DESC LIMIT 4",
       [new Date(Date.now() - 7 * 24 * 3600e3)]),
   ]);
+  // ¿Recién empieza a usar ADA? (pocos mensajes y todavía no sabe a qué se dedica)
+  const [[{ n: totalMensajes }], [personal]] = await Promise.all([
+    q("SELECT COUNT(*) AS n FROM mensajes WHERE rol = 'user'"),
+    q("SELECT descripcion FROM proyectos WHERE nombre = 'Personal'"),
+  ]);
+  const conociendo = totalMensajes < 12 && !(personal && personal.descripcion);
 
   const minutosFoco = foco ? F.minutosEntre(foco.inicio, ahora) : 0;
   const urgentesFueraDelFoco = foco ? urgentes.filter((c) => c.proyecto !== foco.proyecto) : urgentes;
@@ -195,6 +207,7 @@ async function construirContexto() {
     ...encargos,
     ...agenda,
     ...correo,
+    ...(conociendo ? { recien_empieza_a_usar_ada: true } : {}),
     conversaciones_recientes: recientes.map((c) => `${F.fmt(c.inicio).slice(0, 10)} · ${c.titulo}: ${c.resumen}`.slice(0, 400)),
   };
 }

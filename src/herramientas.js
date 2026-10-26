@@ -102,6 +102,7 @@ const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 async function guardarPreferencias(cambios = {}) {
   const nuevas = { ...(await preferencias()) };
   if (cambios.tareas_auto !== undefined) nuevas.tareas_auto = !!cambios.tareas_auto;
+  if (cambios.bienvenida_vista !== undefined) nuevas.bienvenida_vista = !!cambios.bienvenida_vista;
   if (cambios.modelo_modo !== undefined) {
     if (!['auto', 'rapido', 'profundo'].includes(cambios.modelo_modo)) throw new Error('modelo_modo debe ser auto, rapido o profundo');
     nuevas.modelo_modo = cambios.modelo_modo;

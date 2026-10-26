@@ -857,7 +857,7 @@
     return out.join(' ');
   }
 
-  function iniciarConversacion() {
+  function iniciarConversacion(primerMensaje) {
     if (ocupado || conversando) return;
     desbloquearVoz();
     if (!Reconocimiento) {
@@ -869,7 +869,8 @@
     conversando = true;
     silenciosSeguidos = 0;
     pintarControles();
-    escucharTurno();
+    if (typeof primerMensaje === 'string') turnoDeAda(primerMensaje); // ADA habla primero
+    else escucharTurno();
   }
 
   function detenerVoz() {
@@ -1623,6 +1624,30 @@
   $('#mensaje').addEventListener('focus', () => { if (window.matchMedia('(max-width: 700px)').matches) $('#app').classList.add('escribiendo'); });
   $('#mensaje').addEventListener('blur', () => setTimeout(() => $('#app').classList.remove('escribiendo'), 150));
 
+  // ---------- Bienvenida (primera vez de cada invitado) ----------
+  const PRIMER_MENSAJE = 'Hola ADA, es mi primera vez. Cuéntame brevemente qué haces y conozcámonos.';
+  function mostrarBienvenida() {
+    $('#bienvenida-titulo').textContent = `Hola${yo && yo.nombre ? `, ${yo.nombre}` : ''} 👋`;
+    $('#hoja-bienvenida').hidden = false;
+  }
+  async function cerrarBienvenida() {
+    $('#hoja-bienvenida').hidden = true;
+    api('/api/preferencias', { method: 'POST', body: JSON.stringify({ bienvenida_vista: true }) }).catch(() => {});
+  }
+  $('#bienvenida-voz').addEventListener('click', () => {
+    cerrarBienvenida();
+    desbloquearVoz();
+    if (!Reconocimiento) { enviar(PRIMER_MENSAJE, { mostrar: '👋 Primera vez' }); return; }
+    if (silenciada) $('#silencio').click(); // para conversar, que hable
+    iniciarConversacion(PRIMER_MENSAJE);
+  });
+  $('#bienvenida-texto').addEventListener('click', () => {
+    cerrarBienvenida();
+    mostrarTeclado(true);
+    enviar(PRIMER_MENSAJE, { mostrar: '👋 Primera vez' });
+  });
+  $('#ver-bienvenida').addEventListener('click', () => { $('#vista-ajustes').hidden = true; mostrarBienvenida(); });
+
   // ---------- Avisos al teléfono ----------
   const soportaPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const b64aBytes = (b64) => {
@@ -1925,12 +1950,16 @@
     setFase('reposo');
     pintarControles();
     revisarRetornoGoogle();
-    cargarAjustes();
+    const ajustes = cargarAjustes();
     await retomarConversacion();
     actualizarEstado();
     cargarAutorizaciones();
     revisarCompartido();
     if (new URLSearchParams(location.search).has('aviso')) mostrarLlamado(location.href);
+    // Primera vez de un invitado: bienvenida.
+    const aj = await ajustes;
+    if (aj && aj.usuario) yo = aj.usuario;
+    if (aj && aj.usuario && aj.usuario.id !== 1 && !(aj.preferencias && aj.preferencias.bienvenida_vista)) mostrarBienvenida();
   }
 
   $('#login-form').addEventListener('submit', async (e) => {

@@ -221,6 +221,7 @@
           </div>
         </section>
         <section class="ajuste">
+          <button id="ver-bienvenida" type="button" class="secundario">¿Qué puede hacer ADA?</button>
           <p id="sesion-de" class="meta"></p>
           <button id="cerrar-sesion" type="button" class="secundario">Cerrar sesión</button>
         </section>
@@ -248,6 +249,34 @@
         </div>
         <p class="meta">Toca ▶ para escucharla y "Usar" para elegirla.</p>
         <div id="lista-voces" class="lista-voces"></div>
+      </div>
+    </div>
+
+    <!-- ============ Bienvenida (primera vez) ============ -->
+    <div id="hoja-bienvenida" class="hoja" hidden>
+      <div class="hoja-fondo"></div>
+      <div class="hoja-panel bienvenida-panel" role="dialog" aria-labelledby="bienvenida-titulo">
+        <p class="doc-etiqueta">Bienvenida</p>
+        <h2 id="bienvenida-titulo">Hola 👋</h2>
+        <p class="bienvenida-lead">Soy <strong>ADA</strong>, una asistente con inteligencia artificial. Me hablas como a una persona: yo anoto, recuerdo, te ayudo a pensar y preparo cosas por ti.</p>
+        <h3>Puedes decirme, por ejemplo</h3>
+        <ul class="bienvenida-ejemplos">
+          <li><span>"Mañana tengo que llamar al banco"</span><small>Lo anoto, te lo agendo y te aviso</small></li>
+          <li><span>"Ayúdame a pensar cómo ordenar mi semana"</span><small>Conversamos, te doy mi opinión y propongo un plan</small></li>
+          <li><span>"Prepárame un mensaje para Paola"</span><small>Lo redacto; tú decides si se envía</small></li>
+          <li><span>"¿Qué tengo pendiente?"</span><small>Te digo lo que vence y lo atrasado</small></li>
+        </ul>
+        <h3>Cómo usarme</h3>
+        <ul class="bienvenida-uso">
+          <li>Toca la esfera y háblame. Si me alargo, háblame o tócala y me callo.</li>
+          <li>En <strong>📅 Agenda</strong> ves tus tareas de la semana.</li>
+          <li>En <strong>⚙ Ajustes</strong> puedes conectar tu Google (opcional) y activar avisos al teléfono.</li>
+          <li>Tu ADA es solo tuya: lo que hablas conmigo no se mezcla con nadie más.</li>
+        </ul>
+        <div class="bienvenida-botones">
+          <button id="bienvenida-voz" type="button" class="principal">Conversemos</button>
+          <button id="bienvenida-texto" type="button">Prefiero escribir</button>
+        </div>
       </div>
     </div>
 

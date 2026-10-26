@@ -490,3 +490,18 @@ button:disabled { opacity: 0.45; cursor: default; }
 .fila-agenda .hora { padding-top: 0; }
 .punto-evento::after { margin-top: 0; }
 #avisos-config ~ .meta { margin-top: 12px; }
+
+/* Bienvenida */
+.bienvenida-panel { max-height: 90dvh; overflow-y: auto; padding-top: 18px; }
+.bienvenida-panel h2 { margin: 2px 0 8px; font-size: 26px; }
+.bienvenida-panel h3 { margin: 16px 0 8px; font-size: 14px; color: var(--texto-suave); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.bienvenida-lead { margin: 0; font-size: 16px; line-height: 1.5; }
+.bienvenida-ejemplos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.bienvenida-ejemplos li { padding: 10px 12px; border-radius: 12px; background: var(--vidrio); border: 1px solid var(--borde); }
+.bienvenida-ejemplos span { display: block; font-size: 15px; }
+.bienvenida-ejemplos small { color: var(--texto-suave); font-size: 13px; }
+.bienvenida-uso { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; line-height: 1.45; color: var(--texto); }
+.bienvenida-botones { display: grid; gap: 8px; margin-top: 18px; position: sticky; bottom: 0; padding-top: 10px; background: linear-gradient(transparent, var(--fondo-panel, var(--fondo)) 30%); }
+.bienvenida-botones button { padding: 14px; border-radius: 14px; border: 1px solid var(--borde); background: var(--vidrio); font-size: 16px; }
+.bienvenida-botones .principal { border: 0; background: linear-gradient(90deg, var(--verde), var(--verde-2)); color: #04140d; font-weight: 700; }
+#ver-bienvenida { margin-bottom: 10px; }
