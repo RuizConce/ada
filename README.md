@@ -79,7 +79,7 @@ Si hay varias, `VOZ_PROVEEDOR` decide (`google`, `elevenlabs`, `openai` o `naveg
 
 ## Google (Calendar, Drive y Gmail)
 
-1. En [Google Cloud Console](https://console.cloud.google.com) crea un proyecto y habilita **Google Calendar API**, **Google Drive API**, **Google Sheets API**, **Google Docs API** y **Gmail API** (y **Cloud Text-to-Speech API** si usarás esa voz).
+1. En [Google Cloud Console](https://console.cloud.google.com) crea un proyecto y habilita **Google Calendar API**, **Google Drive API**, **Google Sheets API**, **Google Docs API**, **Gmail API** y **People API** (contactos) (y **Cloud Text-to-Speech API** si usarás esa voz).
 2. Configura la pantalla de consentimiento OAuth: tipo *Externo*, agrega tu Gmail como usuario de prueba. Para que la conexión no venza cada 7 días, publícala (*En producción*); el aviso de "app no verificada" es normal para uso personal.
 3. Credenciales → **ID de cliente OAuth** → *Aplicación web* → URI de redirección autorizada:
    `https://TU-DOMINIO.up.railway.app/api/google/callback` (la app la muestra en Ajustes).
@@ -91,6 +91,12 @@ ADA puede ver la agenda libremente; para crear, mover o eliminar eventos siempre
 Con Drive conectado, ADA puede **buscar, leer y analizar** (Docs, Sheets, Slides, Word, Excel, PDF, CSV), **ordenar** (crear carpetas, mover, renombrar, enviar a la papelera) y **editar** (agregar filas o actualizar celdas en Sheets, agregar o reemplazar texto en Docs). Todo lo que modifica requiere confirmación.
 
 Con Gmail, ADA **busca, lee y resume** correos, ve los no leídos recientes, deja **borradores**, **archiva** (con confirmación) y propone **respuestas en el mismo hilo**. Nunca envía sola: la tarjeta muestra **Enviar desde Gmail** y el correo sale solo cuando tocas el botón (puedes editar asunto y texto antes).
+
+Con Contactos, ADA encuentra a las personas aunque se digan distinto: apodos, relaciones ("mi señora"), nombres sin tildes o mal reconocidos por la voz, o nombre + organización. Busca en sus propios contactos (con alias aprendidos) y en Google (libreta y personas a las que les has escrito). Si hay dudas, pregunta; nunca inventa un correo o teléfono.
+
+## Voz: lo hablado corto, el detalle en pantalla
+
+En modo voz, ADA habla en una o dos frases y deja el detalle (listas, cifras, varios correos) en un recuadro en pantalla que no se lee en voz. Si dejas una frase a medias ("el correo de…"), espera unos segundos más antes de responder. En ⚙ Ajustes → Inteligencia aparecen los tiempos de los últimos turnos (cuánto tarda en empezar a hablar y en qué se va la demora); en los logs de Railway, cada turno muestra `ADA tiempos`.
 
 ## WhatsApp: Compartir con ADA
 

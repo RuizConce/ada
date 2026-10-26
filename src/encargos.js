@@ -3,6 +3,7 @@
 const { q } = require('./db');
 const F = require('./fechas');
 const H = require('./herramientas');
+const K = require('./contactos');
 
 const ESTADOS = ['en_curso', 'esperando_autorizacion', 'esperando_respuesta', 'necesita_decision', 'resuelto', 'cancelado'];
 const ACTIVOS = ESTADOS.slice(0, 4);
@@ -18,26 +19,60 @@ function normalizarTelefono(t) {
   return d || null;
 }
 
-const SELECT_CONTACTO = 'SELECT id, nombre, relacion, organizacion, email, telefono, notas FROM contactos';
+const SELECT_CONTACTO = 'SELECT id, nombre, alias, relacion, organizacion, email, telefono, notas FROM contactos';
 
 function contactoPublico(c) {
   if (!c) return null;
   const o = { id: c.id, nombre: c.nombre };
+  const alias = Array.isArray(c.alias) ? c.alias : K.aLista(c.alias);
+  if (alias.length) o.alias = alias;
   for (const k of ['relacion', 'organizacion', 'email', 'telefono', 'notas']) if (c[k]) o[k] = c[k];
   return o;
 }
 
+const candidatoPublico = (c) => ({
+  nombre: c.nombre, fuente: c.fuente, ...(c.id ? { id: c.id } : {}),
+  ...(c.alias && c.alias.length ? { alias: c.alias } : {}),
+  ...(c.relacion ? { relacion: c.relacion } : {}), ...(c.organizacion ? { organizacion: c.organizacion } : {}),
+  ...(c.email ? { email: c.email } : {}), ...(c.telefono ? { telefono: c.telefono } : {}),
+  ...(c.notas ? { notas: c.notas } : {}),
+  parecido: c.puntaje,
+});
+
+// Un contacto de Google que se usa queda guardado en ADA (así la próxima vez es inmediato).
+async function importar(c) {
+  const ahora = new Date();
+  const r = await q(
+    `INSERT INTO contactos (nombre, alias, relacion, organizacion, email, telefono, notas, creado_en, actualizado_en)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [c.nombre.slice(0, 160), (c.alias || []).join('|') || null, c.relacion || null, c.organizacion || null,
+      c.email || null, c.telefono || null, `Importado de ${c.fuente}`, ahora, ahora]
+  );
+  const [row] = await q(`${SELECT_CONTACTO} WHERE id = ?`, [r.insertId]);
+  return row;
+}
+
+class ContactoAmbiguo extends Error {}
+
+// Encuentra a la persona aunque se diga distinto. Si hay dudas, no adivina: pide elegir.
 async function resolverContacto(nombre, { crear = false } = {}) {
   if (!nombre || !String(nombre).trim()) return null;
   const limpio = String(nombre).trim();
-  let rows = await q(`${SELECT_CONTACTO} WHERE LOWER(nombre) = LOWER(?)`, [limpio]);
-  if (rows.length) return rows[0];
-  rows = await q(`${SELECT_CONTACTO} WHERE LOWER(nombre) LIKE LOWER(?) ORDER BY CHAR_LENGTH(nombre) LIMIT 2`, [`%${limpio}%`]);
-  if (rows.length === 1) return rows[0];
+  const [exacto] = await q(`${SELECT_CONTACTO} WHERE LOWER(nombre) = LOWER(?)`, [limpio]);
+  if (exacto) return exacto;
+  const r = await K.encontrar(limpio);
+  if (r.confianza === 'alta') {
+    const c = r.candidatos[0];
+    return c.fuente === 'ADA' ? (await q(`${SELECT_CONTACTO} WHERE id = ?`, [c.id]))[0] : importar(c);
+  }
+  if (r.confianza === 'varios') {
+    const lista = r.candidatos.map((c) => `${c.nombre}${c.organizacion ? ` (${c.organizacion})` : ''}${c.relacion ? ` [${c.relacion}]` : ''} — ${c.fuente}`).join('; ');
+    throw new ContactoAmbiguo(`No estoy segura de a quién se refiere con "${limpio}". Posibles: ${lista}. Pregúntale a Cristian cuál es (sin adivinar) y vuelve a llamar con el nombre exacto. Si confirma un apodo o relación, guárdalo con guardar_contacto (alias / relacion).`);
+  }
   if (!crear) return null;
   const ahora = new Date();
-  const r = await q('INSERT INTO contactos (nombre, creado_en, actualizado_en) VALUES (?, ?, ?)', [limpio.slice(0, 160), ahora, ahora]);
-  return { id: r.insertId, nombre: limpio.slice(0, 160), nuevo: true };
+  const ins = await q('INSERT INTO contactos (nombre, creado_en, actualizado_en) VALUES (?, ?, ?)', [limpio.slice(0, 160), ahora, ahora]);
+  return { id: ins.insertId, nombre: limpio.slice(0, 160), nuevo: true };
 }
 
 async function anotar(encargoId, texto) {
@@ -65,11 +100,18 @@ async function guardarContacto(a) {
   if (!a.nombre || !String(a.nombre).trim()) throw new Error('nombre es obligatorio');
   const campos = ['relacion', 'organizacion', 'email', 'telefono', 'notas'];
   const ahora = new Date();
+  const aliasNuevos = (Array.isArray(a.alias) ? a.alias : K.aLista(String(a.alias || '').replace(/,/g, '|')))
+    .map((x) => String(x).trim().slice(0, 60)).filter(Boolean);
   let existente = a.id ? (await q(`${SELECT_CONTACTO} WHERE id = ?`, [a.id]))[0] : null;
   if (!existente) existente = (await q(`${SELECT_CONTACTO} WHERE LOWER(nombre) = LOWER(?)`, [a.nombre.trim()]))[0];
   if (existente) {
     const sets = ['nombre = ?', 'actualizado_en = ?'];
     const params = [a.nombre.trim(), ahora];
+    if (aliasNuevos.length) {
+      const todos = [...K.aLista(existente.alias)];
+      for (const x of aliasNuevos) if (!todos.some((y) => K.normalizar(y) === K.normalizar(x))) todos.push(x);
+      sets.push('alias = ?'); params.push(todos.join('|'));
+    }
     for (const k of campos) {
       if (a[k] === undefined) continue;
       let v = a[k];
@@ -82,27 +124,38 @@ async function guardarContacto(a) {
     return { ok: true, actualizado: true, contacto: contactoPublico(c) };
   }
   const r = await q(
-    `INSERT INTO contactos (nombre, relacion, organizacion, email, telefono, notas, creado_en, actualizado_en)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [a.nombre.trim(), a.relacion || null, a.organizacion || null, a.email || null, a.telefono || null, a.notas || null, ahora, ahora]
+    `INSERT INTO contactos (nombre, alias, relacion, organizacion, email, telefono, notas, creado_en, actualizado_en)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [a.nombre.trim(), aliasNuevos.join('|') || null, a.relacion || null, a.organizacion || null, a.email || null, a.telefono || null, a.notas || null, ahora, ahora]
   );
   const [c] = await q(`${SELECT_CONTACTO} WHERE id = ?`, [r.insertId]);
   return { ok: true, creado: true, contacto: contactoPublico(c) };
 }
 
 async function buscarContactos(a = {}) {
-  const t = `%${(a.texto || '').trim()}%`;
-  const rows = await q(
-    `${SELECT_CONTACTO} WHERE nombre LIKE ? OR organizacion LIKE ? OR relacion LIKE ? OR notas LIKE ?
-     ORDER BY nombre LIMIT 20`, [t, t, t, t]
-  );
-  const out = [];
-  for (const c of rows) {
-    const enc = await q(`SELECT id, titulo, estado FROM encargos WHERE contacto_id = ? AND estado IN (?) ORDER BY id DESC LIMIT 5`,
-      [c.id, ACTIVOS]);
-    out.push({ ...contactoPublico(c), encargos_activos: enc });
+  const texto = (a.texto || '').trim();
+  if (!texto) {
+    const rows = await q(`${SELECT_CONTACTO} ORDER BY actualizado_en DESC LIMIT 20`);
+    return { total: rows.length, contactos: rows.map(contactoPublico) };
   }
-  return { total: out.length, contactos: out };
+  const r = await K.encontrar(texto, { conGoogle: a.incluir_google !== false });
+  const contactos = [];
+  for (const c of r.candidatos) {
+    const o = candidatoPublico(c);
+    if (c.fuente === 'ADA') {
+      o.encargos_activos = await q('SELECT id, titulo, estado FROM encargos WHERE contacto_id = ? AND estado IN (?) ORDER BY id DESC LIMIT 5', [c.id, ACTIVOS]);
+    }
+    contactos.push(o);
+  }
+  return {
+    confianza: r.confianza,
+    indicacion: r.confianza === 'alta' ? 'Coincidencia clara.'
+      : r.confianza === 'varios' ? 'Hay más de una posibilidad: pregúntale a cuál se refiere antes de actuar.'
+        : 'No encontré a nadie parecido. No inventes datos: pídeselos y guárdalos con guardar_contacto.',
+    google_contactos: r.google_contactos,
+    total: contactos.length,
+    contactos,
+  };
 }
 
 // ---------- Encargos ----------
@@ -326,11 +379,12 @@ async function resumenParaContexto() {
 const DEFINICIONES = [
   {
     name: 'guardar_contacto',
-    description: 'Crea o actualiza un contacto de Cristian (por nombre). Úsala cuando mencione datos de una persona: relación, organización, teléfono, correo o algo útil para tratarla. Las notas se acumulan.',
+    description: 'Crea o actualiza un contacto de Cristian (por nombre). Úsala cuando mencione datos de una persona: relación, apodos, organización, teléfono, correo o algo útil para tratarla. Cuando te enseñe cómo le dice a alguien ("mi señora se llama Iñora", "la Pao es Paola Díaz"), guarda la relación y el apodo en alias. Las notas y los alias se acumulan.',
     input_schema: {
       type: 'object',
       properties: {
         nombre: { type: 'string' },
+        alias: { type: 'array', items: { type: 'string' }, description: 'Cómo le dice Cristian: apodos o formas de referirse ("mi señora", "la Pao", "Iñora")' },
         relacion: { type: 'string', description: 'Ej: "socio", "encargada de Bellavista", "funcionaria SEREMI"' },
         organizacion: { type: 'string' },
         telefono: { type: 'string' },
@@ -342,8 +396,8 @@ const DEFINICIONES = [
   },
   {
     name: 'buscar_contactos',
-    description: 'Busca contactos por nombre, organización, relación o notas, con sus encargos activos.',
-    input_schema: { type: 'object', properties: { texto: { type: 'string' } } },
+    description: 'Encuentra a una persona aunque Cristian la nombre distinto: apodo, relación ("mi señora"), nombre mal escrito o sin tildes, nombre + organización ("Daniela de la escuela"). Busca en los contactos de ADA y en Google (libreta y personas con las que ha escrito por correo). Devuelve candidatos con su parecido y una confianza: si es "varios", pregunta a cuál se refiere; si es "ninguno", pide los datos. Úsala SIEMPRE antes de decir que no conoces a alguien.',
+    input_schema: { type: 'object', properties: { texto: { type: 'string' }, incluir_google: { type: 'boolean' } } },
   },
   {
     name: 'crear_encargo',
@@ -429,4 +483,4 @@ H.registrar(DEFINICIONES, {
   proponer_mensaje: proponerAccion,
 });
 
-module.exports = { autorizacionesPendientes, resolverAccion, resumenParaContexto, normalizarTelefono, listarEncargos };
+module.exports = { resolverContacto, ContactoAmbiguo, autorizacionesPendientes, resolverAccion, resumenParaContexto, normalizarTelefono, listarEncargos };

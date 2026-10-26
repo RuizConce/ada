@@ -133,6 +133,14 @@
     subAda.scrollTop = 0;
   }
 
+  // Detalle que ADA deja para mirar (no se lee en voz).
+  function mostrarDetalle(texto) {
+    const d = $('#detalle');
+    if (!d) return;
+    d.hidden = !texto;
+    d.querySelector('.detalle-cuerpo').innerHTML = texto ? md(texto) : '';
+  }
+
   // ---------- Entregas: documentos y mensajes por autorizar ----------
   const ICONO_DOC = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5v12.5H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4.5M9.5 12.5h6M9.5 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   let autorizaciones = [];
@@ -468,8 +476,10 @@
   // El locutor recibe frases a medida que llegan, precarga el audio y las dice en orden.
   // detener() la calla de inmediato (para interrumpir).
   let locutorActual = null;
-  function crearLocutor({ alEmpezar, antes } = {}) {
+  function crearLocutor({ alEmpezar, antes, alSonar } = {}) {
     const cola = [];
+    let sono = false;
+    const medida = { tts_ms: null };
     let cerrado = false;
     let detenido = false;
     let trabajando = false;
@@ -488,6 +498,7 @@
         if (!empezo) { empezo = true; if (alEmpezar) alEmpezar(); }
         const url = item.audio ? await item.audio : null;
         if (detenido) { if (url) URL.revokeObjectURL(url); break; }
+        if (!sono) { sono = true; if (alSonar) alSonar(medida); }
         if (url) { await reproducir(url, cancelado); URL.revokeObjectURL(url); }
         else await decirConNavegador(item.frase, cancelado);
       }
@@ -500,7 +511,13 @@
         if (detenido || silenciada) return;
         const frase = textoParaHablar(texto);
         if (!frase || !/[\p{L}\p{N}]/u.test(frase)) return;
-        cola.push({ frase, audio: vozServidor ? pedirAudio(frase, control.signal) : null });
+        let audio = null;
+        if (vozServidor) {
+          const t = performance.now();
+          audio = pedirAudio(frase, control.signal);
+          if (medida.tts_ms === null) { medida.tts_ms = -1; audio.then(() => { medida.tts_ms = Math.round(performance.now() - t); }); }
+        }
+        cola.push({ frase, audio });
         bombear();
       },
       cerrar() {
@@ -696,7 +713,15 @@
     setFase('pensando');
 
     const hablar = !silenciada;
-    const locutor = hablar ? crearLocutor({ alEmpezar: () => setFase('hablando'), antes: opciones.antes }) : null;
+    const inicio = opciones.desde || performance.now();
+    let medicion = null;
+    const locutor = hablar ? crearLocutor({
+      alEmpezar: () => setFase('hablando'),
+      antes: opciones.antes,
+      alSonar: (m) => { medicion = { hasta_audio_ms: Math.round(performance.now() - inicio), medida: m }; },
+    }) : null;
+    let detalleTexto = '';
+    mostrarDetalle('');
     const cortador = crearCortador((frase) => locutor && locutor.decir(frase));
     let acumulado = '';
     let resultado = null;
@@ -718,6 +743,9 @@
           acumulado += d.delta;
           mostrarAda(acumulado);
           cortador.agregar(d.delta);
+        } else if (tipo === 'detalle') {
+          detalleTexto += d.delta;
+          mostrarDetalle(detalleTexto);
         } else if (tipo === 'estado') {
           if (!locutor || !locutor.hablando) setFase('pensando', d.texto);
         } else if (tipo === 'documento') {
@@ -737,6 +765,14 @@
       cortador.terminar();
       if (locutor) locutor.cerrar();
       mostrarAda(resultado.respuesta);
+      if (resultado.detalle) mostrarDetalle(resultado.detalle);
+      if (locutor && opciones.voz) {
+        const convMedida = convId;
+        locutor.fin.then(() => {
+          if (!medicion) return;
+          api('/api/metricas', { method: 'POST', body: JSON.stringify({ conversacion_id: convMedida, hasta_audio_ms: medicion.hasta_audio_ms, tts_ms: medicion.medida.tts_ms > 0 ? medicion.medida.tts_ms : undefined }) }).catch(() => {});
+        });
+      }
       if (resultado.documentos && resultado.documentos.length && !opciones.voz) {
         abrirDocumento(resultado.documentos[resultado.documentos.length - 1].id);
       }
@@ -851,11 +887,27 @@
     setFase('reposo');
   }
 
-  function escucharTurno() {
+  // Si la frase quedó a medias ("el correo de…"), espera un poco más antes de responder.
+  const CONECTORES = /(?:^|\s)(de|del|el|la|los|las|un|una|que|y|o|a|al|en|con|para|por|pero|porque|como|mi|tu|su|sus|mis|eh|em|este|esta|osea|o sea|entonces|cuando|donde|si|le|les|lo|me|se|muy|más|mas|hasta|desde|sobre|entre)$/i;
+  const CORTAS_COMPLETAS = /^(sí|si|no|ya|ok|okay|dale|listo|gracias|chao|chau|bueno|perfecto|claro|exacto|nada|hola)\b/i;
+  function graciaPara(t) {
+    const limpio = t.trim().replace(/[.!?…]+$/, '');
+    if (/,$/.test(limpio) || CONECTORES.test(limpio)) return 2300;
+    const n = limpio.split(/\s+/).length;
+    if (n <= 2 && !CORTAS_COMPLETAS.test(limpio)) return 1200;
+    return 0;
+  }
+  const unir = (a, b) => [a, b].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  let acumulado = '';
+  let timerGracia;
+
+  function escucharTurno(continuar = false) {
     if (!conversando) return;
+    if (!continuar) acumulado = '';
     textoFinal = '';
     textoParcial = '';
-    setFase('escuchando');
+    setFase('escuchando', continuar ? 'Te sigo escuchando…' : undefined);
+    if (!continuar) fetch('/api/precalentar', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     rec = new Reconocimiento();
     rec.lang = 'es-CL';
     rec.interimResults = true;
@@ -873,7 +925,8 @@
       }
       textoFinal = quitarRepeticiones(finales);
       textoParcial = parcial && !textoFinal.endsWith(parcial) ? parcial : '';
-      mostrarYo(textoActual());
+      mostrarYo(unir(acumulado, textoActual()));
+      clearTimeout(timerGracia);
       clearTimeout(timerSilencio);
       timerSilencio = setTimeout(() => { if (rec) rec.stop(); }, SILENCIO_MS);
     };
@@ -885,9 +938,22 @@
     };
     rec.onend = () => {
       clearTimeout(timerSilencio);
+      clearTimeout(timerGracia);
       rec = null;
       if (!conversando) return;
-      const t = textoActual();
+      const nuevo = textoActual();
+      const t = unir(acumulado, nuevo);
+      // Terminó la espera extra sin que dijera nada más: se responde con lo acumulado.
+      if (continuar && !nuevo && t) { silenciosSeguidos = 0; turnoDeAda(t); return; }
+      if (t && nuevo) {
+        const espera = graciaPara(t);
+        if (espera) {
+          acumulado = t;
+          escucharTurno(true);
+          timerGracia = setTimeout(() => { if (rec) rec.stop(); }, espera);
+          return;
+        }
+      }
       if (!t) {
         silenciosSeguidos += 1;
         if (silenciosSeguidos >= 3) { detenerVoz(); setFase('reposo', 'Te dejo tranquilo. Toca para seguir hablando.'); return; }
@@ -901,9 +967,11 @@
   }
 
   async function turnoDeAda(texto) {
+    const desde = performance.now();
+    acumulado = '';
     setFase('pensando');
     const acuse = decirAcuse();
-    const r = await enviar(texto, { voz: true, acuse: acuse && acuse.texto, antes: acuse && acuse.termino });
+    const r = await enviar(texto, { voz: true, acuse: acuse && acuse.texto, antes: acuse && acuse.termino, desde });
     if (!conversando) return;
     if (!r) { detenerVoz(); return; }
     if (r.locutor) {
@@ -1272,11 +1340,12 @@
     } else if (g.conectado) {
       estado.innerHTML = '<span class="estado-ok">Conectado</span>';
       if (g.cuenta) estado.append(` · ${g.cuenta}`);
-      const faltaGmail = (g.faltan_permisos || []).some((p) => p.startsWith('gmail'));
-      if (faltaGmail) {
+      const faltan = g.faltan_permisos || [];
+      const nombres = [...new Set(faltan.map((p) => (p.startsWith('gmail') ? 'Gmail' : p.startsWith('contacts') ? 'Contactos' : p.startsWith('drive') ? 'Drive' : 'Calendar')))];
+      if (nombres.length) {
         ayuda.hidden = false;
-        ayuda.textContent = 'Falta darle acceso a tu correo. Reconecta y acepta los permisos de Gmail.';
-        acciones.appendChild(botonConectar('Reconectar para dar acceso a Gmail'));
+        ayuda.textContent = `Falta darle acceso a: ${nombres.join(', ')}. Reconecta y marca "Seleccionar todo" en los permisos de Google.`;
+        acciones.appendChild(botonConectar(`Reconectar para dar acceso a ${nombres.join(' y ')}`));
       }
       const b = document.createElement('button');
       b.type = 'button';
@@ -1300,7 +1369,10 @@
       $('#ajuste-personas').hidden = !a.usuario.admin;
       if (a.usuario.admin) pintarPersonas();
     }
-    $('#ia-estado').textContent = `Modelo: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
+    const seg = (ms) => (typeof ms === 'number' ? `${(ms / 1000).toFixed(1)} s` : '—');
+    const t = a.tiempos && a.tiempos.turnos ? a.tiempos.ms : null;
+    $('#ia-estado').textContent = `Modelo: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}` +
+      (t ? `\nTiempos (últimos ${a.tiempos.turnos} turnos): ADA empieza a hablar en ${seg(t.hasta_que_habla)} · contexto ${seg(t.contexto)} · primera palabra del modelo ${seg(t.primer_texto)} · herramientas ${seg(t.herramientas)} · voz ${seg(t.voz_primera_frase)}` : '');
   }
 
   $('#op-tareas').addEventListener('change', async (e) => {
@@ -1495,6 +1567,10 @@
     else aviso(`No se pudo conectar Google: ${p.get('motivo') || 'error'}`, true);
     history.replaceState(null, '', '/');
   }
+
+  // Teclado abierto en el teléfono: la esfera se esconde para que no se aplaste la pantalla.
+  $('#mensaje').addEventListener('focus', () => { if (window.matchMedia('(max-width: 700px)').matches) $('#app').classList.add('escribiendo'); });
+  $('#mensaje').addEventListener('blur', () => setTimeout(() => $('#app').classList.remove('escribiendo'), 150));
 
   // ---------- Compartido desde WhatsApp u otra app ----------
   const MAX_COMPARTIDO = 20000;

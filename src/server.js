@@ -6,6 +6,7 @@ const express = require('express');
 const { q, initDb, comoUsuario, prepararInvitado } = require('./db');
 const U = require('./usuarios');
 const H = require('./herramientas');
+const Metricas = require('./metricas');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
 const C = require('./conversaciones');
@@ -118,6 +119,19 @@ app.post('/api/chat/stream', auth, async (req, res) => {
 });
 
 // Audio de una frase con la voz neuronal configurada. 204 = usar la voz del teléfono.
+// Al empezar a escuchar, el teléfono avisa: se prepara el contexto (agenda, correo) mientras la persona habla.
+app.post('/api/precalentar', auth, (req, res) => {
+  construirContexto().catch(() => {});
+  res.json({ ok: true });
+});
+
+app.post('/api/metricas', auth, (req, res) => {
+  const b = req.body || {};
+  const num = (x) => (Number.isFinite(x) && x >= 0 && x < 120000 ? Math.round(x) : undefined);
+  Metricas.completarTurno(parseInt(b.conversacion_id, 10) || null, { hasta_audio_ms: num(b.hasta_audio_ms), tts_ms: num(b.tts_ms) });
+  res.json({ ok: true });
+});
+
 app.post('/api/voz', auth, async (req, res) => {
   const texto = String((req.body && req.body.texto) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Texto vacío' });
@@ -210,6 +224,7 @@ app.post('/api/preferencias', auth, envolver((req) => H.guardarPreferencias(req.
 app.get('/api/ajustes', auth, envolver(async (req) => ({
   usuario: req.usuario,
   preferencias: await H.preferencias(),
+  tiempos: Metricas.resumen(),
   google: { ...(await G.estado()), redirect_uri: G.redirectUri(req) },
   voz: { proveedor: Voz.proveedor() },
   internet: process.env.ADA_INTERNET !== 'no',

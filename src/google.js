@@ -12,6 +12,8 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive', // leer, ordenar y editar Drive (incluye Docs y Sheets)
   'https://www.googleapis.com/auth/gmail.modify', // leer, buscar, archivar y crear borradores
   'https://www.googleapis.com/auth/gmail.send', // enviar lo que Cristian autoriza
+  'https://www.googleapis.com/auth/contacts.readonly', // encontrar a las personas por nombre o apodo
+  'https://www.googleapis.com/auth/contacts.other.readonly', // personas a las que ha escrito por correo
 ];
 const CALENDARIO = () => process.env.GOOGLE_CALENDAR_ID || 'primary';
 const ZONA = 'America/Santiago';
