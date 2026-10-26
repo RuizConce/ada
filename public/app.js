@@ -432,7 +432,7 @@
   }
 
   // Pide el audio de una frase al servidor; devuelve una URL lista para reproducir o null.
-  function pedirAudio(frase, señal) {
+  function pedirAudio(frase, señal, reintento = true) {
     return fetch('/api/voz', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -445,6 +445,8 @@
       return URL.createObjectURL(await res.blob());
     }).catch((e) => {
       if (e.name === 'AbortError') return null;
+      // Un corte de red momentáneo no debe dejar a ADA muda a mitad de frase: se reintenta una vez.
+      if (reintento && !(señal && señal.aborted)) return pedirAudio(frase, señal, false);
       fallosServidor += 1;
       if (fallosServidor >= 2) {
         vozServidor = false;
@@ -499,7 +501,7 @@
         if (!empezo) { empezo = true; if (alEmpezar) alEmpezar(); }
         const url = item.audio ? await item.audio : null;
         if (detenido) { if (url) URL.revokeObjectURL(url); break; }
-        if (!sono) { sono = true; if (alSonar) alSonar(medida); }
+        if (!sono) { sono = true; locutor.sonando = true; if (alSonar) alSonar(medida); }
         dichas.push(item.frase);
         if (url) { await reproducir(url, cancelado); URL.revokeObjectURL(url); }
         else await decirConNavegador(item.frase, cancelado);
@@ -540,6 +542,7 @@
       get hablando() { return empezo && !detenido; },
       dichas,
       interrumpida: false,
+      sonando: false,
       fin,
     };
     locutorActual = locutor;
@@ -610,7 +613,10 @@
   let interrumpirHablando = true;
   try { interrumpirHablando = localStorage.getItem('ada_interrumpir') !== '0'; } catch (_) {}
 
-  async function vigilarInterrupcion(alDetectar) {
+  // Detecta si la persona le habla encima a ADA. Para no confundir su propia voz (el parlante)
+  // con la de la persona: mide el eco mientras ADA suena, y ante una sospecha baja el volumen
+  // y confirma que la voz sigue (el eco baja con el volumen; la voz de la persona no).
+  async function vigilarInterrupcion(alDetectar, { bajar = () => {}, subir = () => {} } = {}) {
     if (!interrumpirHablando || !navigator.mediaDevices || !window.AudioContext && !window.webkitAudioContext) return () => {};
     let stream;
     try {
@@ -625,25 +631,40 @@
     analizador.fftSize = 1024;
     fuente.connect(analizador);
     const datos = new Float32Array(analizador.fftSize);
-    let base = 0;
-    let muestras = 0;
+    const eco = []; // niveles recientes mientras ADA habla y nadie la interrumpe
     let activo = 0;
+    let sospecha = 0; // cuadros desde que se bajó el volumen
     let terminado = false;
     const inicio = performance.now();
+    const nivelEco = () => {
+      if (!eco.length) return 0;
+      const v = [...eco].sort((a, b) => a - b);
+      return v[Math.floor(v.length * 0.9)]; // el 90% del eco queda bajo esto
+    };
     const intervalo = setInterval(() => {
       analizador.getFloatTimeDomainData(datos);
       let suma = 0;
       for (const v of datos) suma += v * v;
       const rms = Math.sqrt(suma / datos.length);
-      if (performance.now() - inicio < 500) { base += rms; muestras += 1; return; } // calibra con el eco de ADA
-      const umbral = Math.max(0.035, (base / Math.max(1, muestras)) * 3);
-      activo = rms > umbral ? activo + 1 : Math.max(0, activo - 1);
-      if (activo >= 6) { parar(); alDetectar(); } // ~300 ms de voz sostenida
+      if (performance.now() - inicio < 900) { eco.push(rms); return; } // calibra con ADA ya sonando
+      const umbral = Math.max(0.05, nivelEco() * 1.8);
+      if (sospecha) {
+        // Volumen bajado: si sigue habiendo voz fuerte, es la persona.
+        sospecha += 1;
+        activo = rms > umbral * 0.8 ? activo + 1 : activo - 2;
+        if (activo >= 10) { parar(); alDetectar(); return; }
+        if (activo <= 0 || sospecha > 16) { sospecha = 0; activo = 0; subir(); } // era eco o ruido
+        return;
+      }
+      if (rms > umbral) activo += 1;
+      else { activo = Math.max(0, activo - 1); eco.push(rms); if (eco.length > 120) eco.shift(); }
+      if (activo >= 7) { sospecha = 1; bajar(); } // ~350 ms de voz: se confirma con el volumen bajo
     }, 50);
     function parar() {
       if (terminado) return;
       terminado = true;
       clearInterval(intervalo);
+      subir();
       stream.getTracks().forEach((t) => t.stop());
       ctx.close().catch(() => {});
     }
@@ -994,11 +1015,16 @@
       // Mientras ADA habla, si Cristian habla encima, ella se calla y lo escucha.
       let pararVigia = () => {};
       const empezarVigia = async () => {
-        pararVigia = await vigilarInterrupcion(() => { if (r.locutor) r.locutor.detener(); });
+        pararVigia = await vigilarInterrupcion(() => {
+          if (r.locutor) r.locutor.detener();
+          setFase('escuchando', 'Te escuché, te escucho…');
+        }, {
+          bajar: () => { reproductor.volume = 0.25; },
+          subir: () => { reproductor.volume = 1; },
+        });
       };
-      if (r.locutor.hablando) empezarVigia();
-      else r.locutor.fin.then(() => {}); // si aún no empieza, igual espera el final
-      const vigiaTardio = setInterval(() => { if (r.locutor.hablando) { clearInterval(vigiaTardio); empezarVigia(); } }, 150);
+      // Se vigila recién cuando el audio suena de verdad (antes, el silencio engañaba la calibración).
+      const vigiaTardio = setInterval(() => { if (r.locutor.sonando) { clearInterval(vigiaTardio); empezarVigia(); } }, 120);
       await r.locutor.fin;
       clearInterval(vigiaTardio);
       pararVigia();

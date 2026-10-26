@@ -359,24 +359,50 @@ async function resolverAccion(id, decision, contenidoEditado, conversacionId = n
   throw new Error('Decisión no válida');
 }
 
+// Descartar lo pide la persona en la conversación (enviar, en cambio, solo con su botón).
+async function descartarMensaje(a = {}) {
+  const ids = a.todos ? (await q("SELECT id FROM acciones WHERE estado = 'propuesta'")).map((x) => x.id)
+    : (Array.isArray(a.ids) ? a.ids : [a.id]).map((x) => parseInt(x, 10)).filter(Boolean);
+  if (!ids.length) throw new Error('Indica cuál (id) o todos: true');
+  const ahora = new Date();
+  let descartados = 0;
+  for (const id of ids) {
+    const [acc] = await q(`SELECT a.*, c.nombre AS contacto FROM acciones a LEFT JOIN contactos c ON c.id = a.contacto_id WHERE a.id = ? AND a.estado = 'propuesta'`, [id]);
+    if (!acc) continue;
+    await q("UPDATE acciones SET estado = 'rechazada', resuelto_en = ? WHERE id = ?", [ahora, id]);
+    if (acc.encargo_id) {
+      await q("UPDATE encargos SET estado = 'en_curso', actualizado_en = ? WHERE id = ? AND estado = 'esperando_autorizacion'", [ahora, acc.encargo_id]);
+      await anotar(acc.encargo_id, `Cristian pidió descartar el mensaje para ${acc.contacto || acc.destinatario || 'el destinatario'}`);
+    }
+    descartados += 1;
+  }
+  return { ok: true, descartados, nota: 'Ya no aparecen para autorizar. No lo vuelvas a ofrecer.' };
+}
+
 // ---------- Contexto para ADA ----------
 
 async function resumenParaContexto() {
   const ahora = new Date();
   const [activos, pendientes] = await Promise.all([
     q(`${SELECT_ENCARGO} WHERE e.estado IN (?) ORDER BY e.revisar_en IS NULL, e.revisar_en ASC LIMIT 15`, [ACTIVOS]),
-    q("SELECT COUNT(*) AS n FROM acciones WHERE estado = 'propuesta'"),
+    q(`SELECT a.id, a.canal, a.destinatario, a.asunto, c.nombre AS contacto FROM acciones a
+       LEFT JOIN contactos c ON c.id = a.contacto_id WHERE a.estado = 'propuesta' ORDER BY a.id LIMIT 10`),
   ]);
   return {
     encargos_activos: activos.map(encargoPublico),
     encargos_para_revisar_ahora: activos.filter((e) => e.revisar_en && new Date(e.revisar_en) <= ahora).map((e) => e.id),
-    mensajes_esperando_tu_autorizacion: pendientes[0].n,
+    mensajes_esperando_tu_autorizacion: pendientes.map((a) => `#${a.id} ${a.canal} a ${a.contacto || a.destinatario || 'sin destinatario'}${a.asunto ? ` (${a.asunto})` : ''}`),
   };
 }
 
 // ---------- Definiciones para Claude ----------
 
 const DEFINICIONES = [
+  {
+    name: 'descartar_mensaje',
+    description: 'Descarta mensajes que esperaban autorización (los del contexto "mensajes_esperando_tu_autorizacion", por su #id) cuando Cristian dice que no se envíen, que los borres o que no le preguntes más. No envía nada.',
+    input_schema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'integer' } }, todos: { type: 'boolean' } } },
+  },
   {
     name: 'guardar_contacto',
     description: 'Crea o actualiza un contacto de Cristian (por nombre). Úsala cuando mencione datos de una persona: relación, apodos, organización, teléfono, correo o algo útil para tratarla. Cuando te enseñe cómo le dice a alguien ("mi señora se llama Iñora", "la Pao es Paola Díaz"), guarda la relación y el apodo en alias. Las notas y los alias se acumulan.',
@@ -481,6 +507,7 @@ H.registrar(DEFINICIONES, {
   listar_encargos: listarEncargos,
   ver_encargo: verEncargo,
   proponer_mensaje: proponerAccion,
+  descartar_mensaje: descartarMensaje,
 });
 
 module.exports = { resolverContacto, ContactoAmbiguo, autorizacionesPendientes, resolverAccion, resumenParaContexto, normalizarTelefono, listarEncargos };
