@@ -535,6 +535,7 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
 
   const acciones = [];
   const documentos = [];
+  const llamadas = [];
   const archivos = [];
   const partes = [];      // todo lo que ADA dijo en el turno (incluye "déjame revisar…" antes de una herramienta)
   let separar = false;    // separa el texto de vueltas distintas
@@ -632,6 +633,10 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
         archivos.push(arch);
         alEvento('archivo', arch);
       }
+      if (bloque.name === 'preparar_llamada' && r.ok) {
+        llamadas.push(r.llamada);
+        alEvento('llamada', r.llamada);
+      }
       if (bloque.name === 'entregar_documento' && r.ok) {
         const doc = { id: r.documento_id, titulo: bloque.input.titulo };
         documentos.push(doc);
@@ -670,7 +675,7 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   Consumo.registrar({ modelo: eleccion.modelo, costo: costoUSD(eleccion.modelo, uso), busquedas }).catch((e) => console.error('Consumo:', e.message));
   Metricas.registrar({ conversacion_id: conversacionId, voz: !!opciones.voz, modelo: eleccion.modelo, nivel: eleccion.nivel, costo_usd: costo, tokens: uso, ...tiempos });
   if (process.env.ADA_LOG_TIEMPOS !== 'no') console.log(`ADA tiempos u${usuario().id} [${eleccion.nivel}: ${eleccion.modelo}, ${eleccion.motivo}, ~US$${costo.toFixed(4)}]: contexto ${tiempos.contexto_ms}ms · primer texto ${tiempos.primer_texto_ms}ms · herramientas ${tiempos.herramientas_ms}ms · total ${tiempos.total_ms}ms`);
-  return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), tiempos, modelo: { nombre: eleccion.modelo, nivel: eleccion.nivel }, acciones, documentos, archivos, conversacion_id: conversacionId };
+  return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), tiempos, modelo: { nombre: eleccion.modelo, nivel: eleccion.nivel }, acciones, documentos, archivos, ...(llamadas.length ? { llamadas } : {}), conversacion_id: conversacionId };
 }
 
 module.exports = { conversar, construirContexto, separarPantalla };

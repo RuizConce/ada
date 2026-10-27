@@ -499,7 +499,38 @@ const DEFINICIONES = [
   },
 ];
 
+// Llamar: ADA busca el número y deja un botón; marca el teléfono de Cristian solo cuando él lo toca.
+async function prepararLlamada(a) {
+  let nombre = a.persona ? String(a.persona).trim() : '';
+  let telefono = normalizarTelefono(a.telefono);
+  if (!telefono) {
+    if (!nombre) throw new Error('Dime a quién llamar (nombre) o el número');
+    const c = await resolverContacto(nombre);
+    if (!c) return { error: `No encontré a "${nombre}" en los contactos de ADA ni en Google. Pídele a Cristian el número (y guárdalo con guardar_contacto).` };
+    nombre = c.nombre;
+    telefono = normalizarTelefono(c.telefono);
+    if (!telefono) return { error: `Tengo a ${c.nombre} pero sin teléfono. Pídele el número a Cristian y guárdalo con guardar_contacto.` };
+  }
+  const puntos = (Array.isArray(a.puntos) ? a.puntos : []).map((x) => String(x).trim().slice(0, 200)).filter(Boolean).slice(0, 6);
+  return { ok: true, llamada: { nombre: nombre || null, telefono, motivo: a.motivo ? String(a.motivo).slice(0, 200) : null, puntos }, nota: 'En la pantalla quedó un botón para llamar: se marca cuando Cristian lo toca. Díselo en una frase.' };
+}
+
+DEFINICIONES.push({
+  name: 'preparar_llamada',
+  description: 'Cuando Cristian quiere llamar a alguien ("llama a Paola", "llámame a mi señora", "necesito hablar con el de la SEREMI"): busca el número en sus contactos (ADA y Google) y deja en pantalla un botón "Llamar" que marca desde su teléfono al tocarlo. ADA no llama sola. Si hay de qué hablar, agrega los puntos a tratar como ayuda-memoria.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      persona: { type: 'string', description: 'Nombre, apodo o relación ("mi señora")' },
+      telefono: { type: 'string', description: 'Solo si Cristian dictó un número' },
+      motivo: { type: 'string', description: 'Para qué es la llamada, en pocas palabras' },
+      puntos: { type: 'array', items: { type: 'string' }, description: 'Puntos a tratar (opcional, breves)' },
+    },
+  },
+});
+
 H.registrar(DEFINICIONES, {
+  preparar_llamada: prepararLlamada,
   guardar_contacto: guardarContacto,
   buscar_contactos: buscarContactos,
   crear_encargo: crearEncargo,

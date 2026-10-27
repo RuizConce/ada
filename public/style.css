@@ -518,3 +518,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 @media (max-width: 420px) {
   .barra .icono { width: 36px; height: 36px; }
 }
+
+/* Botón "Llamar" con ayuda-memoria */
+.entrega-llamada { display: grid; gap: 6px; }
+.entrega-llamada a.entrega-doc { text-decoration: none; color: inherit; }
+.llamada-puntos { padding: 4px 14px 6px; font-size: 14px; color: var(--texto-suave); }
+.llamada-puntos p { margin: 0 0 4px; }
+.llamada-puntos ul { margin: 0; padding-left: 18px; }

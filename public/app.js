@@ -6,6 +6,7 @@
   let convId = null;          // conversación en curso
   let yo = null;              // persona que usa ADA: { id, nombre, admin }
   let ocupado = false;        // esperando respuesta del servidor
+  let llamadasActuales = [];  // botones "Llamar" de la última respuesta
   let docsActuales = [];      // documentos entregados en la conversación en curso
   let archivosActuales = [];  // archivos Word/Excel creados en la conversación en curso
   let proyectos = [];
@@ -195,6 +196,7 @@
   function pintarEntregas() {
     const cont = $('#entregas');
     cont.innerHTML = '';
+    for (const l of llamadasActuales) cont.appendChild(tarjetaLlamada(l));
     for (const a of archivosActuales.slice().reverse()) cont.appendChild(tarjetaArchivo(a));
     for (const d of docsActuales.slice().reverse()) {
       const b = document.createElement('button');
@@ -206,6 +208,36 @@
       cont.appendChild(b);
     }
     for (const a of autorizaciones) cont.appendChild(tarjetaAutorizacion(a));
+  }
+
+  // Botón para llamar: marca desde el teléfono solo cuando Cristian lo toca.
+  const fono = (t) => {
+    const d = String(t || '');
+    const m = d.match(/^56(9)(\d{4})(\d{4})$/);
+    return m ? `+56 ${m[1]} ${m[2]} ${m[3]}` : `+${d}`;
+  };
+  function tarjetaLlamada(l) {
+    const caja = document.createElement('div');
+    caja.className = 'entrega-llamada';
+    const a = document.createElement('a');
+    a.className = 'entrega-doc';
+    a.href = `tel:+${l.telefono}`;
+    a.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M6.6 3.5h2.6l1.4 4-2 1.6a12 12 0 0 0 6.3 6.3l1.6-2 4 1.4v2.6a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span><small>Llamar</small><strong></strong></span><em></em>';
+    a.querySelector('strong').textContent = l.nombre || fono(l.telefono);
+    a.querySelector('em').textContent = l.nombre ? fono(l.telefono) : '';
+    caja.appendChild(a);
+    if (l.motivo || (l.puntos && l.puntos.length)) {
+      const n = document.createElement('div');
+      n.className = 'llamada-puntos';
+      if (l.motivo) { const p = document.createElement('p'); p.textContent = l.motivo; n.appendChild(p); }
+      if (l.puntos && l.puntos.length) {
+        const ul = document.createElement('ul');
+        for (const x of l.puntos) { const li = document.createElement('li'); li.textContent = x; ul.appendChild(li); }
+        n.appendChild(ul);
+      }
+      caja.appendChild(n);
+    }
+    return caja;
   }
 
   const CANAL = { whatsapp: 'WhatsApp', correo: 'Correo', llamada: 'Llamada', otro: 'Mensaje' };
@@ -816,6 +848,7 @@
     if (recuperando) { recuperando.cancelar(); recuperando = null; }
     texto = (texto || '').trim();
     if (!texto || ocupado) return null;
+    if (llamadasActuales.length) { llamadasActuales = []; pintarEntregas(); }
     // "Modo reunión" / "toma acta de la reunión": abre el modo reunión.
     const n = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (/^(ada,? )?(activa |pon(te)? (en )?|abre |entra (en|al) )?(el )?modo reunion\b|^(ada,? )?(toma|tomame|levanta) (el )?acta\b|^(ada,? )?(graba|escucha) (la|esta) reunion\b/.test(n)) {
@@ -885,6 +918,9 @@
           // Si la interrumpieron antes, lo que diga después de trabajar se habla igual (con un locutor nuevo).
           if (locutor && locutor.detenido && hablar && !silenciada) locutor = crearLocutor(opcionesLocutor);
           if (!locutor || !locutor.reproduciendo) setFase('pensando', d.texto);
+        } else if (tipo === 'llamada') {
+          llamadasActuales.push(d);
+          pintarEntregas();
         } else if (tipo === 'documento') {
           docsActuales.push(d);
           pintarEntregas();
