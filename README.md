@@ -107,7 +107,7 @@ ADA elige el modelo en cada turno, sin llamadas extra: **Haiku** (`ADA_MODEL`, o
 ⚙ Ajustes → Inteligencia → **Laboratorio de voz** (solo administrador) abre `/lab.html` para comparar, con la misma ADA detrás:
 
 - **A · Tiempo real + Claude:** el micrófono se transcribe en vivo con Deepgram Nova-3 (por WebSocket en `/ws/oido`, con contactos y proyectos como palabras clave), tolera pausas, se interrumpe hablándole y habla con voz Aura-2. Requiere `DEEPGRAM_API_KEY` (opcional: `DEEPGRAM_VOZ`, por defecto `aura-2-carina-es`; `DEEPGRAM_IDIOMA`, por defecto `es`).
-- **B · Voz a voz + ADA:** OpenAI Realtime por WebRTC (token temporal emitido por el servidor) con la personalidad y el contexto de ADA; para datos y acciones llama a la herramienta `ada`, que usa el mismo `/api/chat/stream`. Requiere `OPENAI_API_KEY` (opcional: `OPENAI_REALTIME_MODEL`, por defecto `gpt-realtime-2.1`; `OPENAI_REALTIME_VOZ`, por defecto `marin`).
+- **B · Voz a voz + ADA:** con `GEMINI_API_KEY` (Google AI Studio) usa Gemini Live por WebSocket con token temporal de un solo uso (opcional: `GEMINI_LIVE_MODEL`, por defecto `gemini-3.8-live`; `GEMINI_VOZ`, por defecto `Aoede`). Sin esa clave, usa OpenAI Realtime por WebRTC (token temporal emitido por el servidor) con la personalidad y el contexto de ADA; para datos y acciones llama a la herramienta `ada`, que usa el mismo `/api/chat/stream`. Requiere `OPENAI_API_KEY` (opcional: `OPENAI_REALTIME_MODEL`, por defecto `gpt-realtime-2.1`; `OPENAI_REALTIME_VOZ`, por defecto `marin`).
 - **Actual:** para calificar la conversación normal con los mismos criterios.
 
 Cada sesión mide la demora (fin de tu frase → primer audio) y se califica en naturalidad, comprensión y utilidad; la tabla compara los modos.

@@ -12,6 +12,11 @@ const F = require('./fechas');
 const configurado = () => ({
   deepgram: !!process.env.DEEPGRAM_API_KEY,
   openai: !!process.env.OPENAI_API_KEY,
+  gemini: !!process.env.GEMINI_API_KEY,
+  // Voz a voz: Gemini si hay clave de Google AI Studio; si no, OpenAI.
+  voz_a_voz: process.env.GEMINI_API_KEY ? 'gemini' : process.env.OPENAI_API_KEY ? 'openai' : null,
+  modelo_gemini: process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
+  voz_gemini: process.env.GEMINI_VOZ || 'Aoede',
   modelo_realtime: process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1',
   voz_realtime: process.env.OPENAI_REALTIME_VOZ || 'marin',
   voz_deepgram: process.env.DEEPGRAM_VOZ || 'aura-2-carina-es',
@@ -199,6 +204,38 @@ async function tokenRealtime(u, construirContexto) {
   return { value: d.value || (d.client_secret && d.client_secret.value), expira: d.expires_at, modelo: c.modelo_realtime };
 }
 
+// ---------- B con Gemini Live: token temporal de un solo uso ----------
+
+async function tokenGemini(u, construirContexto) {
+  if (!process.env.GEMINI_API_KEY) throw Object.assign(new Error('Falta GEMINI_API_KEY en Railway'), { status: 400 });
+  const c = configurado();
+  const ctx = await construirContexto();
+  const ahora = Date.now();
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
+    method: 'POST',
+    headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      uses: 1,
+      expireTime: new Date(ahora + 30 * 60 * 1000).toISOString(),
+      newSessionExpireTime: new Date(ahora + 2 * 60 * 1000).toISOString(),
+      liveConnectConstraints: { model: `models/${c.modelo_gemini}` },
+    }),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(`Google respondió ${res.status}: ${(d.error && d.error.message) || 'error'}`), { status: 502 });
+  return {
+    token: d.name,
+    modelo: c.modelo_gemini,
+    voz: c.voz_gemini,
+    instrucciones: instruccionesRealtime(u, ctx),
+    herramienta: {
+      name: 'ada',
+      description: HERRAMIENTA_ADA.description,
+      parameters: { type: 'OBJECT', properties: { pedido: { type: 'STRING', description: 'El pedido completo, claro, como lo diría la persona.' } }, required: ['pedido'] },
+    },
+  };
+}
+
 // ---------- Sesiones de prueba y calificaciones ----------
 
 async function guardarSesion(b = {}) {
@@ -233,4 +270,4 @@ async function resumenSesiones() {
   };
 }
 
-module.exports = { configurado, conectarOido, tokenRealtime, guardarSesion, resumenSesiones, palabrasClave, urlDeepgram, instruccionesRealtime };
+module.exports = { configurado, conectarOido, tokenRealtime, tokenGemini, guardarSesion, resumenSesiones, palabrasClave, urlDeepgram, instruccionesRealtime };

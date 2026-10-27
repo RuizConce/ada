@@ -25,7 +25,7 @@
   // ---------- Pantalla ----------
   const DESC = {
     A: 'El micrófono queda abierto y se transcribe en vivo (Deepgram, con tus contactos y proyectos como palabras clave). Detecta cuándo terminaste aunque hagas pausas, y puedes interrumpir a ADA hablándole. El cerebro es la misma ADA con Claude; la voz es Aura (Deepgram), muy rápida.',
-    B: 'Un modelo de voz a voz (OpenAI Realtime) conversa contigo con entonación humana y casi sin demora. Cuando hay que revisar o hacer algo (agenda, correo, Drive, encargos), se lo pide a ADA y te cuenta el resultado.',
+    B: 'Un modelo de voz a voz (Gemini Live u OpenAI Realtime) conversa contigo con entonación humana y casi sin demora. Cuando hay que revisar o hacer algo (agenda, correo, Drive, encargos), se lo pide a ADA y te cuenta el resultado.',
     actual: 'Conversa un rato con ADA en la pantalla normal y vuelve aquí para calificarla, así comparamos con los mismos criterios.',
   };
   let modo = 'A';
@@ -293,7 +293,7 @@
   // ---------- Modo B: voz a voz (OpenAI Realtime por WebRTC) ----------
   async function empezarB() {
     const st = await api('/api/lab/estado');
-    if (!st.openai) throw new Error('Falta OPENAI_API_KEY en Railway (ver instrucciones).');
+    if (!st.openai) throw new Error('Falta la clave de voz a voz: GEMINI_API_KEY (o OPENAI_API_KEY) en Railway.');
     fase('Conectando…');
     const t = await api('/api/lab/realtime/token', { method: 'POST' });
     const pc = new RTCPeerConnection();
@@ -406,6 +406,154 @@
     };
   }
 
+  // ---------- Modo B con Gemini Live (Google AI Studio) ----------
+  // Micrófono a 16 kHz en bloques de PCM de 16 bits (base64), como lo pide Gemini.
+  async function abrirMicrofono16k(alBloque) {
+    const micro = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const codigo = `class C extends AudioWorkletProcessor { process(i) { const c = i[0] && i[0][0]; if (c) this.port.postMessage(c.slice(0)); return true; } } registerProcessor('captura16', C);`;
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([codigo], { type: 'application/javascript' })));
+    const nodo = new AudioWorkletNode(ctx, 'captura16');
+    ctx.createMediaStreamSource(micro).connect(nodo);
+    const razon = ctx.sampleRate / 16000;
+    let pendiente = [];
+    nodo.port.onmessage = (e) => {
+      const x = e.data;
+      const n = Math.floor(x.length / razon);
+      const out = new Int16Array(n);
+      for (let k = 0; k < n; k++) out[k] = Math.max(-1, Math.min(1, x[Math.floor(k * razon)])) * 0x7fff;
+      pendiente.push(out);
+      if (pendiente.length >= 8) {
+        const total = pendiente.reduce((a, b) => a + b.length, 0);
+        const junto = new Int16Array(total);
+        let o = 0;
+        for (const b of pendiente) { junto.set(b, o); o += b.length; }
+        pendiente = [];
+        let bin = '';
+        const bytes = new Uint8Array(junto.buffer);
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        alBloque(btoa(bin));
+      }
+    };
+    return { cerrar() { micro.getTracks().forEach((t) => t.stop()); ctx.close().catch(() => {}); } };
+  }
+
+  async function empezarBGemini() {
+    fase('Conectando con Gemini…');
+    const t = await api('/api/lab/gemini/token', { method: 'POST' });
+    const ws = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(t.token)}`);
+    const mandar = (o) => { if (ws.readyState === 1) ws.send(JSON.stringify(o)); };
+    // Reproducción del audio de Gemini (PCM 16 bits, 24 kHz) en cola continua.
+    const salida = new (window.AudioContext || window.webkitAudioContext)();
+    let proximo = 0;
+    const fuentes = new Set();
+    let adaHablando = false;
+    let finHablaUsuario = 0;
+    let esperandoPrimerAudio = false;
+    let textoYo = '';
+    let textoAda = '';
+    let micro = null;
+    let uso = { entrada: 0, salida: 0 };
+    function reproducirPCM(b64) {
+      const bin = atob(b64);
+      const n = bin.length / 2;
+      const buf = salida.createBuffer(1, n, 24000);
+      const canal = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) { const v = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8); canal[i] = (v >= 0x8000 ? v - 0x10000 : v) / 0x8000; }
+      const f = salida.createBufferSource();
+      f.buffer = buf;
+      f.connect(salida.destination);
+      const ahora = salida.currentTime;
+      if (proximo < ahora) proximo = ahora + 0.03;
+      f.start(proximo);
+      proximo += buf.duration;
+      fuentes.add(f);
+      f.onended = () => { fuentes.delete(f); if (!fuentes.size) { adaHablando = false; $('#lab-boton').classList.remove('hablando'); fase('Te escucho…'); } };
+      if (!adaHablando) { adaHablando = true; $('#lab-boton').classList.add('hablando'); fase('ADA está hablando · háblale para interrumpir'); }
+      if (esperandoPrimerAudio && finHablaUsuario) { registrarDemora(performance.now() - finHablaUsuario); esperandoPrimerAudio = false; }
+    }
+    function callarGemini() {
+      for (const f of fuentes) { try { f.stop(); } catch (_) {} }
+      fuentes.clear();
+      proximo = 0;
+      adaHablando = false;
+      $('#lab-boton').classList.remove('hablando');
+    }
+    async function usarAda(llamadas) {
+      const respuestas = [];
+      for (const fc of llamadas) {
+        const pedido = (fc.args && fc.args.pedido) || '';
+        fase(`ADA trabajando: ${pedido.slice(0, 60)}…`);
+        let resultado;
+        try {
+          const r = await preguntarAda(pedido);
+          resultado = { respuesta: r.respuesta, ...(r.detalle ? { detalle_en_pantalla: r.detalle.slice(0, 2500) } : {}), ...(r.documentos.length ? { documentos_en_pantalla: r.documentos } : {}) };
+        } catch (e) { resultado = { error: `No se pudo: ${e.message}` }; }
+        respuestas.push({ id: fc.id, name: fc.name, response: { result: resultado } });
+      }
+      mandar({ toolResponse: { functionResponses: respuestas } });
+    }
+    await new Promise((listo, falla) => {
+      ws.onopen = () => {
+        mandar({ setup: {
+          model: `models/${t.modelo}`,
+          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: t.voz } } } },
+          systemInstruction: { parts: [{ text: t.instrucciones }] },
+          tools: [{ functionDeclarations: [t.herramienta] }],
+          realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 900 } },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+        } });
+      };
+      ws.onmessage = async (ev) => {
+        const texto = typeof ev.data === 'string' ? ev.data : await ev.data.text();
+        let m;
+        try { m = JSON.parse(texto); } catch (_) { return; }
+        if (m.setupComplete) {
+          listo();
+          micro = await abrirMicrofono16k((b64) => mandar({ realtimeInput: { audio: { data: b64, mimeType: 'audio/pcm;rate=16000' } } }));
+          fase('Conectada. Habla cuando quieras.');
+          mandar({ clientContent: { turns: [{ role: 'user', parts: [{ text: '(Empieza tú: saluda en una frase corta, por mi nombre, y pregúntame en qué andamos.)' }] }], turnComplete: true } });
+          return;
+        }
+        const sc = m.serverContent;
+        if (sc) {
+          if (sc.inputTranscription && sc.inputTranscription.text) {
+            textoYo += sc.inputTranscription.text;
+            linea('yo', textoYo.trim(), true);
+            finHablaUsuario = performance.now();
+            esperandoPrimerAudio = true;
+          }
+          if (sc.interrupted) { callarGemini(); interrupciones += 1; fase('Te escucho…'); }
+          if (sc.modelTurn && sc.modelTurn.parts) {
+            if (textoYo.trim()) { linea('yo', textoYo.trim()); contarTurno(); textoYo = ''; }
+            for (const parte of sc.modelTurn.parts) if (parte.inlineData && parte.inlineData.data) reproducirPCM(parte.inlineData.data);
+          }
+          if (sc.outputTranscription && sc.outputTranscription.text) { textoAda += sc.outputTranscription.text; linea('ada', textoAda.trim(), true); }
+          if (sc.turnComplete) { if (textoAda.trim()) linea('ada', textoAda.trim()); textoAda = ''; }
+        }
+        if (m.toolCall && m.toolCall.functionCalls) usarAda(m.toolCall.functionCalls);
+        if (m.usageMetadata) { uso.entrada += m.usageMetadata.promptTokenCount || 0; uso.salida += m.usageMetadata.responseTokenCount || 0; }
+        if (m.goAway) fase('Gemini va a cerrar la sesión pronto.');
+      };
+      ws.onerror = () => falla(new Error('No se pudo conectar con Gemini.'));
+      ws.onclose = (e) => {
+        falla(new Error(`Gemini cerró la conexión${e.reason ? `: ${e.reason}` : ''} (${e.code}).`));
+        if (sesion) { error(`Gemini cerró la conexión${e.reason ? `: ${e.reason}` : ''}.`); terminar(); }
+      };
+    });
+    return {
+      uso: () => ({ ...uso, proveedor: 'gemini' }),
+      cerrar() {
+        try { ws.close(); } catch (_) {}
+        if (micro) micro.cerrar();
+        callarGemini();
+        salida.close().catch(() => {});
+        if (controlTurno) controlTurno.abort();
+      },
+    };
+  }
+
   // ---------- Empezar / terminar ----------
   async function empezar() {
     error('');
@@ -415,7 +563,9 @@
     $('#lab-transcripcion').innerHTML = ''; $('#lab-detalle').innerHTML = ''; $('#lab-docs').textContent = '';
     $('#lab-boton').disabled = true;
     try {
-      sesion = modo === 'A' ? await empezarA() : await empezarB();
+      let proveedorB = 'openai';
+      if (modo === 'B') { const st = await api('/api/lab/estado'); proveedorB = st.voz_a_voz || 'openai'; }
+      sesion = modo === 'A' ? await empezarA() : proveedorB === 'gemini' ? await empezarBGemini() : await empezarB();
       inicioSesion = performance.now();
       $('#lab-boton').textContent = 'Terminar';
       $('#lab-boton').classList.add('activo');
@@ -484,7 +634,8 @@
     if (!token) { error('Entra primero a ADA con tu nombre y clave.'); $('#lab-boton').disabled = true; return; }
     try {
       const st = await api('/api/lab/estado');
-      $('#lab-claves').textContent = `Deepgram: ${st.deepgram ? 'lista ✓' : 'falta la clave'} · OpenAI: ${st.openai ? `lista ✓ (${st.modelo_realtime}, voz ${st.voz_realtime})` : 'falta la clave'}`;
+      const b = st.voz_a_voz === 'gemini' ? `Gemini ✓ (${st.modelo_gemini}, voz ${st.voz_gemini})` : st.voz_a_voz === 'openai' ? `OpenAI ✓ (${st.modelo_realtime}, voz ${st.voz_realtime})` : 'falta la clave (Gemini u OpenAI)';
+      $('#lab-claves').textContent = `A · Deepgram: ${st.deepgram ? 'lista ✓' : 'falta la clave'} · B · Voz a voz: ${b}`;
       pintarResultados();
     } catch (e) {
       error(e.message.includes('Solo Cristian') ? 'El laboratorio es solo para el administrador.' : e.message);
