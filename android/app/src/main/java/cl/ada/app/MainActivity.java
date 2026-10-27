@@ -159,12 +159,17 @@ public class MainActivity extends Activity {
         if (actual != null) campo.setText(actual.replaceFirst("^https?://", ""));
         new AlertDialog.Builder(this)
             .setTitle("Dirección de ADA")
-            .setMessage("La misma que abres en Chrome para entrar a ADA.")
+            .setMessage("Es la dirección web que aparece arriba en Chrome cuando abres ADA, por ejemplo: algo.up.railway.app. (Tu nombre y clave se piden después.)")
             .setView(campo)
             .setCancelable(false)
             .setPositiveButton("Guardar", (d, w) -> {
-                String t = campo.getText().toString().trim().replaceAll("/+$", "");
-                if (t.isEmpty()) { pedirDireccion(); return; }
+                String t = campo.getText().toString().trim().replaceAll("\\s+", "").replaceAll("/+$", "");
+                // Tiene que ser una dirección web (con punto), no un nombre.
+                if (t.isEmpty() || !t.contains(".")) {
+                    Toast.makeText(MainActivity.this, "Escribe la dirección web de ADA (termina en .up.railway.app), no tu nombre.", Toast.LENGTH_LONG).show();
+                    pedirDireccion();
+                    return;
+                }
                 if (!t.startsWith("http")) t = "https://" + t;
                 getSharedPreferences("ada", MODE_PRIVATE).edit().putString("url", t).apply();
                 cargar(false);
