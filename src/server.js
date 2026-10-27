@@ -275,7 +275,7 @@ app.get('/api/ajustes', auth, envolver(async (req) => ({
 app.get('/api/voces', auth, envolver(() => Voz.listarVoces()));
 app.post('/api/voces', auth, envolver((req) => {
   const nombre = String((req.body || {}).voz || '');
-  if (!/^[a-z]{2}-[A-Z]{2}-[\w-]+$/.test(nombre)) throw new Error('Nombre de voz inválido');
+  if (!/^([a-z]{2}-[A-Z]{2}-[\w-]+|aura-2-[a-z]+-es)$/.test(nombre)) throw new Error('Nombre de voz inválido');
   return Voz.elegirVoz(nombre);
 }));
 

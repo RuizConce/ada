@@ -1435,6 +1435,7 @@
 
   // ---------- Ajustes ----------
   const NOMBRE_VOZ = {
+    deepgram: 'Voz natural de Deepgram ✓',
     google: 'Voz natural de Google ✓',
     elevenlabs: 'Voz natural de ElevenLabs ✓',
     openai: 'Voz natural de OpenAI ✓',
@@ -1691,7 +1692,7 @@
       try {
         const res = await fetch('/api/voz', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ texto: 'Hola, ¿me escuchas bien?' }) });
         if (res.status === 204) pasos.push('✗ El servidor no tiene voz natural configurada (se usará la del teléfono).');
-        else if (!res.ok) pasos.push(`✗ La voz de Google falló: ${(await res.json().catch(() => ({}))).error || `error ${res.status}`}`);
+        else if (!res.ok) pasos.push(`✗ La voz natural falló: ${(await res.json().catch(() => ({}))).error || `error ${res.status}`}`);
         else {
           url = URL.createObjectURL(await res.blob());
           pasos.push(`✓ Voz de Google lista (${((performance.now() - t) / 1000).toFixed(1)} s).`);
@@ -1769,7 +1770,7 @@
       fila.className = `voz-fila${v.nombre === datosVoces.actual ? ' actual' : ''}`;
       fila.innerHTML = '<button type="button" class="voz-play" aria-label="Escuchar">▶</button><span class="voz-nombre"><strong></strong><small></small></span>';
       fila.querySelector('strong').textContent = v.etiqueta;
-      fila.querySelector('small').textContent = [v.genero, v.idioma === 'España' ? 'España' : '', v.linea !== 'Chirp 3 HD' ? v.linea : ''].filter(Boolean).join(' · ');
+      fila.querySelector('small').textContent = [v.genero, v.idioma === 'España' ? 'España' : '', v.linea && v.linea !== 'Chirp 3 HD' ? v.linea : ''].filter(Boolean).join(' · ');
       fila.querySelector('.voz-play').addEventListener('click', (e) => probarVoz(v.nombre, e.currentTarget));
       if (v.nombre === datosVoces.actual) {
         const s = document.createElement('span');

@@ -1,11 +1,12 @@
 // Voz de ADA generada en el servidor (mucho más natural que la del navegador).
-// Proveedores: Google Cloud Text-to-Speech, ElevenLabs u OpenAI. Se elige según la clave configurada,
+// Proveedores: Deepgram Aura-2 (la voz de ADA), Google Cloud Text-to-Speech, ElevenLabs u OpenAI. Se elige según la clave configurada,
 // o explícitamente con VOZ_PROVEEDOR. Sin ninguna clave, la app usa la voz del teléfono.
 
 function proveedor() {
   const p = (process.env.VOZ_PROVEEDOR || '').toLowerCase();
   if (p === 'navegador') return 'navegador';
   if (p && claves()[p]) return p;
+  if (process.env.DEEPGRAM_API_KEY) return 'deepgram';
   if (process.env.ELEVENLABS_API_KEY) return 'elevenlabs';
   if (process.env.GOOGLE_TTS_API_KEY) return 'google';
   if (process.env.OPENAI_API_KEY) return 'openai';
@@ -14,6 +15,7 @@ function proveedor() {
 
 function claves() {
   return {
+    deepgram: !!process.env.DEEPGRAM_API_KEY,
     elevenlabs: !!process.env.ELEVENLABS_API_KEY,
     google: !!process.env.GOOGLE_TTS_API_KEY,
     openai: !!process.env.OPENAI_API_KEY,
@@ -30,37 +32,71 @@ async function falla(res, quien) {
 // Voz elegida por Cristian desde la app (se guarda en la base); si no hay, la de Railway o la por defecto.
 const vocesElegidas = new Map(); // por persona
 const uidActual = () => require('./db').usuario().id;
-async function vozGuardada() {
+// Se guarda una voz por proveedor: { google: 'es-US-…', deepgram: 'aura-2-…' }.
+async function vocesGuardadas() {
   const uid = uidActual();
   if (vocesElegidas.has(uid)) return vocesElegidas.get(uid);
-  let voz = null;
+  let datos = {};
   try {
     const { q } = require('./db');
     const [r] = await q("SELECT datos FROM integraciones WHERE nombre = 'voz'");
-    voz = r ? JSON.parse(r.datos).google : null;
-  } catch (_) { return null; }
-  vocesElegidas.set(uid, voz);
-  return voz;
+    datos = r ? JSON.parse(r.datos) || {} : {};
+  } catch (_) { return {}; }
+  vocesElegidas.set(uid, datos);
+  return datos;
 }
+
+const esAura = (n) => /^aura-2-[a-z]+-es$/.test(String(n || ''));
 
 async function elegirVoz(nombre) {
   const { q } = require('./db');
+  const datos = { ...(await vocesGuardadas()), [esAura(nombre) ? 'deepgram' : 'google']: nombre };
   await q(
     `INSERT INTO integraciones (nombre, datos, actualizado_en) VALUES ('voz', ?, ?)
      ON DUPLICATE KEY UPDATE datos = VALUES(datos), actualizado_en = VALUES(actualizado_en)`,
-    [JSON.stringify({ google: nombre }), new Date()]
+    [JSON.stringify(datos), new Date()]
   );
-  vocesElegidas.set(uidActual(), nombre);
+  vocesElegidas.set(uidActual(), datos);
   return { ok: true, voz: nombre };
 }
 
 async function vozActual() {
-  return (await vozGuardada()) || process.env.GOOGLE_TTS_VOZ || 'es-US-Chirp3-HD-Aoede';
+  const g = await vocesGuardadas();
+  if (proveedor() === 'deepgram') return (esAura(g.deepgram) && g.deepgram) || process.env.DEEPGRAM_VOZ || 'aura-2-carina-es';
+  return g.google || process.env.GOOGLE_TTS_VOZ || 'es-US-Chirp3-HD-Aoede';
 }
+
+// Voces Aura-2 en español (developers.deepgram.com/docs/tts-models).
+const VOCES_AURA = [
+  ['selena', 'Femenina', 'Latinoamérica', 'cálida y tranquila'],
+  ['aquila', 'Masculina', 'Latinoamérica', 'segura y cercana'],
+  ['estrella', 'Femenina', 'México', 'natural y expresiva'],
+  ['olivia', 'Femenina', 'México', 'cálida y suave'],
+  ['celeste', 'Femenina', 'Colombia', 'alegre y amable'],
+  ['gloria', 'Femenina', 'Colombia', 'clara y expresiva'],
+  ['antonia', 'Femenina', 'Argentina', 'amable y natural'],
+  ['javier', 'Masculina', 'México', 'amable y relajado'],
+  ['sirio', 'Masculina', 'México', 'grave y empática'],
+  ['luciano', 'Masculina', 'México', 'alegre y carismática'],
+  ['valerio', 'Masculina', 'México', 'grave y amable'],
+  ['carina', 'Femenina', 'España', 'enérgica y profesional'],
+  ['diana', 'Femenina', 'España', 'segura y expresiva'],
+  ['silvia', 'Femenina', 'España', 'cálida y carismática'],
+  ['agustina', 'Femenina', 'España', 'clara y tranquila'],
+  ['nestor', 'Masculina', 'España', 'tranquila y segura'],
+  ['alvaro', 'Masculina', 'España', 'clara y tranquila'],
+].map(([n, genero, origen, tono]) => ({
+  nombre: `aura-2-${n}-es`,
+  etiqueta: n[0].toUpperCase() + n.slice(1),
+  genero,
+  idioma: origen === 'España' ? 'España' : 'Latinoamérica',
+  linea: origen === 'España' || origen === 'Latinoamérica' ? tono : `${origen} · ${tono}`,
+}));
 
 // Lista las voces naturales de Google en español (latinoamericano primero).
 let cacheVoces = null;
 async function listarVoces() {
+  if (proveedor() === 'deepgram') return { proveedor: 'deepgram', voces: VOCES_AURA, actual: await vozActual() };
   if (proveedor() !== 'google') return { proveedor: proveedor(), voces: [], actual: null };
   if (!cacheVoces) {
     const res = await fetch(`https://texttospeech.googleapis.com/v1/voices?key=${encodeURIComponent(process.env.GOOGLE_TTS_API_KEY)}`);
@@ -136,9 +172,9 @@ async function openai(texto) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// Deepgram Aura-2 (laboratorio de voz): voces en español, muy rápidas en empezar a sonar.
+// Deepgram Aura-2: voces en español, muy rápidas en empezar a sonar.
 async function deepgram(texto, vozForzada) {
-  const modelo = vozForzada && /^aura-/.test(vozForzada) ? vozForzada : process.env.DEEPGRAM_VOZ || 'aura-2-carina-es';
+  const modelo = esAura(vozForzada) ? vozForzada : (proveedor() === 'deepgram' ? await vozActual() : process.env.DEEPGRAM_VOZ || 'aura-2-carina-es');
   const res = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(modelo)}&encoding=mp3`, {
     method: 'POST',
     headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
