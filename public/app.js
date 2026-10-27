@@ -1528,6 +1528,7 @@
       yo = a.usuario;
       $('#sesion-de').textContent = `Entraste como ${a.usuario.nombre}${a.usuario.admin ? ' (administrador)' : ''}.`;
       $('#ajuste-personas').hidden = !a.usuario.admin;
+      $('#ajuste-lab').hidden = !a.usuario.admin;
       if (a.usuario.admin) pintarPersonas();
     }
     $('#ia-estado').textContent = `Modelos: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;

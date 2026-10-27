@@ -136,12 +136,26 @@ async function openai(texto) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-const PROVEEDORES = { google, elevenlabs, openai };
+// Deepgram Aura-2 (laboratorio de voz): voces en español, muy rápidas en empezar a sonar.
+async function deepgram(texto, vozForzada) {
+  const modelo = vozForzada && /^aura-/.test(vozForzada) ? vozForzada : process.env.DEEPGRAM_VOZ || 'aura-2-carina-es';
+  const res = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(modelo)}&encoding=mp3`, {
+    method: 'POST',
+    headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: texto }),
+  });
+  if (!res.ok) throw await falla(res, 'Deepgram');
+  return Buffer.from(await res.arrayBuffer());
+}
 
-async function sintetizar(texto, vozForzada) {
-  const p = proveedor();
+const PROVEEDORES = { google, elevenlabs, openai, deepgram };
+
+// proveedorForzado: solo para el laboratorio de voz (comparar voces sin cambiar la de ADA).
+async function sintetizar(texto, vozForzada, proveedorForzado) {
+  let p = proveedor();
+  if (proveedorForzado === 'deepgram' && process.env.DEEPGRAM_API_KEY) p = 'deepgram';
   if (p === 'navegador') return null;
-  return PROVEEDORES[p](texto.slice(0, 800), p === 'google' ? vozForzada : undefined);
+  return PROVEEDORES[p](texto.slice(0, 800), p === 'google' || p === 'deepgram' ? vozForzada : undefined);
 }
 
 module.exports = { sintetizar, proveedor, listarVoces, elegirVoz, vozActual };

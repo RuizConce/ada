@@ -60,6 +60,21 @@ async function qPrincipal(sql, params = []) {
 }
 
 const ESQUEMA = [
+  `CREATE TABLE IF NOT EXISTS lab_voz (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    modo VARCHAR(10) NOT NULL,
+    turnos INT NULL,
+    duracion_s INT NULL,
+    demora_mediana_ms INT NULL,
+    demora_p95_ms INT NULL,
+    interrupciones INT NULL,
+    naturalidad TINYINT NULL,
+    comprension TINYINT NULL,
+    utilidad TINYINT NULL,
+    comentario TEXT NULL,
+    datos TEXT NULL,
+    creado_en DATETIME NOT NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS push_suscripciones (
     id INT AUTO_INCREMENT PRIMARY KEY,
     endpoint VARCHAR(500) NOT NULL,

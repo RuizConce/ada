@@ -102,6 +102,16 @@ En modo voz, ADA habla en una o dos frases y deja el detalle (listas, cifras, va
 
 ADA elige el modelo en cada turno, sin llamadas extra: **Haiku** (`ADA_MODEL`, o `ADA_MODEL_RAPIDO`) para lo simple —anotar, agendar, confirmar— y **Sonnet** (`ADA_MODEL_PROFUNDO`, por defecto `claude-sonnet-5-5`) cuando conversan a fondo, piden opinión, analizan o deciden; una respuesta corta dentro de esa conversación sigue en Sonnet. En ⚙ Ajustes → Inteligencia se puede fijar *Automático*, *Siempre rápido* o *Siempre a fondo*, y se ven los tiempos por etapa (mediana y peor 5%) y el costo aproximado por turno de cada modo. Los precios se pueden ajustar con `ADA_PRECIOS` (JSON por modelo o familia, en dólares por millón de tokens).
 
+## Laboratorio de voz (comparar prototipos)
+
+⚙ Ajustes → Inteligencia → **Laboratorio de voz** (solo administrador) abre `/lab.html` para comparar, con la misma ADA detrás:
+
+- **A · Tiempo real + Claude:** el micrófono se transcribe en vivo con Deepgram Nova-3 (por WebSocket en `/ws/oido`, con contactos y proyectos como palabras clave), tolera pausas, se interrumpe hablándole y habla con voz Aura-2. Requiere `DEEPGRAM_API_KEY` (opcional: `DEEPGRAM_VOZ`, por defecto `aura-2-carina-es`; `DEEPGRAM_IDIOMA`, por defecto `es`).
+- **B · Voz a voz + ADA:** OpenAI Realtime por WebRTC (token temporal emitido por el servidor) con la personalidad y el contexto de ADA; para datos y acciones llama a la herramienta `ada`, que usa el mismo `/api/chat/stream`. Requiere `OPENAI_API_KEY` (opcional: `OPENAI_REALTIME_MODEL`, por defecto `gpt-realtime-2.1`; `OPENAI_REALTIME_VOZ`, por defecto `marin`).
+- **Actual:** para calificar la conversación normal con los mismos criterios.
+
+Cada sesión mide la demora (fin de tu frase → primer audio) y se califica en naturalidad, comprensión y utilidad; la tabla compara los modos.
+
 ## Avisos y agenda
 
 **Avisos al teléfono** (⚙ Ajustes → Avisos → *Activar avisos en este teléfono*): despertar (7:30), resumen del día (7:45, armado solo con datos reales), seguimiento de encargos cuando toca revisar, respuestas por correo de personas con encargos abiertos y lo que quedó de hoy (18:30). Silencio desde las 22:00 hasta el despertar y máximo 3 avisos al día además del despertar y el resumen. Al tocar un aviso, ADA se abre con una tarjeta para escucharlo. Las claves VAPID se crean solas y quedan en la base (o define `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`). En iPhone, solo con ADA instalada en la pantalla de inicio.

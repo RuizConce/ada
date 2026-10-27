@@ -10,6 +10,7 @@ const Metricas = require('./metricas');
 const Avisos = require('./avisos');
 const { MODELO_RAPIDO, MODELO_PROFUNDO } = require('./claude');
 const Agenda = require('./agenda');
+const Lab = require('./lab');
 const { conversar, construirContexto } = require('./ada');
 const E = require('./encargos');
 const C = require('./conversaciones');
@@ -139,8 +140,8 @@ app.post('/api/voz', auth, async (req, res) => {
   const texto = String((req.body && req.body.texto) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Texto vacío' });
   try {
-    const vozPrueba = typeof req.body.voz === 'string' && /^[a-z]{2}-[A-Z]{2}-[\w-]+$/.test(req.body.voz) ? req.body.voz : undefined;
-    const audio = await Voz.sintetizar(texto, vozPrueba);
+    const vozPrueba = typeof req.body.voz === 'string' && /^([a-z]{2}-[A-Z]{2}-[\w-]+|aura-[\w-]+)$/.test(req.body.voz) ? req.body.voz : undefined;
+    const audio = await Voz.sintetizar(texto, vozPrueba, req.body.proveedor === 'deepgram' ? 'deepgram' : undefined);
     if (!audio) return res.status(204).end();
     res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
     res.send(audio);
@@ -242,6 +243,12 @@ app.post('/api/push/probar', auth, envolver(async (req) => {
   return r;
 }));
 
+// ---------- Laboratorio de voz (solo Cristian, para comparar prototipos) ----------
+app.get('/api/lab/estado', auth, soloAdmin, envolver(() => Lab.configurado()));
+app.post('/api/lab/realtime/token', auth, soloAdmin, envolver((req) => Lab.tokenRealtime(req.usuario, construirContexto)));
+app.get('/api/lab/sesiones', auth, soloAdmin, envolver(() => Lab.resumenSesiones()));
+app.post('/api/lab/sesiones', auth, soloAdmin, envolver((req) => Lab.guardarSesion(req.body || {})));
+
 // ---------- Agenda visual ----------
 app.get('/api/agenda', auth, envolver((req) => Agenda.semana({ desde: req.query.desde, dias: req.query.dias })));
 app.post('/api/items/:id', auth, envolver(async (req) => {
@@ -325,7 +332,8 @@ app.get('/api/estado', auth, async (req, res) => {
 const PORT = process.env.PORT || 3000;
 initDb()
   .then(() => {
-    app.listen(PORT, () => console.log(`ADA escuchando en :${PORT} (TZ ${process.env.TZ})`));
+    const servidor = app.listen(PORT, () => console.log(`ADA escuchando en :${PORT} (TZ ${process.env.TZ})`));
+    Lab.conectarOido(servidor); // oído en tiempo real del laboratorio (WebSocket)
     Avisos.iniciar();
   })
   .catch((e) => {
