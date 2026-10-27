@@ -75,9 +75,15 @@
   let hablando = false;
   let fraseActual = '';
   let alPrimerAudio = null;
+  // Palabras que ADA dijo en esta respuesta: lo que Deepgram oiga y coincida con ellas es su eco.
+  const normal = (w) => w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const palabrasDe = (t) => t.split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(normal);
+  let dichoPorAda = new Set();
+  let ecoHasta = 0;
   function decir(frase) {
     const texto = frase.replace(/\[\[PANTALLA\]\][\s\S]*$/, '').replace(/[*_#`]/g, '').trim();
     if (!texto) return;
+    for (const w of palabrasDe(texto)) dichoPorAda.add(w);
     const audio = fetch('/api/voz', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ texto, proveedor: 'deepgram' }) })
       .then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? URL.createObjectURL(b) : null)).catch(() => null);
     colaVoz.push({ texto, audio });
@@ -85,7 +91,14 @@
   }
   async function siguiente() {
     const item = colaVoz.shift();
-    if (!item) { hablando = false; $('#lab-boton').classList.remove('hablando'); if (sesion && !pensando) fase('Te escucho…'); return; }
+    if (!item) {
+      if (hablando) ecoHasta = performance.now() + 1500; // el eco de la última frase puede llegar un poco después
+      hablando = false;
+      reproductor.volume = 1;
+      $('#lab-boton').classList.remove('hablando');
+      if (sesion && !pensando) fase('Te escucho…');
+      return;
+    }
     hablando = true;
     $('#lab-boton').classList.add('hablando');
     const url = await item.audio;
@@ -100,10 +113,13 @@
     reproductor.play().catch(() => siguiente());
   }
   function callar() {
+    // La frase en curso todavía trae el eco del comienzo ("…propuesta, espera"): se sigue limpiando un rato.
+    if (hablando) ecoHasta = performance.now() + 4000;
     colaVoz = [];
     hablando = false;
     fraseActual = '';
     reproductor.pause();
+    reproductor.volume = 1;
     $('#lab-boton').classList.remove('hablando');
   }
 
@@ -179,16 +195,17 @@
   let sesion = null;
   const CONECTORES = /(?:^|\s)(de|del|el|la|los|las|un|una|que|y|o|a|al|en|con|para|por|pero|porque|como|mi|tu|su|eh|em|este|osea|o sea|entonces|cuando|si|le|lo|me|se)$/i;
   const graciaPara = (t) => (/,$/.test(t.trim()) || CONECTORES.test(t.trim().replace(/[.!?…]+$/, '')) ? 1800 : 0);
-  // ¿Lo que se oye es la propia voz de ADA (eco del parlante)?
-  const pareceEco = (t) => {
-    if (!fraseActual) return false;
-    const a = new Set(t.toLowerCase().split(/\W+/).filter((w) => w.length > 2));
-    const b = new Set(fraseActual.toLowerCase().split(/\W+/).filter((w) => w.length > 2));
-    if (!a.size) return true;
-    let comunes = 0;
-    for (const w of a) if (b.has(w)) comunes += 1;
-    return comunes / a.size >= 0.5;
-  };
+  // Lo que se oye puede venir mezclado: el eco de ADA por el parlante + la voz de la persona
+  // ("encontré el correo… espera, espera"). Se queda con lo que ADA NO dijo.
+  const CORTE = new Set(['espera', 'esperate', 'para', 'pare', 'oye', 'ada', 'alto', 'momento', 'perdon', 'disculpa', 'stop', 'no']);
+  function loNuevo(t) {
+    const ws = t.split(/\s+/).filter(Boolean);
+    const i = ws.findIndex((w) => { const n = palabrasDe(w)[0]; return n && n.length > 1 && !dichoPorAda.has(n); });
+    if (i < 0) return { texto: '', palabras: [], corte: false };
+    const resto = ws.slice(i).join(' ');
+    const palabras = palabrasDe(resto).filter((w) => !dichoPorAda.has(w));
+    return { texto: resto, palabras, corte: palabras.some((w) => CORTE.has(w)) };
+  }
 
   async function empezarA() {
     const st = await api('/api/lab/estado');
@@ -221,6 +238,7 @@
     };
     let finales = [];
     let timerEnvio = null;
+    let timerVolumen = null;
     let finDeHabla = 0;
     const textoUsuario = () => finales.join(' ').replace(/\s+/g, ' ').trim();
     function programarEnvio() {
@@ -233,6 +251,8 @@
       const t = textoUsuario();
       if (!t || pensando) return;
       finales = [];
+      callar(); // si quedaba algo por decir de la respuesta anterior, se descarta
+      dichoPorAda = new Set();
       linea('yo', t);
       contarTurno();
       pensando = true;
@@ -255,20 +275,33 @@
       const m = JSON.parse(ev.data);
       if (m.type === 'Listo') { fase(`Te escucho… (${m.palabras_clave} nombres propios cargados)`); return; }
       if (m.type === 'Error') { error(m.mensaje); return; }
+      if (m.type === 'SpeechStarted' && hablando) {
+        // Empezó a sonar una voz encima: baja el volumen de ADA para oírla mejor (y que el eco no la tape).
+        reproductor.volume = 0.3;
+        clearTimeout(timerVolumen);
+        timerVolumen = setTimeout(() => { if (hablando) reproductor.volume = 1; }, 1800);
+        return;
+      }
       if (m.type === 'Results') {
         const t = (m.texto || '').trim();
         if (!t) return;
-        if (hablando) {
-          // Interrumpir: voz real (no eco) de al menos dos palabras.
-          if (t.split(/\s+/).length >= 2 && !pareceEco(t)) {
-            callar();
-            if (controlTurno) controlTurno.abort();
-            interrupciones += 1;
-            fase('Te escucho…');
-          } else return;
+        let propio = t;
+        if (hablando || performance.now() < ecoHasta) {
+          const n = loNuevo(t);
+          if (hablando) {
+            // Interrumpir: dos palabras que ADA no dijo, o una palabra de corte ("espera", "oye", "para").
+            if (n.palabras.length >= 2 || n.corte) {
+              callar();
+              if (controlTurno) controlTurno.abort();
+              interrupciones += 1;
+              fase('Te escucho…');
+            } else return; // es su propio eco
+          }
+          if (!n.texto) return; // eco que llegó justo después de que terminó de hablar
+          propio = n.texto;
         }
         clearTimeout(timerEnvio);
-        if (m.is_final) { finales.push(t); linea('yo', textoUsuario(), true); } else linea('yo', `${textoUsuario()} ${t}`.trim(), true);
+        if (m.is_final) { finales.push(propio); linea('yo', textoUsuario(), true); } else linea('yo', `${textoUsuario()} ${propio}`.trim(), true);
         if (m.speech_final) { finDeHabla = performance.now(); programarEnvio(); }
       } else if (m.type === 'UtteranceEnd') {
         if (!finDeHabla || performance.now() - finDeHabla > 1500) finDeHabla = performance.now() - 1000;
@@ -419,6 +452,7 @@
       inicioSesion = performance.now();
       $('#lab-boton').textContent = 'Terminar';
       $('#lab-boton').classList.add('activo');
+      $('#lab-terminar').hidden = false;
     } catch (e) {
       sesion = null;
       error(e.name === 'NotAllowedError' ? 'Necesito permiso para usar el micrófono.' : e.message);
@@ -435,9 +469,15 @@
     datosSesion = { modo, turnos, duracion_s: Math.round((performance.now() - inicioSesion) / 1000), demora_mediana_ms: mediana(demoras), demora_p95_ms: p95(demoras), interrupciones, datos: { demoras, uso: s.uso ? s.uso() : undefined } };
     $('#lab-boton').textContent = 'Empezar';
     $('#lab-boton').classList.remove('activo', 'hablando');
+    $('#lab-terminar').hidden = true;
     fase('Sesión terminada. Califícala abajo.');
   }
-  $('#lab-boton').addEventListener('click', () => (sesion ? terminar() : empezar()));
+  $('#lab-boton').addEventListener('click', () => {
+    if (!sesion) return empezar();
+    if (hablando) { callar(); if (controlTurno) controlTurno.abort(); interrupciones += 1; fase('Te escucho…'); return; } // tocar = interrumpir
+    terminar();
+  });
+  $('#lab-terminar').addEventListener('click', terminar);
 
   // ---------- Calificar ----------
   let datosSesion = null;
