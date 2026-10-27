@@ -525,3 +525,6 @@ button:disabled { opacity: 0.45; cursor: default; }
 .llamada-puntos { padding: 4px 14px 6px; font-size: 14px; color: var(--texto-suave); }
 .llamada-puntos p { margin: 0 0 4px; }
 .llamada-puntos ul { margin: 0; padding-left: 18px; }
+
+.llamada-cuenta { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 14px; background: rgba(94, 234, 168, 0.12); border: 1px solid var(--borde-verde); font-size: 14px; }
+.llamada-cuenta button { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo-2); color: var(--texto); }

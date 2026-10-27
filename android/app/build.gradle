@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+}
+
+def numero = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+
+android {
+    namespace 'cl.ada.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'cl.ada.app'
+        minSdk 26
+        targetSdk 34
+        versionCode numero
+        versionName "1.0.${numero}"
+    }
+
+    // Llave solo para las versiones de prueba (instalación directa del APK).
+    // Para Play Store se usará una llave privada guardada como secreto, no en el repositorio.
+    signingConfigs {
+        prueba {
+            storeFile file('../ada-prueba.keystore')
+            storePassword 'ada-prueba'
+            keyAlias 'ada'
+            keyPassword 'ada-prueba'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.prueba
+        }
+        debug {
+            signingConfig signingConfigs.prueba
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="hablar"
+        android:enabled="true"
+        android:icon="@drawable/ic_ada_mic"
+        android:shortcutShortLabel="@string/atajo_hablar"
+        android:shortcutLongLabel="@string/atajo_hablar">
+        <intent
+            android:action="cl.ada.app.ESCUCHAR"
+            android:targetPackage="cl.ada.app"
+            android:targetClass="cl.ada.app.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="reunion"
+        android:enabled="true"
+        android:icon="@drawable/ic_ada_mic"
+        android:shortcutShortLabel="@string/atajo_reunion"
+        android:shortcutLongLabel="@string/atajo_reunion">
+        <intent
+            android:action="cl.ada.app.REUNION"
+            android:targetPackage="cl.ada.app"
+            android:targetClass="cl.ada.app.MainActivity" />
+    </shortcut>
+</shortcuts>

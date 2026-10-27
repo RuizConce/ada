@@ -256,6 +256,33 @@
     return caja;
   }
 
+  // En la app de Android, ADA marca sola (tu orden de voz es la autorización), con 3 segundos para cancelar.
+  let llamadaPendiente = null;
+  function llamarDirecto(l) {
+    if (llamadaPendiente) clearInterval(llamadaPendiente.timer);
+    let quedan = 3;
+    const cajas = document.querySelectorAll('.entrega-llamada');
+    const caja = cajas[cajas.length - 1] || $('#entregas');
+    const barra = document.createElement('div');
+    barra.className = 'llamada-cuenta';
+    barra.innerHTML = '<span></span><button type="button">Cancelar</button>';
+    const txt = barra.querySelector('span');
+    const pintar = () => { txt.textContent = `Llamando a ${l.nombre || fono(l.telefono)} en ${quedan}…`; };
+    pintar();
+    caja.appendChild(barra);
+    const cancelar = () => { clearInterval(llamadaPendiente && llamadaPendiente.timer); llamadaPendiente = null; barra.remove(); };
+    barra.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); cancelar(); aviso('Llamada cancelada.'); });
+    llamadaPendiente = {
+      timer: setInterval(() => {
+        quedan -= 1;
+        if (quedan > 0) return pintar();
+        cancelar();
+        detenerVoz();
+        try { window.AdaAndroid.llamar(String(l.telefono)); } catch (_) { location.href = `tel:+${l.telefono}`; }
+      }, 1000),
+    };
+  }
+
   const CANAL = { whatsapp: 'WhatsApp', correo: 'Correo', llamada: 'Llamada', otro: 'Mensaje' };
 
   function enlace(a, texto, asunto) {
@@ -937,6 +964,7 @@
         } else if (tipo === 'llamada') {
           llamadasActuales.push(d);
           pintarEntregas();
+          if (window.AdaAndroid) llamarDirecto(d);
         } else if (tipo === 'documento') {
           docsActuales.push(d);
           pintarEntregas();
@@ -2247,6 +2275,11 @@
     cargarAutorizaciones();
     revisarCompartido();
     if (new URLSearchParams(location.search).has('aviso')) mostrarLlamado(location.href);
+    // Abierta con el botón del asistente, el mosaico o el acceso directo "Hablar con ADA": escucha de inmediato.
+    if (new URLSearchParams(location.search).get('escuchar') === '1') {
+      history.replaceState(null, '', '/');
+      setTimeout(() => iniciarConversacion(), 300);
+    }
     // Primera vez de un invitado: bienvenida.
     const aj = await ajustes;
     if (aj && aj.usuario) yo = aj.usuario;
@@ -2288,6 +2321,9 @@
       cargarAutorizaciones(); cargarAjustes(); // al volver, se reintenta la voz natural
     }
   });
+
+  // La app de Android llama a esto cuando ya estaba abierta y se pide hablar (asistente, mosaico).
+  window.adaEscuchar = () => { if (token && !conversando && !ocupado) iniciarConversacion(); };
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 

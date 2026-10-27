@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dirección de ADA (Railway). Si queda vacía, la app la pregunta la primera vez. -->
+    <string name="ada_url" translatable="false"></string>
+</resources>

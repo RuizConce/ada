@@ -1,0 +1,54 @@
+# Compila la app de Android de ADA y la deja para descargar en:
+# https://github.com/RuizConce/ada/releases/download/apk/ada.apk
+name: APK Android
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar
+        working-directory: android
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee ../build.log
+
+      - name: Publicar APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk ada.apk
+          gh release delete apk --yes --cleanup-tag || true
+          gh release delete apk-error --yes --cleanup-tag || true
+          gh release create apk ada.apk \
+            --title "ADA para Android (versión ${{ github.run_number }})" \
+            --notes "Descarga ada.apk desde el teléfono e instálala. Versión de prueba (instalación directa)." \
+            --latest
+
+      - name: Publicar error de compilación
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (tail -c 80000 build.log 2>/dev/null || echo "sin registro") > error-compilacion.txt
+          gh release delete apk-error --yes --cleanup-tag || true
+          gh release create apk-error error-compilacion.txt --title "Error de compilación (${{ github.run_number }})" --notes "Registro de la compilación fallida" --prerelease
