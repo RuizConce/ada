@@ -195,6 +195,8 @@ async function tokenRealtime(u, construirContexto) {
     body: JSON.stringify({ session: sesion }),
   });
   const d = await res.json().catch(() => ({}));
+  const sinCredito = res.status === 429 || /quota|billing|credit/i.test(JSON.stringify(d.error || ''));
+  if (sinCredito) throw Object.assign(new Error('OpenAI no tiene crédito cargado: el modo B no funciona hasta cargar saldo. Usa A (Deepgram) o Actual.'), { status: 402 });
   if (!res.ok) throw Object.assign(new Error(`OpenAI respondió ${res.status}: ${(d.error && d.error.message) || 'error'}`), { status: 502 });
   return { value: d.value || (d.client_secret && d.client_secret.value), expira: d.expires_at, modelo: c.modelo_realtime };
 }
