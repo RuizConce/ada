@@ -26,11 +26,27 @@
   }
 
   // ---------- API ----------
+  // Nueva versión publicada: la app abierta usaría código viejo (ej.: sin el botón Llamar).
+  // Se recarga sola apenas está libre (sin conversación en curso).
+  let versionCargada = null;
+  let versionNueva = false;
+  function notarVersion(v) {
+    if (!v) return;
+    if (!versionCargada) versionCargada = v;
+    else if (v !== versionCargada) versionNueva = true;
+  }
+  function recargarSiHayVersion() {
+    if (!versionNueva || ocupado || conversando) return false;
+    location.reload();
+    return true;
+  }
+
   async function api(ruta, opciones = {}) {
     const res = await fetch(ruta, {
       ...opciones,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opciones.headers || {}) },
     });
+    notarVersion(res.headers.get('X-ADA-Version'));
     if (res.status === 401 && ruta !== '/api/login') { salir(); throw new Error('Sesión expirada'); }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
@@ -1078,6 +1094,7 @@
       aviso('La conversación quedó guardada en el archivo.');
     }
     setFase('reposo');
+    recargarSiHayVersion();
   }
 
   // Si la frase quedó a medias ("el correo de…"), espera un poco más antes de responder.
@@ -2258,10 +2275,18 @@
     }
   });
 
-  setInterval(() => { if (token && !document.hidden) actualizarEstado(); }, 60000);
-  document.addEventListener('visibilitychange', () => {
+  setInterval(async () => {
+    if (!token) return;
+    if (!document.hidden) await actualizarEstado();
+    recargarSiHayVersion();
+  }, 60000);
+  document.addEventListener('visibilitychange', async () => {
     if (document.hidden && conversando) detenerVoz();
-    if (!document.hidden && token) { actualizarEstado(); cargarAutorizaciones(); cargarAjustes(); } // al volver, se reintenta la voz natural
+    if (!document.hidden && token) {
+      await actualizarEstado();
+      if (recargarSiHayVersion()) return;
+      cargarAutorizaciones(); cargarAjustes(); // al volver, se reintenta la voz natural
+    }
   });
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -21,6 +21,9 @@ const A = require('./archivos');
 const app = express();
 app.set('trust proxy', 1); // Railway está detrás de un proxy
 app.use(express.json({ limit: '200kb' }));
+// Versión del servidor: si cambia (nuevo deploy), la app abierta en el teléfono se recarga sola cuando está libre.
+const VERSION = process.env.RAILWAY_GIT_COMMIT_SHA || String(Date.now());
+app.use('/api', (req, res, next) => { res.set('X-ADA-Version', VERSION); next(); });
 app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
 
 // ---------- Acceso: cada persona con su nombre y su clave ----------
