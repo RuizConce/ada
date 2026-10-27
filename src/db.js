@@ -265,6 +265,16 @@ async function initDb() {
     creado_en DATETIME NOT NULL,
     ultimo_ingreso DATETIME NULL
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Gasto estimado en Claude por persona, día y modelo.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS consumo (
+    usuario_id INT NOT NULL,
+    dia DATE NOT NULL,
+    modelo VARCHAR(80) NOT NULL,
+    turnos INT NOT NULL DEFAULT 0,
+    busquedas INT NOT NULL DEFAULT 0,
+    costo_usd DECIMAL(12,6) NOT NULL DEFAULT 0,
+    PRIMARY KEY (usuario_id, dia, modelo)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   // Cristian es siempre el id 1 (su clave es ADA_PASSWORD, no se guarda).
   await qPrincipal("INSERT IGNORE INTO usuarios (id, nombre, admin, creado_en) VALUES (1, 'Cristian', 1, ?)", [new Date()]);
 }

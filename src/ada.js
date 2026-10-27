@@ -9,6 +9,7 @@ require('./archivos'); // registra crear_archivo
 require('./drive'); // registra las herramientas de Drive
 const M = require('./gmail'); // registra las herramientas de correo
 const { claude, elegirModelo, costoUSD } = require('./claude');
+const Consumo = require('./consumo');
 const Metricas = require('./metricas');
 
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
@@ -488,8 +489,14 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   alEvento('conversacion', { conversacion_id: conversacionId });
   const t0 = Date.now();
   const tiempos = { herramientas_ms: 0 };
-  const [contexto, historial, prefs] = await Promise.all([construirContexto(), historialParaClaude(conversacionId), H.preferencias()]);
-  const eleccion = elegirModelo(textoUsuario, { conversacionId, modo: prefs.modelo_modo });
+  const [contexto, historial, prefs, sobreTope] = await Promise.all([
+    construirContexto(), historialParaClaude(conversacionId), H.preferencias(), Consumo.sobreTope().catch(() => false),
+  ]);
+  // Invitado que ya pasó su tope del día: sigue conversando, pero con el modelo rápido.
+  const eleccion = sobreTope
+    ? { ...elegirModelo(textoUsuario, { conversacionId, modo: 'rapido' }), motivo: 'tope diario del invitado' }
+    : elegirModelo(textoUsuario, { conversacionId, modo: prefs.modelo_modo });
+  let busquedas = 0;
   const uso = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   tiempos.contexto_ms = Date.now() - t0;
 
@@ -561,6 +568,7 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     paradas.push(resp.stop_reason);
     ultimaConTexto = (resp.content || []).some((b) => b.type === 'text' && b.text && b.text.trim());
     for (const k of Object.keys(uso)) uso[k] += (resp.usage && resp.usage[k]) || 0;
+    busquedas += (resp.usage && resp.usage.server_tool_use && resp.usage.server_tool_use.web_search_requests) || 0;
     separar = true;
     // Búsquedas en internet: se anotan siempre (antes se perdían si la respuesta terminaba en el mismo paso).
     for (const b of resp.content || []) {
@@ -655,7 +663,8 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   await q("INSERT INTO mensajes (rol, contenido, conversacion_id, revisado, creado_en) VALUES ('assistant', ?, ?, ?, ?)",
     [guardado, conversacionId, revisado.length ? JSON.stringify(revisado) : null, new Date()]);
   tiempos.total_ms = Date.now() - t0;
-  const costo = costoUSD(eleccion.modelo, uso);
+  const costo = costoUSD(eleccion.modelo, uso) + busquedas * 0.01;
+  Consumo.registrar({ modelo: eleccion.modelo, costo: costoUSD(eleccion.modelo, uso), busquedas }).catch((e) => console.error('Consumo:', e.message));
   Metricas.registrar({ conversacion_id: conversacionId, voz: !!opciones.voz, modelo: eleccion.modelo, nivel: eleccion.nivel, costo_usd: costo, tokens: uso, ...tiempos });
   if (process.env.ADA_LOG_TIEMPOS !== 'no') console.log(`ADA tiempos u${usuario().id} [${eleccion.nivel}: ${eleccion.modelo}, ${eleccion.motivo}, ~US$${costo.toFixed(4)}]: contexto ${tiempos.contexto_ms}ms · primer texto ${tiempos.primer_texto_ms}ms · herramientas ${tiempos.herramientas_ms}ms · total ${tiempos.total_ms}ms`);
   return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), tiempos, modelo: { nombre: eleccion.modelo, nivel: eleccion.nivel }, acciones, documentos, archivos, conversacion_id: conversacionId };

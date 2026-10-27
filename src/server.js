@@ -229,6 +229,7 @@ app.get('/api/yo', auth, (req, res) => res.json(req.usuario));
 
 // Personas de la prueba (solo Cristian).
 app.get('/api/usuarios', auth, soloAdmin, envolver(() => U.listar()));
+app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
 app.post('/api/usuarios/:id/activo', auth, soloAdmin, envolver((req) => U.cambiarActivo(parseInt(req.params.id, 10), !!(req.body || {}).activo)));

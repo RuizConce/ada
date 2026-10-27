@@ -1588,7 +1588,17 @@
   async function pintarPersonas() {
     const cont = $('#lista-personas');
     let lista = [];
-    try { lista = await api('/api/usuarios'); } catch (e) { cont.textContent = e.message; return; }
+    let consumo = null;
+    try { [lista, consumo] = await Promise.all([api('/api/usuarios'), api('/api/consumo').catch(() => null)]); } catch (e) { cont.textContent = e.message; return; }
+    const usd = (n) => `US$${(n || 0).toFixed(2).replace('.', ',')}`;
+    const gasto = (id) => consumo && consumo.personas.find((x) => x.id === id);
+    const res = $('#consumo-resumen');
+    if (consumo) {
+      const yo = gasto(1) || {};
+      res.textContent = `Gasto estimado en IA este mes: ${usd(consumo.total_mes)} (hoy ${usd(consumo.total_hoy)}). Tú: ${usd(yo.mes)}.`
+        + (consumo.tope_invitado > 0 ? ` Tope por invitado: ${usd(consumo.tope_invitado)} al día; al pasarlo sigue con el modelo rápido.` : '');
+      res.hidden = false;
+    }
     cont.innerHTML = '';
     if (!lista.length) { cont.innerHTML = '<p class="meta">Aún no invitas a nadie.</p>'; return; }
     for (const p of lista) {
@@ -1599,6 +1609,12 @@
       fila.querySelector('strong').textContent = nombre;
       fila.querySelector('small').textContent = !p.activo ? 'Sin acceso'
         : p.ultimo_ingreso ? `Último ingreso: ${fechaCorta(p.ultimo_ingreso)}` : 'Todavía no entra';
+      const g = gasto(p.id);
+      if (g && g.mes > 0) {
+        fila.querySelector('small').textContent += ` · Hoy ${usd(g.hoy)} · Mes ${usd(g.mes)}`
+          + (g.profundo_mes > 0 ? ` (${Math.round((g.profundo_mes / g.mes) * 100)}% Sonnet)` : '')
+          + (consumo.tope_invitado > 0 && g.hoy >= consumo.tope_invitado ? ' · llegó al tope de hoy' : '');
+      }
       const nueva = fila.querySelector('.nueva');
       nueva.textContent = 'Nueva clave';
       nueva.addEventListener('click', async () => {
