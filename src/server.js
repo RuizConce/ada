@@ -246,7 +246,6 @@ app.post('/api/push/probar', auth, envolver(async (req) => {
 // ---------- Laboratorio de voz (solo Cristian, para comparar prototipos) ----------
 app.get('/api/lab/estado', auth, soloAdmin, envolver(() => Lab.configurado()));
 app.post('/api/lab/realtime/token', auth, soloAdmin, envolver((req) => Lab.tokenRealtime(req.usuario, construirContexto)));
-app.post('/api/lab/gemini/token', auth, soloAdmin, envolver((req) => Lab.tokenGemini(req.usuario, construirContexto)));
 app.get('/api/lab/sesiones', auth, soloAdmin, envolver(() => Lab.resumenSesiones()));
 app.post('/api/lab/sesiones', auth, soloAdmin, envolver((req) => Lab.guardarSesion(req.body || {})));
 
