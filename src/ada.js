@@ -90,6 +90,10 @@ CUANDO TE DICE QUE NO, O QUE DESCARTES
 - Si te pide descartar algo, hazlo de inmediato y no lo vuelvas a ofrecer ni a preguntar: un mensaje por autorizar → descartar_mensaje; un pendiente → actualizar_item con estado descartado; un encargo → actualizar_encargo cancelado. Confirma en pocas palabras ("Listo, descartado.").
 - Si dice que no a una propuesta tuya, respétalo: no la repitas en esta conversación salvo que cambie algo importante.
 
+ENCARGOS GRANDES (investigar, analizar, informes)
+- Si te piden algo que toma tiempo (un análisis de una comuna, un informe, comparar varias fuentes), di primero en una frase qué vas a hacer ("Lo investigo y te dejo el informe en pantalla; me toma un par de minutos") y hazlo completo en ese mismo turno: busca, cruza y entrégalo con entregar_documento.
+- El informe: claro y ejecutivo, con lo esencial primero, cifras con su fuente y año, y lo que no encontraste dicho como tal. Mejor completo y compacto que largo e inconcluso; si da para más, ofrece profundizar por partes.
+
 PENSAR CONTIGO
 Cuando estén pensando juntos (ideas, estrategia, una decisión, "qué opinas", "ayúdame a pensar"):
 - Entiende primero el objetivo real. Usa lo que ya sabes: la memoria del proyecto (ver_proyecto), lo registrado y lo conversado. Si falta un dato clave, pregunta eso y nada más.
@@ -382,13 +386,15 @@ const ESTADO_HERRAMIENTA = {
   archivar_correos: 'Archivando…',
 };
 
-function herramientasDisponibles() {
+function herramientasDisponibles(nivel = 'rapido') {
   const tools = [...H.DEFINICIONES];
   if (process.env.ADA_INTERNET !== 'no') {
+    // Investigar a fondo (un análisis, un informe) necesita más búsquedas que una consulta puntual.
+    const busquedas = nivel === 'profundo' ? process.env.ADA_MAX_BUSQUEDAS_FONDO || '6' : process.env.ADA_MAX_BUSQUEDAS || '3';
     tools.push({
       type: 'web_search_20250305',
       name: 'web_search',
-      max_uses: parseInt(process.env.ADA_MAX_BUSQUEDAS || '3', 10),
+      max_uses: parseInt(busquedas, 10),
       user_location: { type: 'approximate', city: 'Iquique', region: 'Tarapacá', country: 'CL', timezone: 'America/Santiago' },
     });
   }
@@ -514,7 +520,7 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   if (revisadoAntes) {
     system.push({ type: 'text', text: `LO QUE YA REVISASTE EN ESTA CONVERSACIÓN (resultados reales de tus herramientas en turnos anteriores, del más reciente al más antiguo; pueden venir recortados):\n${revisadoAntes}` });
   }
-  const tools = herramientasDisponibles();
+  const tools = herramientasDisponibles(eleccion.nivel);
   const revisado = []; // herramientas usadas en este turno, para recordarlas en los siguientes
 
   const acciones = [];
@@ -541,12 +547,14 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   let ultimaConTexto = false;
   let usoHerramientas = false;
   let rescatado = false;
+  let recortado = false;
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
     // En el último paso permitido, se le pide responder sin más herramientas (antes podía quedarse callada).
     const sinHerramientas = vuelta === MAX_VUELTAS - 1;
     const resp = await llamarClaude({
       model: eleccion.modelo,
-      max_tokens: eleccion.nivel === 'profundo' ? 6000 : 3000,
+      // Un informe completo puede ser largo: si se corta por tamaño, no se entrega nada.
+      max_tokens: eleccion.nivel === 'profundo' ? 16000 : 4000,
       system, tools, messages,
       ...(sinHerramientas ? { tool_choice: { type: 'none' } } : {}),
     }, emitir);
@@ -568,6 +576,20 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     if (resp.stop_reason === 'pause_turn') {
       // Búsqueda larga en curso: se devuelve tal cual para que continúe.
       messages.push({ role: 'assistant', content: resp.content });
+      continue;
+    }
+    // Se cortó por largo: se descarta la herramienta a medio escribir y se le pide una versión más compacta.
+    if (resp.stop_reason === 'max_tokens' && !recortado && vuelta < MAX_VUELTAS - 1) {
+      recortado = true;
+      const completos = (resp.content || []).filter((b) => b.type === 'text' && b.text);
+      if (completos.length) messages.push({ role: 'assistant', content: completos });
+      const aviso = '[Sistema: tu respuesta se cortó por ser demasiado larga y no se entregó. Hazla más compacta: si es un informe, entrégalo con entregar_documento en una versión más breve (lo esencial, con tablas cortas) y ofrece profundizar por partes.]';
+      const ultimo = messages[messages.length - 1];
+      if (ultimo.role === 'user') {
+        if (Array.isArray(ultimo.content)) ultimo.content.push({ type: 'text', text: aviso });
+        else ultimo.content += `\n\n${aviso}`;
+      } else messages.push({ role: 'user', content: aviso });
+      console.warn(`ADA respuesta cortada por largo u${usuario().id}; se pide versión compacta`);
       continue;
     }
     if (resp.stop_reason !== 'tool_use') {

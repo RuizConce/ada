@@ -730,7 +730,51 @@
     }
   }
 
+  // Busca en la conversación la respuesta de ADA al último mensaje, hasta que aparezca (máx. ~5 minutos).
+  let recuperando = null;
+  function recuperarRespuesta(conv, texto) {
+    if (recuperando) recuperando.cancelar();
+    let vivo = true;
+    let intentos = 0;
+    recuperando = { cancelar: () => { vivo = false; }, revisar: () => revisar() };
+    setFase('pensando', 'Se cortó la conexión, pero sigo trabajando…');
+    let enCurso = false;
+    let proximo = null;
+    async function revisar() {
+      if (!vivo || enCurso) return;
+      enCurso = true;
+      clearTimeout(proximo);
+      intentos += 1;
+      try {
+        const d = await api(`/api/conversaciones/${conv}`);
+        const iYo = d.mensajes.map((m) => m.rol === 'user' && m.contenido === texto).lastIndexOf(true);
+        const resp = iYo >= 0 ? d.mensajes.slice(iYo + 1).find((m) => m.rol === 'assistant') : null;
+        if (resp) {
+          vivo = false;
+          recuperando = null;
+          const [hablado, enPantalla] = resp.contenido.split('\n\n[En pantalla]\n');
+          mostrarAda(hablado.replace(/\n\[Te interrumpió[^\]]*\]$/, ''));
+          mostrarDetalle(enPantalla || '');
+          docsActuales = d.documentos.map((x) => ({ id: x.id, titulo: x.titulo }));
+          archivosActuales = (d.archivos || []).map((x) => ({ id: x.id, nombre: x.nombre, tipo: x.tipo, drive_url: x.drive_url }));
+          pintarEntregas();
+          cargarAutorizaciones();
+          actualizarEstado();
+          setFase('reposo');
+          aviso('Listo, aquí está la respuesta.');
+          return;
+        }
+      } catch (_) {}
+      enCurso = false;
+      if (intentos >= 60) { vivo = false; recuperando = null; setFase('reposo'); aviso('No pude recuperar la respuesta. Pregúntale de nuevo.', true); return; }
+      proximo = setTimeout(revisar, 5000);
+    }
+    proximo = setTimeout(revisar, 3000);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && recuperando) recuperando.revisar(); });
+
   async function enviar(texto, opciones = {}) {
+    if (recuperando) { recuperando.cancelar(); recuperando = null; }
     texto = (texto || '').trim();
     if (!texto || ocupado) return null;
     ocupado = true;
@@ -817,14 +861,20 @@
       return { respuesta: resultado.respuesta, locutor };
     } catch (e) {
       if (locutor) locutor.detener();
+      // Se cortó la conexión (celular en segundo plano, mala señal) pero ADA sigue trabajando en el servidor:
+      // se espera su respuesta en vez de darla por perdida.
+      if (!errorFlujo && convId) {
+        recuperarRespuesta(convId, texto);
+        return null;
+      }
       aviso(`${e.message}. Inténtalo de nuevo.`, true);
       return null;
     } finally {
       ocupado = false;
       pintarControles();
-      if (!conversando) {
+      if (!conversando && !recuperando) {
         if (locutor) {
-          locutor.fin.then(() => { if (!conversando && !ocupado) setFase('reposo'); });
+          locutor.fin.then(() => { if (!conversando && !ocupado && !recuperando) setFase('reposo'); });
         } else {
           setFase('reposo');
         }
