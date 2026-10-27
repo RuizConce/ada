@@ -79,7 +79,8 @@ function conectarOido(server) {
       const u = await U.desdeToken(token);
       if (!u) { enviar({ type: 'Error', mensaje: 'No autorizado' }); return cliente.close(); }
       // El modo reunión es para todos; el laboratorio, solo para el administrador.
-      if (!reunion && !u.admin && process.env.ADA_LAB_TODOS !== 'si') { enviar({ type: 'Error', mensaje: 'El laboratorio es solo para el administrador' }); return cliente.close(); }
+      // Modo reunión y escucha de la app (modo=voz) son para todos; el laboratorio, solo para el administrador.
+      if (!reunion && params.get('modo') !== 'voz' && !u.admin && process.env.ADA_LAB_TODOS !== 'si') { enviar({ type: 'Error', mensaje: 'El laboratorio es solo para el administrador' }); return cliente.close(); }
       if (!process.env.DEEPGRAM_API_KEY) { enviar({ type: 'Error', mensaje: 'Falta DEEPGRAM_API_KEY en Railway' }); return cliente.close(); }
       if (u.id !== 1) await prepararInvitado(u.id);
       const terminos = await comoUsuario(u, () => palabrasClave(u.nombre));

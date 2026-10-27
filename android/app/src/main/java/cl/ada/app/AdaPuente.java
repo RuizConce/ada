@@ -71,13 +71,22 @@ public class AdaPuente {
 
     /** El reconocedor del sistema (Google), nunca el propio de ADA (que solo existe para ser asistente). */
     static ComponentName reconocedorDelSistema(Context c) {
+        // 1) El que el teléfono tiene elegido, si no es ADA.
+        try {
+            String elegido = android.provider.Settings.Secure.getString(c.getContentResolver(), "voice_recognition_service");
+            if (elegido != null && !elegido.isEmpty()) {
+                ComponentName cn = ComponentName.unflattenFromString(elegido);
+                if (cn != null && !c.getPackageName().equals(cn.getPackageName())) return cn;
+            }
+        } catch (Exception ignorado) { }
+        // 2) El de la app de Google; 3) cualquier otro que no sea ADA.
         PackageManager pm = c.getPackageManager();
         List<ResolveInfo> lista = pm.queryIntentServices(new Intent(RecognitionService.SERVICE_INTERFACE), 0);
         ComponentName otro = null;
         for (ResolveInfo r : lista) {
             if (r.serviceInfo == null || c.getPackageName().equals(r.serviceInfo.packageName)) continue;
             ComponentName cn = new ComponentName(r.serviceInfo.packageName, r.serviceInfo.name);
-            if (r.serviceInfo.packageName.startsWith("com.google")) return cn;
+            if (r.serviceInfo.packageName.equals("com.google.android.googlequicksearchbox")) return cn;
             if (otro == null) otro = cn;
         }
         return otro;

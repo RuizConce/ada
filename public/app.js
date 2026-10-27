@@ -1170,8 +1170,10 @@
     };
     rec.onerror = (e) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        aviso('ADA no tiene permiso para usar el micrófono. Actívalo en los ajustes del navegador.', true);
+        aviso(window.AdaAndroid ? 'ADA no tiene permiso para el micrófono. Actívalo en Ajustes del teléfono → Apps → ADA → Permisos.' : 'ADA no tiene permiso para usar el micrófono. Actívalo en los ajustes del navegador.', true);
         detenerVoz();
+      } else if (e.error === 'network' || e.error === 'audio-capture' || e.error === 'sin-deepgram') {
+        aviso(e.error === 'audio-capture' ? 'No pude usar el micrófono (¿otra app lo está ocupando?).' : 'Se cortó la escucha; vuelvo a intentar.', true);
       }
     };
     rec.onend = () => {
