@@ -513,3 +513,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .voz-diagnostico { white-space: pre-line; margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--vidrio); border: 1px solid var(--borde); color: var(--texto); }
 
 .boton-enlace { display: inline-block; margin-top: 10px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--borde); background: var(--vidrio); color: var(--texto); text-decoration: none; font-size: 14px; }
+
+/* Barra con más íconos (modo reunión): en pantallas angostas, íconos un poco más chicos. */
+@media (max-width: 420px) {
+  .barra .icono { width: 36px; height: 36px; }
+}

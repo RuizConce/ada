@@ -816,6 +816,12 @@
     if (recuperando) { recuperando.cancelar(); recuperando = null; }
     texto = (texto || '').trim();
     if (!texto || ocupado) return null;
+    // "Modo reunión" / "toma acta de la reunión": abre el modo reunión.
+    const n = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/^(ada,? )?(activa |pon(te)? (en )?|abre |entra (en|al) )?(el )?modo reunion\b|^(ada,? )?(toma|tomame|levanta) (el )?acta\b|^(ada,? )?(graba|escucha) (la|esta) reunion\b/.test(n)) {
+      location.href = '/reunion.html';
+      return null;
+    }
     ocupado = true;
     pintarControles();
     mostrarYo(opciones.mostrar || texto);

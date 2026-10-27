@@ -41,10 +41,12 @@ async function palabrasClave(nombrePersona) {
 
 // ---------- A) Oído en tiempo real (proxy WebSocket → Deepgram) ----------
 
-function urlDeepgram(terminos) {
+// Modo reunión: separa a quienes hablan (diarize), espera pausas más largas y, si se pide traducir,
+// reconoce varios idiomas mezclados (language=multi).
+function urlDeepgram(terminos, { reunion = false, multi = false } = {}) {
   const p = new URLSearchParams({
     model: process.env.DEEPGRAM_MODELO || 'nova-3',
-    language: process.env.DEEPGRAM_IDIOMA || 'es',
+    language: multi ? 'multi' : (process.env.DEEPGRAM_IDIOMA || 'es'),
     encoding: 'linear16',
     sample_rate: '16000',
     channels: '1',
@@ -55,6 +57,11 @@ function urlDeepgram(terminos) {
     smart_format: 'true',
     punctuate: 'true',
   });
+  if (reunion) {
+    p.set('diarize', 'true');
+    p.set('endpointing', '700');
+    p.set('utterance_end_ms', '1500');
+  }
   for (const t of terminos) p.append('keyterm', t);
   return `${process.env.DEEPGRAM_URL || 'wss://api.deepgram.com'}/v1/listen?${p}`;
 }
@@ -65,14 +72,18 @@ function conectarOido(server) {
     const enviar = (o) => { if (cliente.readyState === WebSocket.OPEN) cliente.send(JSON.stringify(o)); };
     let arriba = null;
     try {
-      const token = new URL(req.url, 'http://x').searchParams.get('token');
+      const params = new URL(req.url, 'http://x').searchParams;
+      const token = params.get('token');
+      const reunion = params.get('modo') === 'reunion';
+      const multi = reunion && params.get('idioma') === 'multi';
       const u = await U.desdeToken(token);
       if (!u) { enviar({ type: 'Error', mensaje: 'No autorizado' }); return cliente.close(); }
-      if (!u.admin && process.env.ADA_LAB_TODOS !== 'si') { enviar({ type: 'Error', mensaje: 'El laboratorio es solo para el administrador' }); return cliente.close(); }
+      // El modo reunión es para todos; el laboratorio, solo para el administrador.
+      if (!reunion && !u.admin && process.env.ADA_LAB_TODOS !== 'si') { enviar({ type: 'Error', mensaje: 'El laboratorio es solo para el administrador' }); return cliente.close(); }
       if (!process.env.DEEPGRAM_API_KEY) { enviar({ type: 'Error', mensaje: 'Falta DEEPGRAM_API_KEY en Railway' }); return cliente.close(); }
       if (u.id !== 1) await prepararInvitado(u.id);
       const terminos = await comoUsuario(u, () => palabrasClave(u.nombre));
-      arriba = new WebSocket(urlDeepgram(terminos), { headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}` } });
+      arriba = new WebSocket(urlDeepgram(terminos, { reunion, multi }), { headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}` } });
       const pendiente = [];
       arriba.on('open', () => {
         enviar({ type: 'Listo', palabras_clave: terminos.length });
@@ -84,7 +95,17 @@ function conectarOido(server) {
         try { m = JSON.parse(datos.toString()); } catch (_) { return; }
         if (m.type === 'Results') {
           const alt = (m.channel && m.channel.alternatives && m.channel.alternatives[0]) || {};
-          enviar({ type: 'Results', texto: alt.transcript || '', is_final: !!m.is_final, speech_final: !!m.speech_final });
+          const r = { type: 'Results', texto: alt.transcript || '', is_final: !!m.is_final, speech_final: !!m.speech_final };
+          if (reunion) {
+            // Quién habla: el hablante con más palabras en este tramo.
+            const cuenta = {};
+            for (const w of alt.words || []) if (Number.isInteger(w.speaker)) cuenta[w.speaker] = (cuenta[w.speaker] || 0) + 1;
+            const top = Object.entries(cuenta).sort((a, b) => b[1] - a[1])[0];
+            r.hablante = top ? parseInt(top[0], 10) : null;
+            r.idioma = (alt.languages && alt.languages[0]) || null;
+            r.inicio = typeof m.start === 'number' ? m.start : null;
+          }
+          enviar(r);
         } else if (m.type === 'SpeechStarted' || m.type === 'UtteranceEnd') {
           enviar({ type: m.type });
         } else if (m.type === 'Error') {

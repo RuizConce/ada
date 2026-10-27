@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0f14">
+  <title>Modo reunión · ADA</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { background: var(--fondo); }
+    .reu { max-width: 680px; margin: 0 auto; padding: 14px 16px 48px; display: grid; gap: 14px; }
+    .reu-cab { display: flex; align-items: center; gap: 10px; }
+    .reu-cab a { color: var(--texto-suave); text-decoration: none; font-size: 22px; padding: 4px 10px; border: 1px solid var(--borde); border-radius: 12px; }
+    .reu-cab h1 { margin: 0; font-size: 20px; }
+    .tarjeta { padding: 14px; border-radius: 16px; border: 1px solid var(--borde); background: var(--vidrio); }
+    .tarjeta p { margin: 0 0 10px; font-size: 14px; line-height: 1.5; color: var(--texto-suave); }
+    #reu-titulo { width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; box-sizing: border-box; }
+    .opcion { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; font-size: 14px; }
+    .opcion input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--verde); }
+    .opcion small { display: block; color: var(--texto-suave); }
+    .reu-orbe { display: grid; place-items: center; gap: 8px; padding: 6px 0; }
+    #reu-boton { width: 160px; height: 160px; border-radius: 50%; border: 0; font-weight: 700; font-size: 16px; line-height: 1.3; color: #04140d; background: radial-gradient(circle at 30% 30%, var(--verde), var(--verde-2)); box-shadow: 0 10px 40px -10px rgba(94, 234, 168, 0.6); padding: 16px; }
+    #reu-boton.grabando { background: radial-gradient(circle at 30% 30%, #fca5a5, #ef4444); color: #fff; animation: latir 2.4s ease-in-out infinite; }
+    #reu-boton:disabled { opacity: 0.6; animation: none; }
+    @keyframes latir { 50% { box-shadow: 0 0 0 14px rgba(239, 68, 68, 0.12), 0 10px 40px -10px rgba(239, 68, 68, 0.6); } }
+    #reu-reloj { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700; }
+    #reu-fase { color: var(--texto-suave); font-size: 14px; text-align: center; min-height: 1.4em; margin: 0; }
+    #reu-texto { max-height: 46dvh; overflow-y: auto; display: grid; gap: 10px; }
+    #reu-texto:empty::before { content: 'Aquí va apareciendo lo que se dice.'; color: var(--texto-suave); font-size: 14px; }
+    .seg { font-size: 15px; line-height: 1.45; }
+    .seg.parcial { opacity: 0.55; }
+    .quien { display: inline-block; border: 0; border-radius: 999px; padding: 2px 9px; margin-right: 6px; font-size: 12px; font-weight: 700; color: #04140d; cursor: pointer; }
+    .trad { display: block; margin-top: 3px; color: var(--texto-suave); font-style: italic; font-size: 14px; }
+    .acta h2 { font-size: 16px; margin: 16px 0 6px; }
+    .acta h3 { font-size: 15px; margin: 12px 0 4px; }
+    .acta ul { margin: 4px 0; padding-left: 20px; }
+    .acta li { margin: 3px 0; line-height: 1.45; }
+    .acta p { color: var(--texto); }
+    .tareas-reu { display: grid; gap: 6px; margin-top: 8px; }
+    .tareas-reu div { font-size: 14px; padding: 8px 10px; border-radius: 10px; background: var(--fondo); border: 1px solid var(--borde); }
+    .tareas-reu small { color: var(--texto-suave); }
+    .error { color: #fca5a5; font-size: 14px; }
+    .botones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .botones a, .botones button { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--borde); background: none; color: var(--texto); text-decoration: none; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main class="reu">
+    <header class="reu-cab">
+      <a href="/" aria-label="Volver a ADA">‹</a>
+      <h1>Modo reunión</h1>
+    </header>
+
+    <section class="tarjeta" id="reu-preparar">
+      <p>Deja el teléfono sobre la mesa. ADA escucha toda la reunión, separa a quienes hablan y al terminar arma el acta con acuerdos y tareas. Te la manda al correo y agenda lo tuyo.</p>
+      <input id="reu-titulo" type="text" maxlength="120" placeholder="¿De qué es la reunión? (opcional)">
+      <label class="opcion"><input id="reu-traducir" type="checkbox"><span>Traducir al español<small>Si alguien habla en inglés u otro idioma, ves la traducción en vivo.</small></span></label>
+    </section>
+
+    <section class="tarjeta">
+      <div class="reu-orbe">
+        <button id="reu-boton" type="button">Empezar</button>
+        <span id="reu-reloj" hidden>00:00</span>
+        <p id="reu-fase">Toca Empezar cuando comience la reunión.</p>
+      </div>
+      <p id="reu-error" class="error"></p>
+    </section>
+
+    <section class="tarjeta" id="reu-vivo" hidden>
+      <p style="margin-bottom:8px">Toca el nombre de una persona para decir quién es.</p>
+      <div id="reu-texto"></div>
+    </section>
+
+    <section class="tarjeta" id="reu-resultado" hidden>
+      <h2 id="reu-r-titulo" style="margin:0 0 6px;font-size:18px"></h2>
+      <p id="reu-r-resumen" style="color:var(--texto)"></p>
+      <div id="reu-r-tareas" class="tareas-reu"></div>
+      <div id="reu-r-acta" class="acta"></div>
+      <p class="meta" id="reu-r-nota" style="margin-top:12px"></p>
+      <div class="botones">
+        <a href="/">Volver a ADA</a>
+        <button type="button" id="reu-otra">Nueva reunión</button>
+      </div>
+    </section>
+  </main>
+  <script src="reunion.js"></script>
+</body>
+</html>

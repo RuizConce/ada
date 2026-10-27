@@ -236,6 +236,13 @@ app.get('/api/google/contactos/prueba', auth, envolver(async () => {
   const r = await Ct.contactosGoogle({ fresco: true });
   return { total: r.lista.length, error: r.error || null, ejemplos: r.lista.filter((x) => x.nombre && !x.nombre.includes('@')).slice(0, 3).map((x) => x.nombre) };
 }));
+// ---------- Modo reunión ----------
+const Reuniones = require('./reuniones');
+app.get('/api/reuniones', auth, envolver(() => Reuniones.listar()));
+app.post('/api/reuniones', auth, envolver((req) => Reuniones.crear(req.body || {})));
+app.post('/api/reuniones/traducir', auth, envolver((req) => Reuniones.traducir((req.body || {}).texto)));
+app.post('/api/reuniones/:id/segmentos', auth, envolver((req) => Reuniones.agregar(parseInt(req.params.id, 10), (req.body || {}).segmentos)));
+app.post('/api/reuniones/:id/terminar', auth, envolver((req) => Reuniones.terminar(parseInt(req.params.id, 10), req.body || {})));
 app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));

@@ -232,6 +232,16 @@ const ESQUEMA = [
     INDEX idx_conv (conversacion_id),
     FOREIGN KEY (conversacion_id) REFERENCES conversaciones(id) ON DELETE SET NULL
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS reuniones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(200) NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'grabando',
+    traducir TINYINT NOT NULL DEFAULT 0,
+    transcripcion MEDIUMTEXT NULL,
+    documento_id INT NULL,
+    inicio DATETIME NOT NULL,
+    fin DATETIME NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS mensajes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     rol ENUM('user','assistant') NOT NULL,
