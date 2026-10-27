@@ -494,7 +494,19 @@
   // El locutor recibe frases a medida que llegan, precarga el audio y las dice en orden.
   // detener() la calla de inmediato (para interrumpir).
   let locutorActual = null;
-  function crearLocutor({ alEmpezar, antes, alSonar } = {}) {
+  // Lo que dice ADA mientras trabaja en silencio, según lo que está haciendo.
+  function fraseDeAvance(estado, n) {
+    const e = (estado || '').toLowerCase();
+    let base;
+    if (e.includes('leyendo') || e.includes('drive')) base = n === 1 ? 'Sigo revisando los archivos.' : 'Sigo leyendo, es harto material.';
+    else if (e.includes('preparando') || e.includes('armando') || e.includes('planilla') || e.includes('editando')) base = n === 1 ? 'Sigo armando el documento, dame un poco más.' : 'Ya casi lo tengo.';
+    else if (e.includes('internet')) base = n === 1 ? 'Sigo buscando información.' : 'Estoy cruzando lo que encontré.';
+    else if (e.includes('correo')) base = 'Sigo revisando tu correo.';
+    else base = n === 1 ? 'Sigo en eso, dame un momento.' : 'Ya casi.';
+    return base;
+  }
+
+  function crearLocutor({ alEmpezar, antes, alSonar, alFrase, alQuedarLibre } = {}) {
     try { reproductor.volume = 1; } catch (_) {} // por si una interrupción anterior lo dejó bajo
     const cola = [];
     let sono = false;
@@ -520,10 +532,16 @@
         if (detenido) { if (url) URL.revokeObjectURL(url); break; }
         if (!sono) { sono = true; locutor.sonando = true; if (alSonar) alSonar(medida); }
         dichas.push(item.frase);
+        locutor.reproduciendo = true;
+        if (alFrase) alFrase();
         if (url) { await reproducir(url, cancelado); URL.revokeObjectURL(url); }
         else await decirConNavegador(item.frase, cancelado);
+        locutor.reproduciendo = false;
+        locutor.ultimaFrase = performance.now();
       }
       trabajando = false;
+      // Se quedó sin nada que decir, pero la respuesta sigue (ADA trabajando con herramientas).
+      if (!detenido && !cerrado && !cola.length && alQuedarLibre) alQuedarLibre();
       if (detenido || (cerrado && !cola.length)) resolverFin();
     }
 
@@ -557,9 +575,13 @@
         resolverFin();
       },
       get hablando() { return empezo && !detenido; },
+      get detenido() { return detenido; },
+      get ocupado() { return locutor.reproduciendo || cola.length > 0 || trabajando; },
       dichas,
       interrumpida: false,
       sonando: false,
+      reproduciendo: false,
+      ultimaFrase: 0,
       fin,
     };
     locutorActual = locutor;
@@ -803,11 +825,28 @@
     const hablar = !silenciada;
     const inicio = opciones.desde || performance.now();
     let medicion = null;
-    const locutor = hablar ? crearLocutor({
+    let ultimoEstado = '';
+    let terminado = false;
+    const opcionesLocutor = {
       alEmpezar: () => setFase('hablando'),
-      antes: opciones.antes,
-      alSonar: (m) => { medicion = { hasta_audio_ms: Math.round(performance.now() - inicio), medida: m }; },
-    }) : null;
+      alFrase: () => setFase('hablando'),
+      // Calló pero sigue trabajando: que se vea en qué está (antes quedaba "ADA está hablando" en silencio).
+      alQuedarLibre: () => { if (!terminado) setFase('pensando', ultimoEstado || 'Sigo en eso…'); },
+      alSonar: (m) => { if (!medicion) medicion = { hasta_audio_ms: Math.round(performance.now() - inicio), medida: m }; },
+    };
+    let locutor = hablar ? crearLocutor({ ...opcionesLocutor, antes: opciones.antes }) : null;
+    // Si trabaja en silencio un buen rato, cuenta en qué está (máximo 3 veces).
+    let ultimaActividad = performance.now();
+    let avisosAvance = 0;
+    const vigiaAvance = setInterval(() => {
+      if (terminado || !locutor || locutor.detenido || locutor.ocupado || silenciada) return;
+      const quieto = performance.now() - Math.max(ultimaActividad, locutor.ultimaFrase || 0);
+      if (quieto > 14000 && avisosAvance < 3) {
+        avisosAvance += 1;
+        ultimaActividad = performance.now();
+        locutor.decir(fraseDeAvance(ultimoEstado, avisosAvance));
+      }
+    }, 1000);
     let detalleTexto = '';
     mostrarDetalle('');
     const cortador = crearCortador((frase) => locutor && locutor.decir(frase));
@@ -828,6 +867,7 @@
           if (d.conversacion_id !== convId) { docsActuales = []; archivosActuales = []; pintarEntregas(); }
           guardarConv(d.conversacion_id);
         } else if (tipo === 'texto') {
+          ultimaActividad = performance.now();
           acumulado += d.delta;
           mostrarAda(acumulado);
           cortador.agregar(d.delta);
@@ -835,7 +875,10 @@
           detalleTexto += d.delta;
           mostrarDetalle(detalleTexto);
         } else if (tipo === 'estado') {
-          if (!locutor || !locutor.hablando) setFase('pensando', d.texto);
+          ultimoEstado = d.texto;
+          // Si la interrumpieron antes, lo que diga después de trabajar se habla igual (con un locutor nuevo).
+          if (locutor && locutor.detenido && hablar && !silenciada) locutor = crearLocutor(opcionesLocutor);
+          if (!locutor || !locutor.reproduciendo) setFase('pensando', d.texto);
         } else if (tipo === 'documento') {
           docsActuales.push(d);
           pintarEntregas();
@@ -848,6 +891,8 @@
           errorFlujo = d.error;
         }
       });
+      terminado = true;
+      clearInterval(vigiaAvance);
       if (errorFlujo) throw new Error(errorFlujo);
       if (!resultado) throw new Error('La respuesta se cortó');
       cortador.terminar();
@@ -877,6 +922,8 @@
       if ((resultado.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
       return { respuesta: resultado.respuesta, locutor };
     } catch (e) {
+      terminado = true;
+      clearInterval(vigiaAvance);
       if (locutor) locutor.detener();
       // Se cortó la conexión (celular en segundo plano, mala señal) pero ADA sigue trabajando en el servidor:
       // se espera su respuesta en vez de darla por perdida.
@@ -1120,7 +1167,9 @@
 
   // Tocar cualquier parte del escenario mientras ADA habla la hace callar.
   $('.escenario').addEventListener('click', (e) => {
-    if (orbe.dataset.fase === 'hablando' && e.target.id !== 'cerrar-conv') detenerHabla();
+    if (e.target.id === 'cerrar-conv') return;
+    if (locutorActual && locutorActual.reproduciendo) detenerHabla();
+    else if (ocupado) setFase('pensando', 'Sigo trabajando en esto…'); // tocar mientras trabaja no la calla
   });
   orbe.addEventListener('click', () => {
     const fase = orbe.dataset.fase;
