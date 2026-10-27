@@ -1508,6 +1508,24 @@
         ayuda.textContent = `Falta darle acceso a: ${nombres.join(', ')}. Reconecta y marca "Seleccionar todo" en los permisos de Google.`;
         acciones.appendChild(botonConectar(`Reconectar para dar acceso a ${nombres.join(' y ')}`));
       }
+      // Diagnóstico: ¿ADA puede leer de verdad los contactos de Google?
+      const pc = document.createElement('button');
+      pc.type = 'button';
+      pc.textContent = 'Probar contactos';
+      pc.addEventListener('click', async () => {
+        pc.disabled = true;
+        pc.textContent = 'Revisando…';
+        try {
+          const r = await api('/api/google/contactos/prueba');
+          ayuda.hidden = false;
+          ayuda.textContent = r.error
+            ? `✗ Contactos no disponibles: ${r.error}`
+            : `✓ ADA ve ${r.total} contactos de Google${r.ejemplos.length ? ` (por ejemplo: ${r.ejemplos.join(', ')})` : ''}.`;
+        } catch (e) { ayuda.hidden = false; ayuda.textContent = `✗ ${e.message}`; }
+        pc.disabled = false;
+        pc.textContent = 'Probar contactos';
+      });
+      acciones.appendChild(pc);
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = 'Desconectar';
@@ -1893,6 +1911,8 @@
     $('#av-silencio').value = av.silencio_desde || '';
     $('#av-seguimiento').checked = av.seguimiento !== false;
     $('#av-correos').checked = av.correos !== false;
+    $('#av-fin-tarea').checked = av.fin_tarea !== false;
+    $('#av-correo-fin').checked = av.correo_fin_tarea !== false;
     $('#av-cierre-activo').checked = av.cierre_activo !== false;
     let sub = null;
     try { sub = await suscripcionActual(); } catch (_) {}
@@ -1938,11 +1958,12 @@
         despertar: $('#av-despertar').value, resumen: $('#av-resumen').value, cierre: $('#av-cierre').value,
         silencio_desde: $('#av-silencio').value, seguimiento: $('#av-seguimiento').checked,
         correos: $('#av-correos').checked, cierre_activo: $('#av-cierre-activo').checked,
+        fin_tarea: $('#av-fin-tarea').checked, correo_fin_tarea: $('#av-correo-fin').checked,
       } }) });
       aviso('Avisos guardados.');
     } catch (e) { aviso(e.message, true); }
   }
-  ['#av-despertar', '#av-resumen', '#av-cierre', '#av-silencio', '#av-seguimiento', '#av-correos', '#av-cierre-activo']
+  ['#av-despertar', '#av-resumen', '#av-cierre', '#av-silencio', '#av-seguimiento', '#av-correos', '#av-cierre-activo', '#av-fin-tarea', '#av-correo-fin']
     .forEach((id) => $(id).addEventListener('change', guardarAvisos));
 
   // Al abrir ADA desde un aviso: una tarjeta para escuchar lo que corresponde (el toque permite el sonido).

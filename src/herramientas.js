@@ -91,6 +91,8 @@ const AVISOS_DEFECTO = {
   seguimiento: true,
   correos: true,
   cierre_activo: true,
+  fin_tarea: true,          // aviso al teléfono cuando termina un encargo largo
+  correo_fin_tarea: true,   // y el resultado a su propio correo (pactado: no pide autorización)
 };
 const PREF_DEFECTO = { tareas_auto: true, modelo_modo: 'auto' };
 async function preferencias() {
@@ -116,7 +118,7 @@ async function guardarPreferencias(cambios = {}) {
       else if (HORA.test(v)) a[k] = v;
       else throw new Error(`Hora no válida para ${k}: usa HH:MM`);
     }
-    for (const k of ['activos', 'seguimiento', 'correos', 'cierre_activo']) if (cambios.avisos[k] !== undefined) a[k] = !!cambios.avisos[k];
+    for (const k of ['activos', 'seguimiento', 'correos', 'cierre_activo', 'fin_tarea', 'correo_fin_tarea']) if (cambios.avisos[k] !== undefined) a[k] = !!cambios.avisos[k];
     if (cambios.avisos.max_dia !== undefined) a.max_dia = Math.max(0, Math.min(10, parseInt(cambios.avisos.max_dia, 10) || 0));
     nuevas.avisos = a;
   }

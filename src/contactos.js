@@ -105,11 +105,11 @@ function puntaje(consulta, c) {
 // ---------- Google Contacts ----------
 
 const cacheGoogle = new Map(); // por persona: { lista, hasta, error }
-async function contactosGoogle() {
+async function contactosGoogle({ fresco = false } = {}) {
   const G = require('./google');
   const uid = usuario().id;
   const c = cacheGoogle.get(uid);
-  if (c && c.hasta > Date.now()) return c;
+  if (!fresco && c && c.hasta > Date.now()) return c;
   // Sin permiso no se guarda en caché: apenas reconecte, ya funciona.
   if (!(await G.tienePermiso('contacts'))) return { lista: [], error: 'sin permiso de Contactos (reconectar Google en Ajustes)' };
   const token = await G.tokenAcceso();

@@ -112,6 +112,8 @@ app.post('/api/chat/stream', auth, async (req, res) => {
       conversacionId: parseInt(req.body.conversacion_id, 10) || null,
     }, enviarEvento);
     enviarEvento('fin', r);
+    // Encargo largo terminado: aviso al teléfono y resultado a su propio correo.
+    require('./fintarea').avisarFin(texto, r).catch((e) => console.error('Fin de tarea:', e.message));
   } catch (e) {
     console.error('Error en /api/chat/stream:', e);
     const saturado = e.status === 529 || e.status === 503;
@@ -229,6 +231,11 @@ app.get('/api/yo', auth, (req, res) => res.json(req.usuario));
 
 // Personas de la prueba (solo Cristian).
 app.get('/api/usuarios', auth, soloAdmin, envolver(() => U.listar()));
+app.get('/api/google/contactos/prueba', auth, envolver(async () => {
+  const Ct = require('./contactos');
+  const r = await Ct.contactosGoogle({ fresco: true });
+  return { total: r.lista.length, error: r.error || null, ejemplos: r.lista.filter((x) => x.nombre && !x.nombre.includes('@')).slice(0, 3).map((x) => x.nombre) };
+}));
 app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
