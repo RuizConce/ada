@@ -347,6 +347,8 @@
   const reproductor = new Audio();
   reproductor.preload = 'auto';
   let vozServidor = false;          // se activa si /api/ajustes informa un proveedor
+  let vozServidorConfigurada = false; // el servidor tiene voz natural (aunque ahora esté en pausa por fallas)
+  let timerVuelveVoz = null;
   let fallosServidor = 0;
 
   // Limpia el texto para que suene bien: sin markdown y con los montos en pesos.
@@ -432,7 +434,20 @@
   }
 
   // Pide el audio de una frase al servidor; devuelve una URL lista para reproducir o null.
-  function pedirAudio(frase, señal, reintento = true) {
+  // Si la voz natural falla (por ejemplo, mientras el servidor se reinicia), se usa la del teléfono
+  // un rato y luego se vuelve a intentar la natural. Antes quedaba desactivada toda la sesión.
+  function pausarVozServidor() {
+    vozServidor = false;
+    clearTimeout(timerVuelveVoz);
+    timerVuelveVoz = setTimeout(() => {
+      if (!vozServidorConfigurada) return;
+      vozServidor = true;
+      fallosServidor = 0;
+      if (!acuses.length) prepararAcuses();
+    }, 45000);
+  }
+
+  function pedirAudio(frase, señal, reintento = true, { precarga = false } = {}) {
     return fetch('/api/voz', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -446,11 +461,12 @@
     }).catch((e) => {
       if (e.name === 'AbortError') return null;
       // Un corte de red momentáneo no debe dejar a ADA muda a mitad de frase: se reintenta una vez.
-      if (reintento && !(señal && señal.aborted)) return pedirAudio(frase, señal, false);
+      if (reintento && !(señal && señal.aborted)) return pedirAudio(frase, señal, false, { precarga });
+      if (precarga) return null; // los acuses precargados no cuentan como falla de la conversación
       fallosServidor += 1;
       if (fallosServidor >= 2) {
-        vozServidor = false;
-        aviso('La voz natural falló; ADA usará la voz del teléfono por ahora.', true);
+        pausarVozServidor();
+        aviso('La voz natural falló; por un momento ADA usará la voz del teléfono.', true);
         console.warn('Voz servidor:', e.message);
       }
       return null;
@@ -479,6 +495,7 @@
   // detener() la calla de inmediato (para interrumpir).
   let locutorActual = null;
   function crearLocutor({ alEmpezar, antes, alSonar } = {}) {
+    try { reproductor.volume = 1; } catch (_) {} // por si una interrupción anterior lo dejó bajo
     const cola = [];
     let sono = false;
     const medida = { tts_ms: null };
@@ -683,7 +700,7 @@
     acuses = [];
     if (!vozServidor) return;
     for (const texto of TEXTOS_ACUSE) {
-      const url = await pedirAudio(texto);
+      const url = await pedirAudio(texto, undefined, true, { precarga: true });
       if (url) acuses.push({ texto: texto.replace(/\.$/, ''), url });
     }
   }
@@ -1379,7 +1396,9 @@
     try {
       const a = await api('/api/ajustes');
       const antes = vozServidor;
-      vozServidor = a.voz.proveedor !== 'navegador';
+      vozServidorConfigurada = a.voz.proveedor !== 'navegador';
+      vozServidor = vozServidorConfigurada;
+      fallosServidor = 0;
       if (vozServidor && (!antes || !acuses.length)) prepararAcuses();
       return a;
     } catch (_) {
@@ -1606,6 +1625,55 @@
   // En Ajustes solo se muestra la voz actual; la lista completa se abre en una hoja encima.
   let datosVoces = null;
   let filtroGenero = 'todas';
+
+  // Diagnóstico: prueba cada paso de la voz y dice exactamente cuál falla.
+  async function probarVoz() {
+    const out = $('#voz-diagnostico');
+    out.hidden = false;
+    const pasos = [];
+    const mostrar = () => { out.textContent = pasos.join('\n'); };
+    desbloquearVoz();
+    pasos.push(silenciada ? '✗ ADA está en silencio (botón del parlante arriba). Tócalo para que hable.' : '✓ ADA no está en silencio.');
+    mostrar();
+    let url = null;
+    if (vozServidorConfigurada) {
+      const t = performance.now();
+      try {
+        const res = await fetch('/api/voz', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ texto: 'Hola, ¿me escuchas bien?' }) });
+        if (res.status === 204) pasos.push('✗ El servidor no tiene voz natural configurada (se usará la del teléfono).');
+        else if (!res.ok) pasos.push(`✗ La voz de Google falló: ${(await res.json().catch(() => ({}))).error || `error ${res.status}`}`);
+        else {
+          url = URL.createObjectURL(await res.blob());
+          pasos.push(`✓ Voz de Google lista (${((performance.now() - t) / 1000).toFixed(1)} s).`);
+          vozServidor = true; // si estaba en pausa, vuelve
+          fallosServidor = 0;
+        }
+      } catch (e) { pasos.push(`✗ No se pudo pedir la voz al servidor: ${e.message}`); }
+    } else {
+      pasos.push('• El servidor no tiene voz natural configurada: se usa la del teléfono.');
+    }
+    mostrar();
+    if (url) {
+      try {
+        reproductor.volume = 1;
+        reproductor.src = url;
+        await reproductor.play();
+        pasos.push('✓ El teléfono la está reproduciendo. Si no escuchas nada, sube el volumen multimedia (no el del timbre).');
+      } catch (e) {
+        pasos.push(e.name === 'NotAllowedError' ? '✗ El navegador bloqueó el audio. Toca la pantalla y vuelve a probar.' : `✗ El teléfono no pudo reproducir el audio: ${e.name} ${e.message}`);
+      }
+    } else if (sintesis) {
+      const u = new SpeechSynthesisUtterance('Hola, ¿me escuchas bien?');
+      u.lang = 'es-CL';
+      u.onerror = (e) => { pasos.push(`✗ La voz del teléfono falló: ${e.error}`); mostrar(); };
+      u.onstart = () => { pasos.push('✓ Hablando con la voz del teléfono.'); mostrar(); };
+      sintesis.speak(u);
+    } else {
+      pasos.push('✗ Este navegador no tiene voz. Usa Chrome.');
+    }
+    mostrar();
+  }
+  $('#probar-voz').addEventListener('click', probarVoz);
 
   async function pintarVoces() {
     const cont = $('#voces');
@@ -2063,7 +2131,7 @@
   setInterval(() => { if (token && !document.hidden) actualizarEstado(); }, 60000);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && conversando) detenerVoz();
-    if (!document.hidden && token) { actualizarEstado(); cargarAutorizaciones(); }
+    if (!document.hidden && token) { actualizarEstado(); cargarAutorizaciones(); cargarAjustes(); } // al volver, se reintenta la voz natural
   });
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -509,3 +509,5 @@ button:disabled { opacity: 0.45; cursor: default; }
 .clave-campo { position: relative; }
 .clave-campo input { width: 100%; padding-right: 76px; }
 .clave-campo button { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--texto-suave); font-size: 14px; padding: 8px; }
+
+.voz-diagnostico { white-space: pre-line; margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--vidrio); border: 1px solid var(--borde); color: var(--texto); }
