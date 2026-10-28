@@ -7,7 +7,7 @@ let archivos = new Map(); // id → { id, name, mimeType, version, md5Checksum, 
 let fallas = { meta: 0, meta403: 0, descarga: 0, borrado: 0, retardo_ms: 0, retardo_ids: [] };
 let n = 0;
 let stats;
-function reset() { stats = { meta: {}, export: {}, media: {}, copias: {}, borrados: 0, borrado_fallido: 0, sheets: {}, total_meta: 0, total_descargas: 0 }; }
+function reset() { stats = { meta: {}, export: {}, media: {}, copias: {}, borrados: 0, borrado_fallido: 0, sheets: {}, total_meta: 0, total_descargas: 0, escrituras: {} }; }
 reset();
 const inc = (o, k) => { o[k] = (o[k] || 0) + 1; };
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -29,6 +29,26 @@ http.createServer(async (req, res) => {
     if (p === '/control/fallas' && req.method === 'POST') { fallas = { ...fallas, ...(await leerCuerpo(req)) }; return json(res, 200, fallas); }
     if (p === '/control/stats') return json(res, 200, { ...stats, vivos: [...archivos.values()].filter((f) => f.copiaDe).map((f) => ({ id: f.id, name: f.name, copiaDe: f.copiaDe })), existe: Object.fromEntries([...archivos.keys()].map((k) => [k, true])) });
     if (p === '/control/reset' && req.method === 'POST') { reset(); return json(res, 200, { ok: true }); }
+
+    // ---- Escrituras (Sheets, Docs, subida, PATCH de Drive) ----
+    let w = p.match(/^\/sheets\/v4\/spreadsheets\/([^/:]+)\/values\/[^/]+$/);
+    if (w && (req.method === 'PUT' || req.method === 'POST')) { await leerCuerpo(req); inc(stats.escrituras, decodeURIComponent(w[1])); return json(res, 200, { updatedCells: 2, updatedRange: 'A1:B1', updates: { updatedRange: 'A2:B2' } }); }
+    w = p.match(/^\/docs\/v1\/documents\/([^/:]+):batchUpdate$/);
+    if (w) { await leerCuerpo(req); inc(stats.escrituras, decodeURIComponent(w[1])); return json(res, 200, { replies: [] }); }
+    if (p === '/upload/drive/v3/files' && req.method === 'POST') { req.resume(); inc(stats.escrituras, 'subida'); n += 1; return json(res, 200, { id: `subido-${n}`, webViewLink: 'https://drive.simulado/subido' }); }
+    if (p === '/drive/v3/files' && req.method === 'POST') {
+      const b = await leerCuerpo(req); n += 1; const id = `carpeta-${n}`;
+      archivos.set(id, { id, name: b.name, mimeType: b.mimeType, parents: b.parents || ['root'], acceso: true, version: 1 });
+      inc(stats.escrituras, `crear:${(b.parents || ['root'])[0]}`); return json(res, 200, publico(archivos.get(id)));
+    }
+    w = p.match(/^\/drive\/v3\/files\/([^/]+)$/);
+    if (w && req.method === 'PATCH') {
+      const id = decodeURIComponent(w[1]); const f = archivos.get(id); const b = await leerCuerpo(req);
+      if (!f) return error(res, 404, 'notFound');
+      Object.assign(f, b);
+      if (u.searchParams.get('addParents')) f.parents = [u.searchParams.get('addParents')];
+      inc(stats.escrituras, id); return json(res, 200, publico(f));
+    }
 
     // ---- Sheets ----
     let m = p.match(/^\/sheets\/v4\/spreadsheets\/([^/:]+)(\/values:batchGet)?$/);

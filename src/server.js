@@ -326,6 +326,7 @@ app.delete('/api/extracciones/:archivo', auth, soloAdmin, envolver((req) => Extr
 app.get('/api/extracciones/metricas', auth, soloAdmin, envolver((req) => Extracciones.metricas({
   desde: req.query.desde, hasta: req.query.hasta, conversacionId: parseInt(req.query.conversacion, 10) || null, turnoId: req.query.turno || null, trabajoId: req.query.trabajo || null,
 })));
+app.get('/api/extracciones/eventos', auth, soloAdmin, envolver((req) => Extracciones.eventos({ desde: req.query.desde, limite: req.query.limite })));
 app.post('/api/extracciones/temporales/reintentar', auth, soloAdmin, envolver(() => require('./drive').reintentarTemporales()));
 app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));

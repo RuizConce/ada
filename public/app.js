@@ -1773,10 +1773,25 @@
       const m = await api(`/api/extracciones/metricas?desde=${encodeURIComponent(hoy.toISOString())}`);
       const filas = [['Documentos únicos', m.documentos_unicos], ['Consultas de permisos y versión', m.consultas_metadatos], ['Descargas de contenido', m.descargas],
         ['Extracciones nuevas (cifradas)', m.extracciones_nuevas], ['Reutilizaciones', m.reutilizaciones], ['Lecturas sin guardar', m.lecturas_sin_guardar],
-        ['Operaciones redundantes', m.operaciones_redundantes], ['Bloqueadas fuera de la carpeta', m.bloqueados_fuera_de_prueba], ['Reintentos', m.reintentos_justificados]];
+        ['Operaciones redundantes', m.operaciones_redundantes], ['Lecturas bloqueadas fuera de la carpeta', m.bloqueados_fuera_de_prueba],
+        ['Escrituras bloqueadas fuera de la carpeta', m.escrituras_bloqueadas], ['Intentos de escritura en Drive', m.escrituras_drive_intentadas],
+        ['Escrituras en Drive sin error', m.escrituras_drive_sin_error], ['Reintentos', m.reintentos_justificados]];
       const dl = $('#dg-metricas');
       dl.innerHTML = '';
       for (const [k, v] of filas) { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = String(v ?? 0); dl.append(dt, dd); }
+      const ev = await api(`/api/extracciones/eventos?desde=${encodeURIComponent(hoy.toISOString())}`);
+      const NOMBRES = { consulta_metadatos: 'verificó acceso', descarga: 'descargó', extraccion_nueva: 'extracción nueva cifrada', extraccion_sin_guardar: 'leyó sin guardar',
+        reutilizacion: 'reutilizó lo guardado', bloqueado_prueba: 'lectura bloqueada (fuera de la carpeta)', escritura_bloqueada: 'escritura bloqueada (fuera de la carpeta)',
+        invalidacion: 'invalidó', sin_acceso: 'sin acceso', verificacion_fallida: 'no pudo verificar', reintento: 'reintento', redundante: 'REDUNDANTE',
+        temporal_borrado: 'borró copia temporal', temporal_fallido: 'copia temporal sin borrar', vencida: 'vencida', borrado: 'borrado' };
+      const hora = (h) => new Date(h).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const lineas = [...ev.extracciones.map((e) => [e.hora, `${hora(e.hora)} · ${NOMBRES[e.evento] || e.evento}${e.archivo ? ` · ${e.archivo}` : ''}${e.motivo ? ` · ${e.motivo}` : ''}`]),
+        ...ev.escrituras_drive.map((o) => [o.hora, `${hora(o.hora)} · ${o.herramienta} · ${o.ok ? 'hecho' : `no hecho: ${o.error}`}`])]
+        .sort((a, b) => new Date(b[0]) - new Date(a[0])).map((x) => x[1]);
+      const det = $('#dg-detalle');
+      det.innerHTML = '';
+      if (!lineas.length) det.textContent = 'Sin actividad hoy.';
+      for (const l of lineas.slice(0, 60)) { const d = document.createElement('div'); d.textContent = l; det.appendChild(d); }
       caja.hidden = false;
     } catch (e) {
       $('#dg-consentimiento').textContent = e.message;

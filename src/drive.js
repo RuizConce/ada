@@ -9,7 +9,7 @@ const { qPrincipal, usuario } = require('./db');
 const SIMULADO = process.env.ADA_DRIVE_URL || '';
 const DRIVE = SIMULADO ? `${SIMULADO}/drive/v3` : 'https://www.googleapis.com/drive/v3';
 const SHEETS = SIMULADO ? `${SIMULADO}/sheets/v4/spreadsheets` : 'https://sheets.googleapis.com/v4/spreadsheets';
-const DOCS = 'https://docs.googleapis.com/v1/documents';
+const DOCS = SIMULADO ? `${SIMULADO}/docs/v1/documents` : 'https://docs.googleapis.com/v1/documents';
 const CAMPOS = 'id,name,mimeType,modifiedTime,webViewLink,parents,size,owners(displayName)';
 const CAMPOS_VERSION = `${CAMPOS},version,md5Checksum,trashed`;
 const PREFIJO_TEMPORAL = 'ADA temporal - ';
@@ -37,6 +37,7 @@ const FILTRO_TIPO = {
 };
 
 async function conectado() {
+  if (SIMULADO) return true;
   const e = await G.estado();
   return e.conectado;
 }
@@ -313,7 +314,34 @@ async function reintentarTemporales() {
 
 // ---------- Ordenar ----------
 
-async function crearCarpeta(a = {}) {
+// Durante la prueba de la Fase 3b (ADA_EXTRACCIONES=prueba), el servidor bloquea toda modificación en Drive
+// fuera de la carpeta de prueba, aunque Cristian la autorice en la conversación. objetivos: [{ id, carpeta }]
+// (carpeta: true si es una carpeta de destino, que puede ser la carpeta de prueba misma).
+const FUERA_DE_PRUEBA = 'Archivo fuera de la carpeta autorizada para la prueba';
+async function protegerEscritura(objetivos, accion, ctx = {}) {
+  if (Extracciones.modo() !== 'prueba' || usuario().id !== 1) return;
+  const carpetaPrueba = process.env.ADA_DRIVE_CARPETA_PRUEBA || '';
+  const contexto = { origen: ctx.trabajoId ? 'trabajo' : 'chat', conversacionId: ctx.conversacionId, turnoId: ctx.turnoId };
+  const bloquear = async (id, nombre, detalle) => {
+    await Extracciones.evento('escritura_bloqueada', contexto, { archivoId: id || '(sin id)', nombre, motivo: accion });
+    throw Object.assign(new Error(`${FUERA_DE_PRUEBA}: no hice ningún cambio (${detalle}). Durante la prueba de guardado solo se puede modificar lo que está en la carpeta de prueba, aunque lo autorices.`), { bloqueado: true, status: 403 });
+  };
+  for (const o of objetivos) {
+    if (o.carpeta && carpetaPrueba && o.id === carpetaPrueba) continue;
+    if (!o.id) await bloquear(null, null, o.carpeta ? 'el destino no es la carpeta de prueba' : 'sin archivo');
+    let meta;
+    try {
+      await Extracciones.evento('consulta_metadatos', contexto, { archivoId: o.id, motivo: `antes_de_${accion}` });
+      meta = await metadatos(o.id);
+    } catch (e) {
+      await bloquear(o.id, null, 'no pude comprobar dónde está');
+    }
+    if (!Extracciones.enCarpetaDePrueba(meta)) await bloquear(o.id, meta.name, o.carpeta ? 'el destino está fuera de la carpeta de prueba' : 'está fuera de la carpeta de prueba');
+  }
+}
+
+async function crearCarpeta(a = {}, ctx = {}) {
+  await protegerEscritura([{ id: a.dentro_de_id, carpeta: true }], 'crear_carpeta', ctx);
   if (!a.nombre) throw new Error('nombre es obligatorio');
   const f = await gfetch(`${DRIVE}/files?fields=${CAMPOS}`, {
     method: 'POST',
@@ -326,7 +354,8 @@ async function crearCarpeta(a = {}) {
   return { ok: true, carpeta: archivoPublico(f) };
 }
 
-async function mover(a = {}) {
+async function mover(a = {}, ctx = {}) {
+  await protegerEscritura([{ id: a.id }, { id: a.carpeta_destino_id, carpeta: true }], 'mover', ctx);
   if (a.confirmado !== true) return SIN_CONFIRMAR;
   if (!a.id || !a.carpeta_destino_id) throw new Error('id y carpeta_destino_id son obligatorios');
   const actual = await gfetch(`${DRIVE}/files/${encodeURIComponent(a.id)}?fields=parents`);
@@ -336,7 +365,8 @@ async function mover(a = {}) {
   return { ok: true, archivo: archivoPublico(f) };
 }
 
-async function renombrar(a = {}) {
+async function renombrar(a = {}, ctx = {}) {
+  await protegerEscritura([{ id: a.id }], 'renombrar', ctx);
   if (a.confirmado !== true) return SIN_CONFIRMAR;
   if (!a.id || !a.nuevo_nombre) throw new Error('id y nuevo_nombre son obligatorios');
   const f = await gfetch(`${DRIVE}/files/${encodeURIComponent(a.id)}?fields=${CAMPOS}`, {
@@ -345,7 +375,8 @@ async function renombrar(a = {}) {
   return { ok: true, archivo: archivoPublico(f) };
 }
 
-async function papelera(a = {}) {
+async function papelera(a = {}, ctx = {}) {
+  await protegerEscritura([{ id: a.id }], 'papelera', ctx);
   if (a.confirmado !== true) return SIN_CONFIRMAR;
   if (!a.id) throw new Error('id es obligatorio');
   const f = await gfetch(`${DRIVE}/files/${encodeURIComponent(a.id)}?fields=${CAMPOS}`, {
@@ -356,7 +387,8 @@ async function papelera(a = {}) {
 
 // ---------- Editar ----------
 
-async function editarHoja(a = {}) {
+async function editarHoja(a = {}, ctx = {}) {
+  await protegerEscritura([{ id: a.id }], 'editar_hoja', ctx);
   if (a.confirmado !== true) return SIN_CONFIRMAR;
   if (!a.id || !Array.isArray(a.valores) || !a.valores.length) throw new Error('id y valores son obligatorios');
   let hoja = a.hoja;
@@ -378,7 +410,8 @@ async function editarHoja(a = {}) {
   return { ok: true, filas_agregadas: a.valores.length, rango: r.updates && r.updates.updatedRange };
 }
 
-async function editarDocumento(a = {}) {
+async function editarDocumento(a = {}, ctx = {}) {
+  await protegerEscritura([{ id: a.id }], 'editar_documento', ctx);
   if (a.confirmado !== true) return SIN_CONFIRMAR;
   if (!a.id) throw new Error('id es obligatorio');
   const pedidos = [];
@@ -411,6 +444,8 @@ async function carpetaADA() {
 }
 
 async function subirComoGoogle({ nombre, datos, tipo, carpetaId }) {
+  // En la prueba, nada se sube fuera de la carpeta de prueba (tampoco a la carpeta ADA, que no se crea).
+  await protegerEscritura([{ id: carpetaId, carpeta: true }], 'subir_archivo');
   const destino = carpetaId || (await carpetaADA());
   const meta = {
     name: nombre,
@@ -426,7 +461,7 @@ async function subirComoGoogle({ nombre, datos, tipo, carpetaId }) {
     datos,
     Buffer.from(`\r\n--${limite}--`),
   ]);
-  const f = await gfetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+  const f = await gfetch(`${SIMULADO || 'https://www.googleapis.com'}/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink`, {
     method: 'POST',
     sinJson: true,
     headers: { 'Content-Type': `multipart/related; boundary=${limite}` },
@@ -533,4 +568,4 @@ H.registrar([
   editar_documento_drive: editarDocumento,
 });
 
-module.exports = { conectado, subirComoGoogle, buscar, leer, extraerParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };
+module.exports = { conectado, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };

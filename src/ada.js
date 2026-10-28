@@ -77,6 +77,7 @@ AGENDA (GOOGLE CALENDAR)
 ARCHIVOS Y GOOGLE DRIVE
 - Para un Word o Excel ("hazme un Excel con…", "pásamelo a Word", "una planilla de costos") usa crear_archivo. Si Google está conectado queda también en su Drive, en la carpeta ADA. Para notas rápidas en pantalla sigue usando entregar_documento.
 - En Excel usa fórmulas cuando tenga sentido (totales, márgenes, porcentajes) para que la planilla siga viva, y formatea montos como "pesos".
+- Distingue lo que quedó hecho de lo que solo preparaste. "Registrado", "actualizado", "guardado en la planilla" o "modificado" solo si una herramienta de escritura (editar_hoja_drive, editar_documento_drive, mover_drive, renombrar_drive, crear_archivo…) respondió ok. Si solo anotaste en tus notas (registrar_item) di "lo anoté en mis notas, no en la planilla"; si solo preparaste un resumen o texto sugerido, di que es una propuesta y que el archivo no cambió. Si una herramienta responde bloqueado_prueba, di "Archivo fuera de la carpeta autorizada para la prueba" y que no hiciste ningún cambio ni lo abriste.
 - Guardado de documentos: lo controla el servidor, no tú. leer_drive aplica solo las reglas (modo, carpeta de prueba, consentimiento, cifrado, permisos y versión) y te dice en "guardado" qué pasó: extraccion_nueva_guardada, reutilizada o leido_sin_guardar (con el motivo). No necesitas revisar variables ni configuración para leer: si te piden confirmar el estado antes de una prueba, usa estado_guardado_documentos y sigue si lo permite. El consentimiento lo da Cristian con la tarjeta de la app, no con palabras en el chat.
 - Puedes buscar (buscar_drive), explorar carpetas (listar_carpeta_drive) y leer (leer_drive) cualquier archivo de su Drive: Docs, Sheets, Word, Excel, PDF. Úsalo cuando pregunte por algo que probablemente está ahí ("¿cuánto era el presupuesto de…?", "resume el acta…", "¿qué dice el contrato…?").
 - Al analizar: lee, calcula y responde con lo importante (cifras clave, conclusiones, riesgos, lo que falta). Si la respuesta es larga, entrégala como documento o archivo.
@@ -405,7 +406,7 @@ const ESTADO_HERRAMIENTA = {
   crear_archivo: 'Armando el archivo…',
   buscar_drive: 'Buscando en tu Drive…',
   listar_carpeta_drive: 'Revisando tu Drive…',
-  leer_drive: 'Leyendo el archivo…',
+  leer_drive: 'Verificando acceso al archivo…',
   estado_guardado_documentos: 'Revisando el guardado de documentos…',
   mover_drive: 'Ordenando tu Drive…',
   editar_hoja_drive: 'Editando la planilla…',
@@ -754,6 +755,7 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
         : await H.ejecutar(bloque.name, bloque.input, ctxHerramientas);
       if (claveRep && !repetida) yaEjecutadas.set(claveRep, true);
       tiempos.herramientas_ms += Date.now() - tH;
+      if (r && r.bloqueado_prueba) alEvento('estado', { texto: 'Archivo fuera de la carpeta autorizada para la prueba' });
       encargoId = encargoId || Registro.encargoDe(bloque.name, bloque.input, r);
       const textoR = JSON.stringify(r) || '';
       Registro.operacion({ conversacionId, turnoId, llamadaId: reg.id, herramienta: bloque.name, input: bloque.input, resultado: r,

@@ -338,11 +338,57 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(r.d.modo === 'prueba' && r.d.carpeta_prueba_termina_en === 'prueba', 'Ajustes muestra el modo del servidor y el final del id de la carpeta');
   m = (await api(`/api/extracciones/metricas?desde=${encodeURIComponent(new Date(Date.now() - 600e3).toISOString())}`, {}, 3204, tkP)).d;
   ok(m.bloqueados_fuera_de_prueba >= 3, `métricas: ${m.bloqueados_fuera_de_prueba} lecturas bloqueadas fuera de la carpeta`);
+  // ---- Escrituras en modo prueba: bloqueadas fuera de la carpeta, aunque estén "autorizadas" ----
+  await ctl('/control/archivos', { archivos: [
+    { id: 'HX', name: 'Planilla externa ficticia', mimeType: 'application/vnd.google-apps.spreadsheet', version: 1, parents: ['otra-carpeta'], texto: 'x' },
+    { id: 'HI', name: 'Planilla de prueba ficticia', mimeType: 'application/vnd.google-apps.spreadsheet', version: 1, parents: ['carpeta-prueba'], texto: 'x' },
+    { id: 'DX', name: 'Doc externo ficticio', mimeType: GDOC, version: 1, parents: ['otra-carpeta'], texto: 'x' },
+    { id: 'DI', name: 'Doc de prueba ficticio', mimeType: GDOC, version: 1, parents: ['carpeta-prueba'], texto: 'x' },
+  ] });
+  await ctl('/control/reset', {});
+  const herr = (llamadas) => chat(`HERR ${JSON.stringify({ llamadas })}`, { puerto: 3204, tk: tkP });
+  const evW = desdeUltimo();
+  r = await herr([
+    { name: 'editar_hoja_drive', input: { id: 'HX', valores: [['a', 'b']], confirmado: true } },
+    { name: 'editar_documento_drive', input: { id: 'DX', agregar_al_final: 'texto', confirmado: true } },
+    { name: 'renombrar_drive', input: { id: 'DX', nuevo_nombre: 'otro', confirmado: true } },
+    { name: 'papelera_drive', input: { id: 'Z1', confirmado: true } },
+    { name: 'mover_drive', input: { id: 'DI', carpeta_destino_id: 'otra-carpeta', confirmado: true } },
+    { name: 'mover_drive', input: { id: 'DX', carpeta_destino_id: 'carpeta-prueba', confirmado: true } },
+    { name: 'crear_carpeta_drive', input: { nombre: 'Nueva en la raíz' } },
+    { name: 'editar_hoja_drive', input: { id: 'HX', valores: [['sin confirmar']] } },
+  ]);
+  const resW = JSON.parse(r.texto.replace('RES=', ''));
+  let sw = await stats();
+  ok(resW.every((x) => x === 'BLOQUEADO'), `escrituras fuera de la carpeta (planilla, documento, renombrar, papelera, mover hacia y desde afuera, carpeta en la raíz, sin confirmar): todas bloqueadas (${resW.join(', ')})`);
+  ok(Object.keys(sw.escrituras).length === 0, `el Drive simulado no recibió ninguna escritura (${JSON.stringify(sw.escrituras)})`);
+  ok(r.eventos.some((e) => e.tipo === 'estado' && e.d.texto === 'Archivo fuera de la carpeta autorizada para la prueba'), 'la app muestra "Archivo fuera de la carpeta autorizada para la prueba"');
+  ok(nEventos('escritura_bloqueada', `AND id > ${evW}`) === 8, 'cada escritura bloqueada queda registrada');
+  r = await herr([{ name: 'crear_archivo', input: { tipo: 'word', titulo: 'Resumen ficticio', contenido: 'Hola' } }]);
+  sw = await stats();
+  ok(/^RES=\["LOCAL:Archivo fuera de la carpeta autorizada/.test(r.texto) && Object.keys(sw.escrituras).length === 0, 'crear_archivo: el archivo queda para descargar, pero no se sube a Drive (ni se crea la carpeta ADA)');
+  r = await herr([
+    { name: 'editar_hoja_drive', input: { id: 'HI', valores: [['a', 'b']], confirmado: true } },
+    { name: 'editar_documento_drive', input: { id: 'DI', agregar_al_final: 'texto', confirmado: true } },
+    { name: 'crear_carpeta_drive', input: { nombre: 'Sub', dentro_de_id: 'carpeta-prueba' } },
+  ]);
+  sw = await stats();
+  ok(r.texto === 'RES=["OK","OK","OK"]' && sw.escrituras.HI === 1 && sw.escrituras.DI === 1 && sw.escrituras['crear:carpeta-prueba'] === 1, 'dentro de la carpeta de prueba las ediciones confirmadas sí funcionan');
+  m = (await api(`/api/extracciones/metricas?desde=${encodeURIComponent(new Date(Date.now() - 600e3).toISOString())}`, {}, 3204, tkP)).d;
+  ok(m.escrituras_bloqueadas >= 9 && m.escrituras_drive_intentadas >= 12, `métricas: ${m.escrituras_bloqueadas} escrituras bloqueadas de ${m.escrituras_drive_intentadas} intentos`);
+  const det = (await api(`/api/extracciones/eventos?desde=${encodeURIComponent(new Date(Date.now() - 600e3).toISOString())}`, {}, 3204, tkP)).d;
+  ok(det.extracciones.some((e) => e.evento === 'escritura_bloqueada' && e.archivo === 'Planilla externa ficticia') && det.escrituras_drive.some((o) => o.herramienta === 'editar_hoja_drive' && !o.ok) && !JSON.stringify(det).includes(MARCA),
+    'detalle por archivo para Ajustes (sin contenido)');
+  r = await lee([[{ id: 'A1' }]], { puerto: 3204, tk: tkP });
+  ok(r.eventos.some((e) => e.tipo === 'estado' && e.d.texto === 'Verificando acceso al archivo…'), 'al leer, la app muestra "Verificando acceso al archivo…"');
   await parar('P');
   // Al terminar la prueba se quita el modo y Drive vuelve a la normalidad.
   await arrancar('P', 3204, { ADA_EXTRACCIONES: '' });
   r = await lee([[{ id: 'Z1' }]], { puerto: 3204, tk: tkP });
   ok(/0 con error/.test(r.texto), 'sin el modo prueba, el archivo externo se vuelve a leer con normalidad');
+  await ctl('/control/reset', {});
+  r = await chat(`HERR ${JSON.stringify({ llamadas: [{ name: 'renombrar_drive', input: { id: 'DX', nuevo_nombre: 'Doc externo renombrado', confirmado: true } }] })}`, { puerto: 3204, tk: tkP });
+  ok(r.texto === 'RES=["OK"]' && (await stats()).escrituras.DX === 1, 'y las ediciones fuera de la carpeta vuelven a funcionar (con confirmación)');
   await parar('P');
   await arrancar('A', 3200);
 

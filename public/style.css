@@ -555,3 +555,5 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 #docs-guardados h4 { margin: 18px 0 4px; font-size: 1rem; }
 .tarjeta-consentimiento p { margin: 6px 0 10px; line-height: 1.4; }
+
+.dg-detalle { font-size: .85rem; line-height: 1.5; opacity: .9; overflow-wrap: anywhere; }

@@ -179,6 +179,7 @@ async function registrarItem(a) {
     item: itemPublico(row),
     proyecto_nuevo: proyecto && proyecto.nuevo ? proyecto.nombre : undefined,
     ...(calendario ? { calendario } : {}),
+    donde: 'En las notas de ADA. No modifica ningún archivo de Drive ni planilla.',
   };
 }
 
@@ -518,7 +519,7 @@ async function ejecutar(nombre, input, ctx = {}) {
   try {
     return await fn(input || {}, ctx);
   } catch (e) {
-    return { error: e.message };
+    return { error: e.message, ...(e.bloqueado ? { bloqueado_prueba: true } : {}) };
   }
 }
 

@@ -25,6 +25,14 @@ function responder(req) {
     const estados = res.map((b) => { try { const g = JSON.parse(b.content).guardado; return g ? `${g.estado}${g.motivo ? `:${g.motivo}` : ''}${g.en_carpeta_de_prueba !== undefined ? `:carpeta=${g.en_carpeta_de_prueba}` : ''}` : 'error'; } catch (_) { return 'error'; } });
     return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `Listo: ${res.length} lecturas en el último paso, ${guardado} desde lo guardado, ${errores} con error. Estados=${estados.join(',')}` }] };
   }
+  const h = texto.match(/HERR (\{[\s\S]*\})\s*$/);
+  if (h) {
+    const { llamadas } = JSON.parse(h[1]);
+    if (pasos === 0) return { id: `msg_${n}`, stop_reason: 'tool_use', usage: uso, content: llamadas.map((x, i) => ({ type: 'tool_use', id: `h${n}_${i}`, name: x.name, input: x.input || {} })) };
+    const ultimo = req.messages[req.messages.length - 1];
+    const res = ultimo.content.filter((b) => b.type === 'tool_result').map((b) => { const r = JSON.parse(b.content); return r.bloqueado_prueba ? 'BLOQUEADO' : r.error ? `ERROR:${String(r.error).slice(0, 40)}` : r.drive_error ? `LOCAL:${String(r.drive_error).slice(0, 40)}` : 'OK'; });
+    return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `RES=${JSON.stringify(res)}` }] };
+  }
   if (/ESTADO GUARDADO/.test(texto)) {
     if (pasos === 0) return { id: `msg_${n}`, stop_reason: 'tool_use', usage: uso, content: [{ type: 'tool_use', id: `e${n}`, name: 'estado_guardado_documentos', input: {} }] };
     const ultimo = req.messages[req.messages.length - 1];
@@ -56,7 +64,10 @@ class FakeAnthropic {
             const r = responder(req);
             emitir('streamEvent', { type: 'message_start', message: { usage: { ...r.usage, output_tokens: 1 } } });
             if (abortado) return;
-            for (const b of r.content) if (b.type === 'text' && b.text) emitir('text', b.text);
+            for (const b of r.content) {
+              if (b.type === 'tool_use') emitir('streamEvent', { type: 'content_block_start', content_block: { type: 'tool_use', name: b.name } });
+              if (b.type === 'text' && b.text) emitir('text', b.text);
+            }
             emitir('streamEvent', { type: 'message_delta', usage: { output_tokens: r.usage.output_tokens } });
             ok({ ...r, _request_id: `req_fake_${n}` });
           })().catch(mal);

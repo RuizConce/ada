@@ -203,7 +203,7 @@ async function obtener(archivoId, drive, ctx = {}) {
   // rechaza aquí, en el servidor, antes de descargar, convertir o reutilizar nada (también lo guardado antes).
   if (modo() === 'prueba' && usuario().id === 1 && !enCarpetaDePrueba(meta)) {
     await evento('bloqueado_prueba', ctx, { archivoId, version, nombre: meta.name });
-    throw err('Durante la prueba de guardado (Fase 3b) solo puedo abrir el contenido de archivos de la carpeta de prueba. Este archivo está fuera, así que no lo abrí. Se vuelve a la normalidad al terminar la prueba.', { bloqueado: true, status: 403 });
+    throw err('Archivo fuera de la carpeta autorizada para la prueba: no lo abrí. Durante la prueba de guardado (Fase 3b) solo puedo abrir el contenido de archivos de la carpeta de prueba; se vuelve a la normalidad al terminar la prueba.', { bloqueado: true, status: 403 });
   }
   const guardar = enAlcance(meta) ? await puedeGuardar() : { ok: false, motivo: 'fuera_de_prueba' };
 
@@ -353,7 +353,17 @@ async function metricas({ desde, hasta, conversacionId, turnoId, trabajoId } = {
         SUM(cache_lectura) AS cache_lectura, SUM(costo_usd) AS costo_usd FROM llamadas_ia WHERE ${c2.join(' AND ')} GROUP BY 1, 2 ORDER BY MIN(creado_en)`, p2))
       .map((x) => ({ ...x, costo_usd: Number(x.costo_usd) }));
   }
+  // Intentos de escritura en Drive (de operaciones_herramienta: solo nombre de herramienta, resultado y error).
+  const ESCRITURAS = ['editar_hoja_drive', 'editar_documento_drive', 'mover_drive', 'renombrar_drive', 'papelera_drive', 'crear_carpeta_drive', 'crear_archivo'];
+  const c3 = ['usuario_id = ?', `herramienta IN (${ESCRITURAS.map(() => '?').join(',')})`]; const p3 = [usuario().id, ...ESCRITURAS];
+  if (desde) { c3.push('creado_en >= ?'); p3.push(new Date(desde)); }
+  if (hasta) { c3.push('creado_en <= ?'); p3.push(new Date(hasta)); }
+  if (conversacionId) { c3.push('conversacion_id = ?'); p3.push(conversacionId); }
+  if (turnoId) { c3.push('turno_id = ?'); p3.push(turnoId); }
+  const [esc] = await qPrincipal(`SELECT COUNT(*) AS intentos, COALESCE(SUM(ok = 1 AND repetida = 0 AND (error IS NULL OR error = '')),0) AS hechas FROM operaciones_herramienta WHERE ${c3.join(' AND ')}`, p3).catch(() => [{ intentos: 0, hechas: 0 }]);
   return {
+    escrituras_drive_intentadas: Number(esc.intentos),
+    escrituras_drive_sin_error: Number(esc.hechas),
     documentos_unicos: u.n,
     consultas_metadatos: cuenta('consulta_metadatos'),
     descargas: cuenta('descarga'),
@@ -371,7 +381,21 @@ async function metricas({ desde, hasta, conversacionId, turnoId, trabajoId } = {
     temporales_borrados: cuenta('temporal_borrado'),
     temporales_fallidos: cuenta('temporal_fallido'),
     bloqueados_fuera_de_prueba: cuenta('bloqueado_prueba'),
+    escrituras_bloqueadas: cuenta('escritura_bloqueada'),
     costo_por_paso_ia: costoPorPaso,
+  };
+}
+
+// Detalle de eventos recientes (para Ajustes y diagnóstico): solo hora, tipo, archivo y motivo.
+async function eventos({ desde, limite = 60 } = {}) {
+  const p = [usuario().id];
+  let w = 'usuario_id = ?';
+  if (desde) { w += ' AND creado_en >= ?'; p.push(new Date(desde)); }
+  const ext = await qPrincipal(`SELECT creado_en, tipo, archivo_id, nombre, motivo, origen FROM extraccion_eventos WHERE ${w} AND tipo <> 'lectura_tramo' ORDER BY id DESC LIMIT ${Math.min(200, parseInt(limite, 10) || 60)}`, p);
+  const ops = await qPrincipal(`SELECT creado_en, herramienta, ok, error FROM operaciones_herramienta WHERE ${w} AND herramienta IN ('editar_hoja_drive','editar_documento_drive','mover_drive','renombrar_drive','papelera_drive','crear_carpeta_drive','crear_archivo') ORDER BY id DESC LIMIT 30`, p).catch(() => []);
+  return {
+    extracciones: ext.map((e) => ({ hora: e.creado_en, evento: e.tipo, archivo: e.nombre || (e.archivo_id ? `…${String(e.archivo_id).slice(-6)}` : null), motivo: e.motivo, origen: e.origen })),
+    escrituras_drive: ops.map((o) => ({ hora: o.creado_en, herramienta: o.herramienta, ok: !!o.ok && !o.error, error: o.error ? String(o.error).slice(0, 120) : null })),
   };
 }
 
@@ -384,6 +408,6 @@ async function leidosEnConversacion(conversacionId) {
 }
 
 module.exports = {
-  obtener, estadoPublico, enCarpetaDePrueba, modo, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
+  obtener, eventos, estadoPublico, enCarpetaDePrueba, modo, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
   invalidarArchivo, evento, claveVersion, leidosEnConversacion, habilitado, TEXTO_CONSENTIMIENTO, esTemporal, esSinAcceso,
 };
