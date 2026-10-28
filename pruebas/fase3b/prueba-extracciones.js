@@ -291,12 +291,37 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(r.status === 200 && !r.eventos.some((e) => e.tipo === 'consentimiento_extracciones') && sql('SELECT COUNT(*) FROM extracciones') === '0' && /1 lecturas/.test(r.texto),
     'sin ADA_EXTRACCIONES=si: lee igual, no pregunta y no guarda nada');
   await parar('O');
-  // Modo "prueba": solo guarda archivos de la carpeta de prueba aprobada.
-  await ctl('/control/archivos', { archivos: [{ ...doc('Z1', 'Z1_fuera.pdf', PDF), parents: ['otra-carpeta'] }] });
+  // Modo "prueba": solo guarda archivos de la carpeta de prueba aprobada, aunque se pidan directo por id.
+  await ctl('/control/archivos', { archivos: [{ ...doc('Z1', 'Z1_fuera.pdf', PDF), parents: ['otra-carpeta'] }, { ...doc('Z2', 'Z2_subcarpeta.pdf', PDF), parents: ['subcarpeta-de-prueba'] }] });
+  sql("DELETE FROM integraciones WHERE nombre='extracciones_consentimiento'");
+  sql('DELETE FROM extracciones');
   await arrancar('P', 3204, { ADA_EXTRACCIONES: 'prueba', ADA_DRIVE_CARPETA_PRUEBA: 'carpeta-prueba' });
   const tkP = await login(3204);
+  r = await chat('ESTADO GUARDADO', { puerto: 3204, tk: tkP });
+  const est = JSON.parse(r.texto.replace('ESTADO=', ''));
+  ok(est.modo === 'prueba' && est.cifrado_listo === true && est.carpeta_prueba_configurada === true && est.carpeta_prueba_termina_en === 'prueba' && est.consentimiento === 'sin_responder' && est.puede_guardar === false && /tarjeta de consentimiento/.test(est.siguiente_paso),
+    `ADA puede consultar al servidor si puede seguir (estado_guardado_documentos): modo ${est.modo}, cifrado listo, carpeta configurada, consentimiento ${est.consentimiento}`);
+  ok(!/prueba3b-|ADA_CLAVE|DATABASE_URL/.test(r.texto), 'el estado no muestra claves ni variables');
+  let s0 = await stats();
+  r = await lee([[{ id: 'Z1' }, { id: 'Z2' }]], { puerto: 3204, tk: tkP });
+  let s1 = await stats();
+  ok(!r.eventos.some((e) => e.tipo === 'consentimiento_extracciones') && sql('SELECT COUNT(*) FROM extracciones') === '0', 'modo prueba, archivos fuera de la carpeta pedidos por id (y uno en una subcarpeta): no pide consentimiento ni guarda');
+  ok(/Estados=leido_sin_guardar:fuera_de_prueba:carpeta=false,leido_sin_guardar:fuera_de_prueba:carpeta=false/.test(r.texto), `ADA recibe el motivo: ${r.texto.split('Estados=')[1]}`);
+  r = await lee([[{ id: 'A1' }]], { puerto: 3204, tk: tkP });
+  ok(r.eventos.filter((e) => e.tipo === 'consentimiento_extracciones').length === 1 && sql('SELECT COUNT(*) FROM extracciones') === '0' && /consentimiento_pendiente:carpeta=true/.test(r.texto),
+    'archivo de la carpeta de prueba: aparece la tarjeta real de consentimiento y nada se guarda antes de aceptar');
+  await post('/api/extracciones/consentimiento', { acepto: true }, 3204, tkP);
+  s0 = await stats();
+  r = await lee([[{ id: 'A1' }]], { puerto: 3204, tk: tkP });
+  ok(/Estados=extraccion_nueva_guardada:carpeta=true/.test(r.texto) && descargasDe(await stats(), 'A1') === descargasDe(s0, 'A1') + 1, 'primera lectura tras aceptar: una descarga y extracción nueva guardada');
+  s0 = await stats();
   r = await lee([[{ id: 'A1' }, { id: 'Z1' }]], { puerto: 3204, tk: tkP });
-  ok(r.status === 200 && sql("SELECT GROUP_CONCAT(archivo_id) FROM extracciones") === 'A1', 'modo prueba: guarda solo lo de la carpeta de prueba (A1), no lo de fuera (Z1)');
+  s1 = await stats();
+  ok(/Estados=reutilizada:carpeta=true,leido_sin_guardar:fuera_de_prueba:carpeta=false/.test(r.texto) && descargasDe(s1, 'A1') === descargasDe(s0, 'A1') && descargasDe(s1, 'Z1') === descargasDe(s0, 'Z1') + 1,
+    'segunda lectura: A1 reutilizada sin descargar; Z1 (fuera) se lee sin guardar ni reutilizar');
+  ok(sql("SELECT GROUP_CONCAT(archivo_id) FROM extracciones") === 'A1', 'en la base solo queda A1 (la carpeta de prueba)');
+  r = await api('/api/extracciones', {}, 3204, tkP);
+  ok(r.d.modo === 'prueba' && r.d.carpeta_prueba_termina_en === 'prueba', 'Ajustes muestra el modo del servidor y el final del id de la carpeta');
   await parar('P');
   await arrancar('A', 3200);
 

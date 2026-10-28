@@ -281,12 +281,41 @@ async function resumen() {
   const c = await consentimiento();
   const [r] = await q("SELECT COUNT(*) AS n, COALESCE(SUM(caracteres),0) AS caracteres, MIN(vence_en) AS proximo_vencimiento FROM extracciones WHERE usuario_id = ? AND estado = 'valida' AND vence_en > ?",
     [usuario().id, ahora()]);
+  const carpeta = process.env.ADA_DRIVE_CARPETA_PRUEBA || '';
   const pendientes = await qPrincipal("SELECT COUNT(*) AS n FROM temporales_drive WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]).catch(() => [{ n: 0 }]);
   return {
-    habilitado: habilitado(), modo: modo(), clave: Cifrado.disponible(), consentimiento: c, texto_consentimiento: TEXTO_CONSENTIMIENTO, retencion_dias: RETENCION_DIAS(),
+    habilitado: habilitado(), modo: modo(), carpeta_prueba_configurada: !!carpeta, carpeta_prueba_termina_en: carpeta ? carpeta.slice(-6) : null, clave: Cifrado.disponible(), consentimiento: c, texto_consentimiento: TEXTO_CONSENTIMIENTO, retencion_dias: RETENCION_DIAS(),
     documentos: r.n, caracteres: Number(r.caracteres), proximo_vencimiento: r.proximo_vencimiento, temporales_pendientes: pendientes[0].n,
   };
 }
+
+// Estado seguro para la conversación y Ajustes: sin claves, sin variables, sin contenido.
+async function estadoPublico() {
+  const u = usuario();
+  if (u.id !== 1) return { disponible: false, motivo: 'Guardar documentos está disponible solo para la cuenta principal en esta etapa.' };
+  const c = await consentimiento();
+  const carpeta = process.env.ADA_DRIVE_CARPETA_PRUEBA || '';
+  const [r] = await q("SELECT COUNT(*) AS n FROM extracciones WHERE usuario_id = ? AND estado = 'valida' AND vence_en > ?", [u.id, ahora()]);
+  const m = modo();
+  const listo = m !== 'no' && Cifrado.disponible() && (m !== 'prueba' || !!carpeta);
+  return {
+    modo: m,
+    descripcion_modo: m === 'no' ? 'apagado: se lee sin guardar nada' : m === 'prueba' ? 'prueba: solo se guarda lo de la carpeta de prueba; lo de fuera se lee sin guardar' : 'encendido: se guarda lo que se lee',
+    cifrado_listo: Cifrado.disponible(),
+    carpeta_prueba_configurada: !!carpeta,
+    carpeta_prueba_termina_en: carpeta ? carpeta.slice(-6) : null,
+    consentimiento: c.estado,
+    documentos_guardados: r.n,
+    retencion_dias: RETENCION_DIAS(),
+    puede_guardar: listo && c.estado === 'aceptado',
+    siguiente_paso: !listo ? 'El guardado no está listo en el servidor: lee igual, sin guardar.'
+      : c.estado === 'aceptado' ? 'Listo: lo que leas (dentro del alcance) se guarda cifrado y se reutiliza.'
+        : c.estado === 'rechazado' ? 'Cristian eligió no guardar: lee igual, sin guardar.'
+          : 'Al leer el primer documento dentro del alcance, la app le mostrará la tarjeta de consentimiento.',
+  };
+}
+
+const enCarpetaDePrueba = (meta) => !!process.env.ADA_DRIVE_CARPETA_PRUEBA && (meta.parents || []).includes(process.env.ADA_DRIVE_CARPETA_PRUEBA);
 
 async function listar() {
   return q("SELECT archivo_id, nombre, version, caracteres, extraido_en, vence_en, usos, ultimo_acceso FROM extracciones WHERE usuario_id = ? AND estado = 'valida' AND vence_en > ? ORDER BY ultimo_acceso DESC LIMIT 200",
@@ -348,6 +377,6 @@ async function leidosEnConversacion(conversacionId) {
 }
 
 module.exports = {
-  obtener, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
+  obtener, estadoPublico, enCarpetaDePrueba, modo, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
   invalidarArchivo, evento, claveVersion, leidosEnConversacion, habilitado, TEXTO_CONSENTIMIENTO, esTemporal, esSinAcceso,
 };

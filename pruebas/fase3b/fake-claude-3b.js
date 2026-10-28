@@ -22,7 +22,13 @@ function responder(req) {
     const res = Array.isArray(ultimo.content) ? ultimo.content.filter((b) => b.type === 'tool_result') : [];
     const errores = res.filter((b) => b.is_error).length;
     const guardado = res.filter((b) => /"fuente":"guardado"/.test(b.content)).length;
-    return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `Listo: ${res.length} lecturas en el último paso, ${guardado} desde lo guardado, ${errores} con error.` }] };
+    const estados = res.map((b) => { try { const g = JSON.parse(b.content).guardado; return g ? `${g.estado}${g.motivo ? `:${g.motivo}` : ''}${g.en_carpeta_de_prueba !== undefined ? `:carpeta=${g.en_carpeta_de_prueba}` : ''}` : 'error'; } catch (_) { return 'error'; } });
+    return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `Listo: ${res.length} lecturas en el último paso, ${guardado} desde lo guardado, ${errores} con error. Estados=${estados.join(',')}` }] };
+  }
+  if (/ESTADO GUARDADO/.test(texto)) {
+    if (pasos === 0) return { id: `msg_${n}`, stop_reason: 'tool_use', usage: uso, content: [{ type: 'tool_use', id: `e${n}`, name: 'estado_guardado_documentos', input: {} }] };
+    const ultimo = req.messages[req.messages.length - 1];
+    return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `ESTADO=${ultimo.content[0].content}` }] };
   }
   if (/QUE LEISTE/.test(texto)) {
     const nota = texto.match(/leíste de verdad en esta conversación \((\d+)\)/);

@@ -1759,6 +1759,9 @@
     try {
       const r = await api('/api/extracciones');
       const est = r.consentimiento.estado;
+      $('#dg-modo').textContent = r.modo === 'prueba'
+        ? `Prueba: solo la carpeta …${r.carpeta_prueba_termina_en || '(falta configurar)'}`
+        : r.modo === 'si' ? 'Encendido (todos tus documentos)' : 'Apagado (lee sin guardar)';
       $('#dg-consentimiento').textContent = est === 'aceptado' ? `Aceptado (${new Date(r.consentimiento.fecha).toLocaleDateString('es-CL')})` : est === 'rechazado' ? 'No guardar' : 'Sin responder';
       $('#dg-cantidad').textContent = `${r.documentos} (${Math.round(r.caracteres / 1000)} mil caracteres)`;
       $('#dg-retencion').textContent = `${r.retencion_dias} días desde que se extrae`;

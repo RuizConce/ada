@@ -249,7 +249,14 @@ async function leer(a = {}, ctx = {}) {
     cuerpo = { tipo: c.tipo_archivo, ...recortar(c.texto, max, desde), ...(!c.texto.trim() ? { nota: 'Este archivo no tiene texto extraíble (probablemente es un escaneo o una imagen). No inventes su contenido.' } : {}) };
     await Extracciones.evento('lectura_tramo', contexto, { archivoId: f.id, nombre: f.name, version: previo.version, desde, hasta: Math.min(c.texto.length, desde + max), caracteres: c.texto.length });
   }
-  const r = { ...base, version: previo.version, ...origen, ...cuerpo };
+  // Lo que la conversación necesita saber de la capa de extracciones (sin claves ni variables).
+  const guardado = previo.fuente === 'guardado' || previo.fuente === 'simultanea'
+    ? { estado: 'reutilizada', descarga_nueva: false }
+    : previo.fuente === 'drive_guardado'
+      ? { estado: 'extraccion_nueva_guardada', descarga_nueva: true }
+      : { estado: 'leido_sin_guardar', descarga_nueva: true, motivo: previo.sinGuardar || 'no_habilitado' };
+  if (Extracciones.modo() === 'prueba') guardado.en_carpeta_de_prueba = Extracciones.enCarpetaDePrueba(f);
+  const r = { ...base, version: previo.version, ...origen, guardado, ...cuerpo };
   if (previo.sinGuardar === 'consentimiento_pendiente' && contexto.origen === 'chat' && typeof ctx.emitir === 'function' && !ctx.consentimientoPedido) {
     ctx.consentimientoPedido = true;
     ctx.emitir('consentimiento_extracciones', { texto: Extracciones.TEXTO_CONSENTIMIENTO });
@@ -459,6 +466,11 @@ H.registrar([
     input_schema: { type: 'object', properties: { id: ID, max_caracteres: { type: 'integer' }, desde: { type: 'integer', description: 'Carácter desde el que seguir leyendo un documento largo' } }, required: ['id'] },
   },
   {
+    name: 'estado_guardado_documentos',
+    description: 'Estado del guardado cifrado de documentos (Fase 3b), consultado al servidor: modo (apagado, prueba o encendido), si el cifrado está listo, si hay carpeta de prueba, el consentimiento de Cristian y cuántos documentos hay guardados. No muestra claves ni contenido. Úsala cuando necesites saber si puedes seguir con una prueba de lectura y guardado.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
     name: 'crear_carpeta_drive',
     description: 'Crea una carpeta en Drive (en la raíz o dentro de otra).',
     input_schema: { type: 'object', properties: { nombre: { type: 'string' }, dentro_de_id: { type: 'string' } }, required: ['nombre'] },
@@ -512,6 +524,7 @@ H.registrar([
   buscar_drive: buscar,
   listar_carpeta_drive: listarCarpeta,
   leer_drive: leer,
+  estado_guardado_documentos: () => Extracciones.estadoPublico(),
   crear_carpeta_drive: crearCarpeta,
   mover_drive: mover,
   renombrar_drive: renombrar,
