@@ -1769,6 +1769,14 @@
       $('#dg-aceptar').hidden = est === 'aceptado';
       $('#dg-retirar').hidden = est !== 'aceptado';
       $('#dg-reintentar').hidden = !r.temporales_pendientes;
+      const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+      const m = await api(`/api/extracciones/metricas?desde=${encodeURIComponent(hoy.toISOString())}`);
+      const filas = [['Documentos únicos', m.documentos_unicos], ['Consultas de permisos y versión', m.consultas_metadatos], ['Descargas de contenido', m.descargas],
+        ['Extracciones nuevas (cifradas)', m.extracciones_nuevas], ['Reutilizaciones', m.reutilizaciones], ['Lecturas sin guardar', m.lecturas_sin_guardar],
+        ['Operaciones redundantes', m.operaciones_redundantes], ['Bloqueadas fuera de la carpeta', m.bloqueados_fuera_de_prueba], ['Reintentos', m.reintentos_justificados]];
+      const dl = $('#dg-metricas');
+      dl.innerHTML = '';
+      for (const [k, v] of filas) { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = String(v ?? 0); dl.append(dt, dd); }
       caja.hidden = false;
     } catch (e) {
       $('#dg-consentimiento').textContent = e.message;

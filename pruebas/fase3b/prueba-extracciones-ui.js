@@ -7,7 +7,7 @@ const ok = (c, m) => { console.log((c ? 'ok - ' : 'FALLA: ') + m); if (!c) proce
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 const sql = (q) => execSync(`mysql -uada -pada ada -N -B -e ${JSON.stringify(q)}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
 (async () => {
-  sql('DELETE FROM extracciones'); sql("DELETE FROM integraciones WHERE nombre='extracciones_consentimiento'");
+  sql('DELETE FROM extracciones'); sql('DELETE FROM extraccion_eventos'); sql("DELETE FROM integraciones WHERE nombre='extracciones_consentimiento'");
   const drive = spawn('node', [`${S}/fake-drive.js`, '9933'], { stdio: 'ignore' });
   await dormir(500);
   await fetch('http://localhost:9933/control/archivos', { method: 'POST', body: JSON.stringify({ archivos: [{ id: 'U1', name: 'Ficticio.pdf', mimeType: 'application/pdf', texto: 'MARCA-UI texto ficticio', md5Checksum: 'x1', version: 1 }] }) });
@@ -41,6 +41,7 @@ const sql = (q) => execSync(`mysql -uada -pada ada -N -B -e ${JSON.stringify(q)}
   ok(!(await p.$eval('#docs-guardados', (e) => e.hidden)), 'Ajustes: sección Documentos guardados visible');
   const dg = await p.$eval('#docs-guardados', (e) => e.innerText);
   console.log('   ' + dg.replace(/\n+/g, ' | '));
+  ok(/Extracciones nuevas \(cifradas\)\s*1/.test(dg) && /Descargas de contenido\s*2/.test(dg) && /Operaciones redundantes\s*0/.test(dg), 'Ajustes muestra las métricas de hoy');
   ok(/Aceptado/.test(dg) && /1 \(0 mil caracteres\)/.test(dg) && /30 días/.test(dg) && !dg.includes('MARCA-UI'), 'muestra consentimiento, cantidad y retención, sin contenido');
   await p.$eval('#docs-guardados', (e) => e.scrollIntoView());
   await p.screenshot({ path: `${S}/v-docs-guardados.png` });
