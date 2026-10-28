@@ -1649,6 +1649,8 @@
       $('#sesion-de').textContent = `Entraste como ${a.usuario.nombre}${a.usuario.admin ? ' (administrador)' : ''}.`;
       $('#ajuste-personas').hidden = !a.usuario.admin;
       $('#ajuste-lab').hidden = !a.usuario.admin;
+      $('#ajuste-cifrado').hidden = !a.usuario.admin;
+      if (a.usuario.admin) pintarCifrado();
       if (a.usuario.admin) pintarPersonas();
     }
     $('#ia-estado').textContent = `Modelos: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
@@ -1703,6 +1705,23 @@
   }));
 
   // ---------- Personas de la prueba (solo Cristian) ----------
+
+  // Estado de la clave de cifrado (solo lectura, solo administrador). Nunca recibe ni muestra la clave.
+  async function pintarCifrado() {
+    const pon = (id, t, clase) => { const e = $(id); e.textContent = t; e.className = clase || ''; };
+    pon('#cif-configurada', 'Consultando…');
+    try {
+      const c = await api('/api/cifrado');
+      pon('#cif-configurada', c.configurada ? 'Sí' : 'No', c.configurada ? 'cif-ok' : 'cif-mal');
+      pon('#cif-id', c.id_clave && /^[0-9a-f]{8}$/.test(c.id_clave) ? c.id_clave : '—');
+      pon('#cif-anterior', c.anterior ? 'Sí' : 'No');
+      pon('#cif-error', c.error ? String(c.error) : 'Ninguno', c.error ? 'cif-mal' : '');
+    } catch (e) {
+      pon('#cif-configurada', 'No se pudo consultar', 'cif-mal');
+      pon('#cif-id', '—'); pon('#cif-anterior', '—'); pon('#cif-error', e.message, 'cif-mal');
+    }
+  }
+  $('#cif-revisar').addEventListener('click', pintarCifrado);
 
   // Exportación del diagnóstico (solo Cristian).
   $('#diag-buscar').addEventListener('click', async () => {

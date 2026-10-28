@@ -546,3 +546,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .diag-op { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--texto-suave); margin: 4px 0 8px; }
 .diag-conv { display: block; width: 100%; text-align: left; margin: 4px 0; }
 #diag-json { max-height: 50dvh; overflow: auto; font-size: 11px; background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; padding: 10px; white-space: pre-wrap; word-break: break-word; }
+
+.cifrado-estado { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 10px 0; }
+.cifrado-estado dt { opacity: .75; }
+.cifrado-estado dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.cifrado-estado dd.cif-ok { color: #2e9d5b; }
+.cifrado-estado dd.cif-mal { color: #d0473b; }
