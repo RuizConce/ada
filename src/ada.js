@@ -605,11 +605,19 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
   };
 
   const MAX_VUELTAS = 10;
-  const TOPE_TURNO = Consumo.topeTurno();
+  // Tope del mensaje. Si el mensaje anterior se detuvo antes de empezar por no caber, y la persona
+  // responde "autorizo", ese tope sube una vez al monto pedido (máximo ADA_TOPE_TURNO_AUTORIZABLE).
+  let TOPE_TURNO = Consumo.topeTurno();
+  const autorizacion = await Consumo.autorizacionPendiente();
+  if (autorizacion && /\bautoriz(o|ado|a)\b/i.test(textoUsuario)) {
+    TOPE_TURNO = Math.max(TOPE_TURNO, autorizacion.monto);
+    await Consumo.usarAutorizacion();
+  }
   let costoTurno = 0;
   let encargoId = null;
   let detenidoPor = null; // 'presupuesto' | 'presupuesto_diario' | 'cancelado'
   let motivoDetencion = '';
+  let estimadoBloqueado = 0;
   const yaEjecutadas = new Map(); // herramienta+entrada → resultado (solo lectura, este turno)
   const paradas = []; // por qué terminó cada paso (para los logs)
   let ultimaConTexto = false;
@@ -627,12 +635,14 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
       system, tools, messages,
       ...(sinHerramientas ? { tool_choice: { type: 'none' } } : {}),
     };
-    // Antes de llamar: costo estimado con margen. La primera llamada del mensaje siempre va (si no,
-    // ADA no podría ni responder); las siguientes solo si caben en el presupuesto del mensaje.
+    // Antes de llamar: costo estimado con margen. Ninguna llamada, tampoco la primera, puede pasar
+    // el presupuesto del mensaje: si no cabe, ADA para antes y pide autorización.
     const estimado = estimarCosto(params);
-    if (TOPE_TURNO > 0 && vuelta > 0 && costoTurno + estimado > TOPE_TURNO) {
-      detenidoPor = 'presupuesto';
+    if (TOPE_TURNO > 0 && costoTurno + estimado > TOPE_TURNO) {
+      detenidoPor = vuelta === 0 ? 'presupuesto_inicial' : 'presupuesto';
       motivoDetencion = `van US$${costoTurno.toFixed(3)}; la siguiente llamada (~US$${estimado.toFixed(3)}) pasaría el tope de US$${TOPE_TURNO.toFixed(2)}`;
+      if (vuelta === 0) await Consumo.pedirAutorizacion(Math.min(Consumo.topeAutorizable(), Math.ceil(estimado * 1.2 * 100) / 100));
+      estimadoBloqueado = estimado;
       break;
     }
     // Y siempre dentro del tope del día (gasto persistido + lo que está en curso).
@@ -757,6 +767,10 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
     const hechas = [...new Set(revisado.map((r) => r.herramienta))];
     const msg = detenidoPor === 'cancelado'
       ? 'Detuve el trabajo, como pediste.'
+      : detenidoPor === 'presupuesto_inicial'
+        ? (estimadoBloqueado * 1.2 > Consumo.topeAutorizable()
+          ? `Esto es más grande de lo que puedo hacer en un solo mensaje (costaría unos US$${estimadoBloqueado.toFixed(2).replace('.', ',')}). Te propongo hacerlo como encargo con presupuesto propio, o una versión más acotada: ¿por cuál partimos?`
+          : `Para responder esto necesito unos US$${estimadoBloqueado.toFixed(2).replace('.', ',')} y el tope por mensaje es US$${TOPE_TURNO.toFixed(2).replace('.', ',')}. Si quieres que lo haga igual, dime "autorizo"; si no, te propongo una versión más acotada.`)
       : detenidoPor === 'presupuesto_diario'
         ? 'Paré aquí porque seguir pasaría el máximo de gasto de hoy. Mañana puedo continuar, o puedes subir el tope en Railway (ADA_TOPE_DIARIO_MAX).'
         : `Paré aquí para no pasar el presupuesto de este mensaje (US$${TOPE_TURNO.toFixed(2).replace('.', ',')}; van US$${costoTurno.toFixed(2).replace('.', ',')}).${hechas.length ? ` Alcancé a usar: ${hechas.join(', ')}.` : ''} Si quieres que siga, dime "sigue" y continúo desde lo que ya revisé.`;
@@ -784,7 +798,7 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
   await q("INSERT INTO mensajes (rol, contenido, conversacion_id, revisado, creado_en) VALUES ('assistant', ?, ?, ?, ?)",
     [guardado, conversacionId, revisado.length ? JSON.stringify(revisado) : null, new Date()]);
   tiempos.total_ms = Date.now() - t0;
-  await Registro.cerrarTurno(turnoId, detenidoPor === 'cancelado' ? 'cancelado' : detenidoPor === 'presupuesto' ? 'detenido_presupuesto' : detenidoPor === 'presupuesto_diario' ? 'detenido_presupuesto_diario' : 'completado', motivoDetencion || null);
+  await Registro.cerrarTurno(turnoId, detenidoPor === 'cancelado' ? 'cancelado' : (detenidoPor === 'presupuesto' || detenidoPor === 'presupuesto_inicial') ? 'detenido_presupuesto' : detenidoPor === 'presupuesto_diario' ? 'detenido_presupuesto_diario' : 'completado', motivoDetencion || null);
   const costo = costoUSD(eleccion.modelo, uso) + busquedas * 0.01;
   Consumo.registrar({ modelo: eleccion.modelo, costo: costoUSD(eleccion.modelo, uso), busquedas }).catch((e) => console.error('Consumo:', e.message));
   Metricas.registrar({ conversacion_id: conversacionId, voz: !!opciones.voz, modelo: eleccion.modelo, nivel: eleccion.nivel, costo_usd: costo, tokens: uso, ...tiempos });

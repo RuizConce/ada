@@ -116,4 +116,25 @@ async function reservar(estimado) {
   return { ok: true, gasto, duro, liberar: () => { if (!liberada) { liberada = true; enVuelo.get(u.id).delete(id); } } };
 }
 
-module.exports = { registrar, gastoHoy, sobreTope, resumen, tope, topeTurno, presupuestoDelDia, reservar, reservado };
+// ---------- Autorización de un mensaje que no cabe en el tope ----------
+// Se guarda en la base de la persona (sobrevive reinicios) y vence a los 15 minutos.
+const topeAutorizable = () => num(process.env.ADA_TOPE_TURNO_AUTORIZABLE, 2);
+async function pedirAutorizacion(monto) {
+  const { q } = require('./db');
+  await q(`INSERT INTO integraciones (nombre, datos, actualizado_en) VALUES ('autorizacion_turno', ?, ?)
+    ON DUPLICATE KEY UPDATE datos = VALUES(datos), actualizado_en = VALUES(actualizado_en)`,
+  [JSON.stringify({ monto, hasta: Date.now() + 15 * 60 * 1000 }), new Date()]);
+}
+async function autorizacionPendiente() {
+  const { q } = require('./db');
+  const [r] = await q("SELECT datos FROM integraciones WHERE nombre = 'autorizacion_turno'").catch(() => []);
+  if (!r) return null;
+  const d = JSON.parse(r.datos);
+  return d && d.hasta > Date.now() && d.monto > 0 ? d : null;
+}
+async function usarAutorizacion() {
+  const { q } = require('./db');
+  await q("DELETE FROM integraciones WHERE nombre = 'autorizacion_turno'");
+}
+
+module.exports = { registrar, gastoHoy, sobreTope, resumen, tope, topeTurno, presupuestoDelDia, reservar, reservado, topeAutorizable, pedirAutorizacion, autorizacionPendiente, usarAutorizacion };
