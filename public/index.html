@@ -218,6 +218,13 @@
           <h3>Personas de la prueba</h3>
           <p class="meta">Cada persona entra con su nombre y la clave que le des. Tiene su propia ADA: no ve tus datos ni tú los suyos desde la app.</p>
           <p id="consumo-resumen" class="meta" hidden></p>
+          <details id="diag" class="gasto-turnos" hidden><summary>Exportar diagnóstico de una conversación</summary>
+            <p class="meta">Sin contenido de documentos, sin datos personales ni claves. Para revisar gastos o trabajos que no terminaron.</p>
+            <div class="diag-fila"><input id="diag-dia" type="date"><button id="diag-buscar" type="button">Buscar</button></div>
+            <label class="diag-op"><input id="diag-texto" type="checkbox"> Incluir un extracto anonimizado de mis mensajes</label>
+            <div id="diag-lista"></div>
+            <div id="diag-salida" hidden><button id="diag-copiar" type="button">Copiar diagnóstico</button><pre id="diag-json"></pre></div>
+          </details>
           <details id="gasto-turnos" class="gasto-turnos" hidden><summary>Gasto por mensaje (últimas 24 h)</summary><div id="gasto-lista"></div></details>
           <div id="lista-personas" class="lista-personas"></div>
           <form id="form-persona" class="form-persona">

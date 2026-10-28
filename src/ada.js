@@ -8,7 +8,7 @@ const G = require('./google'); // registra las herramientas de agenda
 require('./archivos'); // registra crear_archivo
 require('./drive'); // registra las herramientas de Drive
 const M = require('./gmail'); // registra las herramientas de correo
-const { claude, elegirModelo, costoUSD } = require('./claude');
+const { claude, elegirModelo, costoUSD, estimarCosto } = require('./claude');
 const Consumo = require('./consumo');
 const Registro = require('./registro');
 
@@ -454,7 +454,13 @@ async function llamarClaude(params, alEvento) {
   }
   const stream = cli.messages.stream(params);
   const t = enCurso.get(u.id);
-  if (t) t.stream = stream;
+  if (t) { t.stream = stream; t.parcial = {}; }
+  // Uso informado mientras llega la respuesta: si se cancela a mitad, igual se sabe cuánto se consumió.
+  stream.on('streamEvent', (ev) => {
+    if (!t) return;
+    if (ev.type === 'message_start' && ev.message && ev.message.usage) t.parcial = { ...ev.message.usage };
+    if (ev.type === 'message_delta' && ev.usage) t.parcial = { ...t.parcial, ...Object.fromEntries(Object.entries(ev.usage).filter(([, v]) => v != null)) };
+  });
   stream.on('text', (delta) => alEvento('texto', { delta }));
   stream.on('streamEvent', (ev) => {
     if (ev.type === 'content_block_start') {
@@ -502,7 +508,25 @@ function separarPantalla(alEvento) {
   };
 }
 
+function trabajando(uid = usuario().id) {
+  return enCurso.has(uid);
+}
+
 async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
+  // Un trabajo a la vez por persona: dos mensajes simultáneos no pueden gastar en paralelo.
+  if (enCurso.has(usuario().id)) {
+    throw Object.assign(new Error('Todavía estoy trabajando en tu mensaje anterior. Espera a que termine o tócame Detener.'), { status: 409 });
+  }
+  const control = { cancelado: false, stream: null, parcial: null };
+  enCurso.set(usuario().id, control);
+  try {
+    return await conversarTurno(textoUsuario, opciones, alEvento, control);
+  } finally {
+    if (enCurso.get(usuario().id) === control) enCurso.delete(usuario().id);
+  }
+}
+
+async function conversarTurno(textoUsuario, opciones, alEvento, control) {
   const conversacionId = await C.asegurar(opciones.conversacionId, opciones.voz ? 'voz' : 'texto');
   alEvento('conversacion', { conversacion_id: conversacionId });
   const t0 = Date.now();
@@ -512,12 +536,14 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     Consumo.presupuestoDelDia().catch(() => ({ nivel: 'ok', gasto: 0, tope: 0, duro: 0 })),
   ]);
   const turnoId = Registro.nuevoId();
+  await Registro.iniciarTurno({ turnoId, conversacionId, origen: 'conversacion' });
   // Tope del día alcanzado: primero solo modelo rápido; sobre el tope máximo, ADA no llama a Claude.
   if (presupuesto.nivel === 'detenido') {
     const msg = `Hoy ya se gastaron US$${presupuesto.gasto.toFixed(2).replace('.', ',')} en IA y llegamos al máximo del día (US$${presupuesto.duro.toFixed(2).replace('.', ',')}), así que no voy a procesar más hasta mañana. Si necesitas seguir hoy, sube el tope en Railway (ADA_TOPE_DIARIO_MAX).`;
     await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('user', ?, ?, ?)", [textoUsuario, conversacionId, new Date()]);
     await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('assistant', ?, ?, ?)", [msg, conversacionId, new Date()]);
     alEvento('texto', { delta: msg });
+    await Registro.cerrarTurno(turnoId, 'detenido_presupuesto_diario', `gasto del día US$${presupuesto.gasto.toFixed(2)}`);
     console.warn(`Presupuesto u${usuario().id}: detenido (US$${presupuesto.gasto.toFixed(2)})`);
     return { respuesta: msg, tiempos: { total_ms: Date.now() - t0 }, modelo: null, acciones: [], documentos: [], archivos: [], conversacion_id: conversacionId, presupuesto: 'detenido' };
   }
@@ -581,12 +607,10 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   const MAX_VUELTAS = 10;
   const TOPE_TURNO = Consumo.topeTurno();
   let costoTurno = 0;
-  let ultimoCosto = 0;
   let encargoId = null;
-  let detenidoPor = null; // 'presupuesto' | 'cancelado'
+  let detenidoPor = null; // 'presupuesto' | 'presupuesto_diario' | 'cancelado'
+  let motivoDetencion = '';
   const yaEjecutadas = new Map(); // herramienta+entrada → resultado (solo lectura, este turno)
-  const control = { cancelado: false, stream: null };
-  enCurso.set(usuario().id, control);
   const paradas = []; // por qué terminó cada paso (para los logs)
   let ultimaConTexto = false;
   let usoHerramientas = false;
@@ -596,32 +620,44 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     // En el último paso permitido, se le pide responder sin más herramientas (antes podía quedarse callada).
     const sinHerramientas = vuelta === MAX_VUELTAS - 1;
     if (control.cancelado) { detenidoPor = 'cancelado'; break; }
-    // Reserva: la próxima llamada cuesta al menos lo que la anterior (el contexto solo crece);
-    // si con ella se pasaría del presupuesto del mensaje, se para antes de hacerla.
-    if (TOPE_TURNO > 0 && costoTurno > 0 && costoTurno + ultimoCosto > TOPE_TURNO) { detenidoPor = 'presupuesto'; break; }
+    const params = {
+      model: eleccion.modelo,
+      // Un informe completo puede ser largo: si se corta por tamaño, no se entrega nada.
+      max_tokens: eleccion.nivel === 'profundo' ? 16000 : 4000,
+      system, tools, messages,
+      ...(sinHerramientas ? { tool_choice: { type: 'none' } } : {}),
+    };
+    // Antes de llamar: costo estimado con margen. La primera llamada del mensaje siempre va (si no,
+    // ADA no podría ni responder); las siguientes solo si caben en el presupuesto del mensaje.
+    const estimado = estimarCosto(params);
+    if (TOPE_TURNO > 0 && vuelta > 0 && costoTurno + estimado > TOPE_TURNO) {
+      detenidoPor = 'presupuesto';
+      motivoDetencion = `van US$${costoTurno.toFixed(3)}; la siguiente llamada (~US$${estimado.toFixed(3)}) pasaría el tope de US$${TOPE_TURNO.toFixed(2)}`;
+      break;
+    }
+    // Y siempre dentro del tope del día (gasto persistido + lo que está en curso).
+    const reserva = await Consumo.reservar(estimado);
+    if (!reserva.ok) { detenidoPor = 'presupuesto_diario'; motivoDetencion = reserva.motivo; break; }
     const tC = Date.now();
     let resp;
     try {
-      resp = await llamarClaude({
-        model: eleccion.modelo,
-        // Un informe completo puede ser largo: si se corta por tamaño, no se entrega nada.
-        max_tokens: eleccion.nivel === 'profundo' ? 16000 : 4000,
-        system, tools, messages,
-        ...(sinHerramientas ? { tool_choice: { type: 'none' } } : {}),
-      }, emitir);
+      resp = await llamarClaude(params, emitir);
     } catch (e) {
-      await Registro.llamada({ conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: {}, duracionMs: Date.now() - tC, error: control.cancelado ? 'cancelado por la persona' : `${e.status || ''} ${e.message}` });
+      reserva.liberar();
+      const parcial = control.parcial || {};
+      await Registro.llamada({ conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: parcial, duracionMs: Date.now() - tC, estimado,
+        error: control.cancelado ? 'cancelado por la persona (uso parcial informado hasta el corte)' : `${e.status || ''} ${e.message}` });
       if (control.cancelado) { detenidoPor = 'cancelado'; break; }
-      enCurso.delete(usuario().id);
+      await Registro.cerrarTurno(turnoId, 'error', `${e.status || ''} ${e.message}`);
       throw e;
     }
+    reserva.liberar();
     const pedidas = (resp.content || []).filter((b) => b.type === 'tool_use' || b.type === 'server_tool_use').map((b) => b.name);
     const reg = await Registro.llamada({
       conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: resp.usage,
-      duracionMs: Date.now() - tC, stopReason: resp.stop_reason, herramientas: pedidas.join(','), requestId: resp._request_id || resp.id,
+      duracionMs: Date.now() - tC, stopReason: resp.stop_reason, herramientas: pedidas.join(','), requestId: resp._request_id || resp.id, estimado,
     });
     costoTurno += reg.costo;
-    ultimoCosto = reg.costo;
     paradas.push(resp.stop_reason);
     ultimaConTexto = (resp.content || []).some((b) => b.type === 'text' && b.text && b.text.trim());
     for (const k of Object.keys(uso)) uso[k] += (resp.usage && resp.usage[k]) || 0;
@@ -670,8 +706,8 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
       break;
     }
     usoHerramientas = true;
-    // Presupuesto del mensaje alcanzado: no se ejecutan más herramientas ni se vuelve a llamar a Claude.
-    if (costoTurno >= TOPE_TURNO && TOPE_TURNO > 0) { detenidoPor = 'presupuesto'; break; }
+    // Presupuesto del mensaje ya alcanzado: no se ejecutan más herramientas ni se vuelve a llamar a Claude.
+    if (costoTurno >= TOPE_TURNO && TOPE_TURNO > 0) { detenidoPor = 'presupuesto'; motivoDetencion = `van US$${costoTurno.toFixed(3)} de US$${TOPE_TURNO.toFixed(2)}`; break; }
     if (control.cancelado) { detenidoPor = 'cancelado'; break; }
 
     messages.push({ role: 'assistant', content: resp.content });
@@ -717,12 +753,13 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     messages.push({ role: 'user', content: resultados });
   }
 
-  enCurso.delete(usuario().id);
   if (detenidoPor) {
     const hechas = [...new Set(revisado.map((r) => r.herramienta))];
     const msg = detenidoPor === 'cancelado'
       ? 'Detuve el trabajo, como pediste.'
-      : `Paré aquí para no pasar el presupuesto de este mensaje (US$${TOPE_TURNO.toFixed(2).replace('.', ',')}; van US$${costoTurno.toFixed(2).replace('.', ',')}).${hechas.length ? ` Alcancé a usar: ${hechas.join(', ')}.` : ''} Si quieres que siga, dime "sigue" y continúo desde lo que ya revisé.`;
+      : detenidoPor === 'presupuesto_diario'
+        ? 'Paré aquí porque seguir pasaría el máximo de gasto de hoy. Mañana puedo continuar, o puedes subir el tope en Railway (ADA_TOPE_DIARIO_MAX).'
+        : `Paré aquí para no pasar el presupuesto de este mensaje (US$${TOPE_TURNO.toFixed(2).replace('.', ',')}; van US$${costoTurno.toFixed(2).replace('.', ',')}).${hechas.length ? ` Alcancé a usar: ${hechas.join(', ')}.` : ''} Si quieres que siga, dime "sigue" y continúo desde lo que ya revisé.`;
     if (separar && partes.length) { partes.push(' '); pantalla.texto(' '); }
     partes.push(msg);
     pantalla.texto(msg);
@@ -747,6 +784,7 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   await q("INSERT INTO mensajes (rol, contenido, conversacion_id, revisado, creado_en) VALUES ('assistant', ?, ?, ?, ?)",
     [guardado, conversacionId, revisado.length ? JSON.stringify(revisado) : null, new Date()]);
   tiempos.total_ms = Date.now() - t0;
+  await Registro.cerrarTurno(turnoId, detenidoPor === 'cancelado' ? 'cancelado' : detenidoPor === 'presupuesto' ? 'detenido_presupuesto' : detenidoPor === 'presupuesto_diario' ? 'detenido_presupuesto_diario' : 'completado', motivoDetencion || null);
   const costo = costoUSD(eleccion.modelo, uso) + busquedas * 0.01;
   Consumo.registrar({ modelo: eleccion.modelo, costo: costoUSD(eleccion.modelo, uso), busquedas }).catch((e) => console.error('Consumo:', e.message));
   Metricas.registrar({ conversacion_id: conversacionId, voz: !!opciones.voz, modelo: eleccion.modelo, nivel: eleccion.nivel, costo_usd: costo, tokens: uso, ...tiempos });
@@ -754,4 +792,4 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), ...(detenidoPor ? { detenido: detenidoPor } : {}), turno_id: turnoId, tiempos, modelo: { nombre: eleccion.modelo, nivel: eleccion.nivel }, acciones, documentos, archivos, ...(llamadas.length ? { llamadas } : {}), conversacion_id: conversacionId };
 }
 
-module.exports = { conversar, construirContexto, separarPantalla, cancelar };
+module.exports = { conversar, construirContexto, separarPantalla, cancelar, trabajando };

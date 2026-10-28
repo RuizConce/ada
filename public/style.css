@@ -540,3 +540,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .g-det p { margin: 2px 0; }
 .g-det ul { margin: 4px 0; padding-left: 16px; }
 #hablar.detener { background: linear-gradient(90deg, #fca5a5, #ef4444); color: #fff; }
+.diag-fila { display: flex; gap: 8px; margin: 8px 0; }
+.diag-fila input { flex: 1; padding: 8px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; }
+.diag-fila button, #diag-copiar, .diag-conv { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo-2); color: var(--texto); font: inherit; font-size: 13px; }
+.diag-op { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--texto-suave); margin: 4px 0 8px; }
+.diag-conv { display: block; width: 100%; text-align: left; margin: 4px 0; }
+#diag-json { max-height: 50dvh; overflow: auto; font-size: 11px; background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; padding: 10px; white-space: pre-wrap; word-break: break-word; }

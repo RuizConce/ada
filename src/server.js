@@ -101,7 +101,7 @@ function freno(req, res, next) {
   next();
 }
 
-app.post('/api/chat', auth, freno, async (req, res) => {
+app.post('/api/chat', auth, unTrabajoALaVez, freno, async (req, res) => {
   const texto = String((req.body && req.body.mensaje) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
   if (texto.length > 24000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
@@ -112,13 +112,20 @@ app.post('/api/chat', auth, freno, async (req, res) => {
     }));
   } catch (e) {
     console.error('Error en /api/chat:', e);
+    if (e.status === 409) return res.status(409).json({ error: e.message });
     const status = e.status === 529 || e.status === 503 ? 503 : 500;
     res.status(status).json({ error: status === 503 ? 'Claude está saturado, intenta en un momento.' : `Error: ${e.message}` });
   }
 });
 
 // Respuesta en tiempo real (Server-Sent Events): texto a medida que se genera, estados y documentos.
-app.post('/api/chat/stream', auth, freno, async (req, res) => {
+function unTrabajoALaVez(req, res, next) {
+  if (require('./ada').trabajando(req.usuario.id)) {
+    return res.status(409).json({ error: 'Todavía estoy trabajando en tu mensaje anterior. Espera a que termine o tócame Detener.', freno: true });
+  }
+  next();
+}
+app.post('/api/chat/stream', auth, unTrabajoALaVez, freno, async (req, res) => {
   const texto = String((req.body && req.body.mensaje) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
   if (texto.length > 24000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
@@ -283,6 +290,14 @@ app.get('/api/gasto/turnos', auth, soloAdmin, envolver((req) => {
 }));
 app.get('/api/gasto/turnos/:id', auth, soloAdmin, envolver((req) => Registro.detalleTurno(String(req.params.id).slice(0, 36))));
 app.get('/api/gasto/encargos', auth, soloAdmin, envolver(() => Registro.porEncargo()));
+// Exportación privada del diagnóstico (solo Cristian; sin documentos, datos personales ni claves).
+const Diagnostico = require('./diagnostico');
+app.get('/api/diagnostico/conversaciones', auth, soloAdmin, envolver((req) => {
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(req.query.dia || '') ? req.query.dia : new Date().toISOString().slice(0, 10);
+  return Diagnostico.conversacionesDelDia(dia);
+}));
+app.get('/api/diagnostico/conversaciones/:id', auth, soloAdmin, envolver((req) =>
+  Diagnostico.exportar(parseInt(req.params.id, 10), { conTexto: req.query.texto === '1', usuarioId: req.usuario.id })));
 app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
@@ -390,6 +405,7 @@ initDb()
     const servidor = app.listen(PORT, () => console.log(`ADA escuchando en :${PORT} (TZ ${process.env.TZ})`));
     Lab.conectarOido(servidor); // oído en tiempo real del laboratorio (WebSocket)
     Avisos.iniciar();
+    require('./registro').marcarInterrumpidos(); // turnos que el reinicio dejó a medias
   })
   .catch((e) => {
     console.error('No pude iniciar la base de datos:', e.message);

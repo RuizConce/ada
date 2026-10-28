@@ -73,7 +73,7 @@ async function titular(id, mensajes) {
   const proyectos = (await H.listarProyectos()).map((p) => p.nombre);
   let transcripcion = mensajes.map((m) => `${m.rol === 'user' ? usuario().nombre : 'ADA'}: ${m.contenido}`).join('\n');
   if (transcripcion.length > 8000) transcripcion = `${transcripcion.slice(0, 3000)}\n[…]\n${transcripcion.slice(-4500)}`;
-  const resp = await claude().messages.create({
+  const resp = await require('./registro').llamadaUnica('titulo', {
     model: MODELO_RAPIDO(),
     max_tokens: 300,
     system: `Archivas conversaciones entre ${usuario().nombre} y su asistente ADA. Respondes solo con JSON válido, sin texto adicional.`,
@@ -89,7 +89,7 @@ Devuelve JSON con:
 - "resumen": 1 o 2 frases con lo que se habló, decidió o quedó pendiente.
 - "proyecto": el nombre EXACTO de uno de los proyectos existentes si la conversación trata principalmente de él; si no, null.`,
     }],
-  });
+  }, { conversacionId: id });
   const texto = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   const json = JSON.parse(texto.slice(texto.indexOf('{'), texto.lastIndexOf('}') + 1));
   let proyectoId = null;

@@ -1704,6 +1704,36 @@
 
   // ---------- Personas de la prueba (solo Cristian) ----------
 
+  // Exportación del diagnóstico (solo Cristian).
+  $('#diag-buscar').addEventListener('click', async () => {
+    const lista = $('#diag-lista');
+    lista.textContent = 'Buscando…';
+    try {
+      const convs = await api(`/api/diagnostico/conversaciones?dia=${encodeURIComponent($('#diag-dia').value)}`);
+      lista.innerHTML = convs.length ? '' : '<p class="meta">No hay conversaciones ese día.</p>';
+      for (const c of convs) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'diag-conv';
+        b.textContent = `${new Date(c.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · ${c.titulo || 'Sin título'} · ${c.mensajes} mensajes`;
+        b.addEventListener('click', async () => {
+          $('#diag-json').textContent = 'Preparando…';
+          $('#diag-salida').hidden = false;
+          try {
+            const d = await api(`/api/diagnostico/conversaciones/${c.id}${$('#diag-texto').checked ? '?texto=1' : ''}`);
+            $('#diag-json').textContent = JSON.stringify(d, null, 2);
+          } catch (e) { $('#diag-json').textContent = e.message; }
+        });
+        lista.appendChild(b);
+      }
+    } catch (e) { lista.textContent = e.message; }
+  });
+  $('#diag-copiar').addEventListener('click', async () => {
+    const t = $('#diag-json').textContent;
+    try { await navigator.clipboard.writeText(t); aviso('Diagnóstico copiado.'); }
+    catch (_) { const r = document.createRange(); r.selectNodeContents($('#diag-json')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); aviso('Selecciónalo y cópialo.'); }
+  });
+
   // Gasto por mensaje: cada turno con sus llamadas a Claude, modelos, tokens y herramientas (sin contenido).
   async function pintarGastoTurnos() {
     const caja = $('#gasto-turnos');
@@ -1765,6 +1795,8 @@
       res.hidden = false;
     }
     pintarGastoTurnos();
+    $('#diag').hidden = false;
+    if (!$('#diag-dia').value) $('#diag-dia').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     cont.innerHTML = '';
     if (!lista.length) { cont.innerHTML = '<p class="meta">Aún no invitas a nadie.</p>'; return; }
     for (const p of lista) {

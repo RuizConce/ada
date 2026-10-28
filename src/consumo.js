@@ -93,4 +93,27 @@ async function resumen() {
   return { tope_invitado: tope(), total_mes: personas.reduce((s, p) => s + p.mes, 0), total_hoy: personas.reduce((s, p) => s + p.hoy, 0), personas };
 }
 
-module.exports = { registrar, gastoHoy, sobreTope, resumen, tope, topeTurno, presupuestoDelDia };
+// ---------- Reserva antes de cada llamada ----------
+// El gasto ya hecho sale de la base (persistente: sobrevive reinicios). Lo que está "en vuelo"
+// (llamadas iniciadas que aún no informan su costo) se reserva en memoria con su estimación, así dos
+// solicitudes simultáneas no pueden pasar juntas el tope del día. (Vale con una sola instancia de
+// servidor, que es como corre ADA en Railway.)
+const enVuelo = new Map(); // persona → Map(id → estimado)
+let siguienteReserva = 1;
+const reservado = (uid) => [...(enVuelo.get(uid) || new Map()).values()].reduce((a, b) => a + b, 0);
+async function reservar(estimado) {
+  const u = usuario();
+  const gasto = await gastoHoy(u.id);
+  const duro = topeDuro(u);
+  const ocupado = reservado(u.id);
+  if (duro > 0 && gasto + ocupado + estimado > duro) {
+    return { ok: false, gasto, duro, motivo: `tope diario: van US$${gasto.toFixed(2)} + US$${ocupado.toFixed(2)} en curso; esta llamada (~US$${estimado.toFixed(2)}) pasaría el máximo de US$${duro.toFixed(2)}`, liberar: () => {} };
+  }
+  const id = siguienteReserva++;
+  if (!enVuelo.has(u.id)) enVuelo.set(u.id, new Map());
+  enVuelo.get(u.id).set(id, estimado);
+  let liberada = false;
+  return { ok: true, gasto, duro, liberar: () => { if (!liberada) { liberada = true; enVuelo.get(u.id).delete(id); } } };
+}
+
+module.exports = { registrar, gastoHoy, sobreTope, resumen, tope, topeTurno, presupuestoDelDia, reservar, reservado };

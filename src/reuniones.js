@@ -87,7 +87,7 @@ async function terminar(id, { nombres = {}, titulo } = {}) {
   ].filter(Boolean).join('\n');
 
   const modelo = MODELO_PROFUNDO();
-  const resp = await claude().messages.create({
+  const resp = await require('./registro').llamadaUnica('acta', {
     model: modelo,
     max_tokens: 8000,
     system: 'Eres ADA y redactas actas de reunión claras y útiles, en español de Chile, para quien te usa. Solo registras lo que se dijo. Acuerdos y tareas concretas, con responsable y fecha cuando existan. Las fechas relativas ("el jueves") se resuelven con la fecha de la reunión.',
@@ -132,7 +132,7 @@ async function traducir(texto) {
   const t = String(texto || '').trim().slice(0, 3000);
   if (!t) return { traduccion: null };
   const modelo = MODELO_RAPIDO();
-  const resp = await claude().messages.create({
+  const resp = await require('./registro').llamadaUnica('traduccion', {
     model: modelo,
     max_tokens: 600,
     system: 'Traduces al español de Chile, natural y fiel. Responde solo con la traducción. Si el texto ya está en español, responde exactamente: =',

@@ -298,6 +298,29 @@ async function initDb() {
     creado_en DATETIME NOT NULL,
     INDEX idx_turno (turno_id), INDEX idx_conv (usuario_id, conversacion_id), INDEX idx_dia (usuario_id, creado_en)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Columnas agregadas después de crear llamadas_ia.
+  for (const [col, sql] of [
+    ['origen', "ALTER TABLE llamadas_ia ADD COLUMN origen VARCHAR(20) NOT NULL DEFAULT 'conversacion'"],
+    ['costo_estimado', 'ALTER TABLE llamadas_ia ADD COLUMN costo_estimado DECIMAL(12,6) NULL'],
+  ]) {
+    const [{ n }] = await qPrincipal("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'llamadas_ia' AND COLUMN_NAME = ?", [col]);
+    if (!n) await qPrincipal(sql);
+  }
+  // Un registro por turno (cada mensaje o tarea interna) con su estado final.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS turnos_ia (
+    turno_id CHAR(36) PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    conversacion_id INT NULL,
+    origen VARCHAR(20) NOT NULL DEFAULT 'conversacion',
+    estado VARCHAR(30) NOT NULL,
+    motivo VARCHAR(300) NULL,
+    llamadas INT NOT NULL DEFAULT 0,
+    costo_usd DECIMAL(12,6) NOT NULL DEFAULT 0,
+    instancia VARCHAR(40) NULL,
+    inicio DATETIME(3) NOT NULL,
+    fin DATETIME(3) NULL,
+    INDEX idx_estado (estado), INDEX idx_usuario (usuario_id, inicio)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   await qPrincipal(`CREATE TABLE IF NOT EXISTS operaciones_herramienta (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     usuario_id INT NOT NULL,

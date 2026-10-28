@@ -10,7 +10,8 @@ let cliente;
 function claude() {
   if (!cliente) {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('Falta ANTHROPIC_API_KEY');
-    cliente = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    // Reintentos acotados (el SDK reintenta por defecto 2 veces errores de red/saturación).
+    cliente = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: Math.max(0, parseInt(process.env.ADA_REINTENTOS_CLAUDE ?? '1', 10) || 0) });
   }
   return cliente;
 }
@@ -50,8 +51,10 @@ function elegirModelo(texto, { conversacionId, modo = 'auto' } = {}) {
 
 // ---------- Costo estimado (USD por millón de tokens; ajustable con ADA_PRECIOS) ----------
 
+// Haiku 5.5 cobra 5 veces más toda la solicitud (entrada, salida y caché) cuando el prompt pasa de
+// 100.000 tokens (contando caché). Precios de terceros: verificar con la consola de Anthropic.
 const PRECIOS_BASE = {
-  haiku: { entrada: 0.10, salida: 0.50, cache_escritura: 0.125, cache_lectura: 0.01 },
+  haiku: { entrada: 0.10, salida: 0.50, cache_escritura: 0.125, cache_lectura: 0.01, umbral: 100000, factor: 5 },
   sonnet: { entrada: 2.00, salida: 10.00, cache_escritura: 2.50, cache_lectura: 0.10 },
 };
 function precios(modelo) {
@@ -62,8 +65,22 @@ function precios(modelo) {
 }
 function costoUSD(modelo, u = {}) {
   const p = precios(modelo);
-  return ((u.input_tokens || 0) * p.entrada + (u.output_tokens || 0) * p.salida +
+  const prompt = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+  const f = p.umbral && prompt > p.umbral ? (p.factor || 1) : 1;
+  return f * ((u.input_tokens || 0) * p.entrada + (u.output_tokens || 0) * p.salida +
     (u.cache_creation_input_tokens || 0) * p.cache_escritura + (u.cache_read_input_tokens || 0) * p.cache_lectura) / 1e6;
 }
 
-module.exports = { claude, MODELO, MODELO_RAPIDO, MODELO_PROFUNDO, elegirModelo, costoUSD };
+// Estimación ANTES de llamar, con margen de seguridad: el prompt se cuenta sin descuento de caché
+// (~3 caracteres por token, conservador para español), la salida como hasta 4.096 tokens (o el máximo
+// pedido si es menor), +US$0,03 si puede buscar en internet, y todo ×1,25.
+const MARGEN = () => { const n = parseFloat(process.env.ADA_MARGEN_ESTIMACION); return Number.isFinite(n) && n >= 1 ? n : 1.25; };
+function estimarCosto(params = {}) {
+  const chars = JSON.stringify(params.system || '').length + JSON.stringify(params.messages || []).length + JSON.stringify(params.tools || []).length;
+  const entrada = Math.ceil(chars / 3);
+  const salida = Math.min(params.max_tokens || 4096, 4096);
+  const busca = (params.tools || []).some((t) => t && t.type && String(t.type).startsWith('web_search')) ? 0.03 : 0;
+  return (costoUSD(params.model || '', { input_tokens: entrada, output_tokens: salida }) + busca) * MARGEN();
+}
+
+module.exports = { claude, MODELO, MODELO_RAPIDO, MODELO_PROFUNDO, elegirModelo, costoUSD, estimarCosto };
