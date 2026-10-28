@@ -1109,6 +1109,7 @@
 
   // Termina la conversación: la guarda en el archivo con título y carpeta.
   async function cerrarConversacion() {
+    if (ocupado) detenerTrabajo(); // terminar la conversación también detiene el trabajo en curso
     detenerVoz();
     if (!convId) return;
     const id = convId;
@@ -1248,12 +1249,19 @@
   function pintarControles() {
     btnHablar.classList.toggle('activo', conversando);
     $('#hablar-texto').textContent = conversando ? 'Terminar conversación' : (convId ? 'Seguir hablando' : 'Hablar con ADA');
-    btnHablar.disabled = ocupado && !conversando;
+    // Mientras ADA trabaja (fuera de una conversación por voz), el botón la detiene de verdad.
+    btnHablar.disabled = false;
+    if (ocupado && !conversando) $('#hablar-texto').textContent = 'Detener';
+    btnHablar.classList.toggle('detener', ocupado && !conversando);
     $('#enviar').disabled = ocupado;
     $('#cerrar-conv').hidden = conversando || !convId;
   }
 
+  function detenerTrabajo() {
+    api('/api/cancelar', { method: 'POST' }).then((r) => { if (r.cancelado) aviso('Detengo el trabajo…'); }).catch(() => {});
+  }
   btnHablar.addEventListener('click', () => {
+    if (ocupado && !conversando) { detenerTrabajo(); return; }
     if (conversando) cerrarConversacion();
     else iniciarConversacion();
   });
@@ -1696,6 +1704,52 @@
 
   // ---------- Personas de la prueba (solo Cristian) ----------
 
+  // Gasto por mensaje: cada turno con sus llamadas a Claude, modelos, tokens y herramientas (sin contenido).
+  async function pintarGastoTurnos() {
+    const caja = $('#gasto-turnos');
+    let turnos = [];
+    try { turnos = await api('/api/gasto/turnos'); } catch (_) { caja.hidden = true; return; }
+    caja.hidden = !turnos.length;
+    const lista = $('#gasto-lista');
+    lista.innerHTML = '';
+    const usd = (n) => `US$${Number(n || 0).toFixed(3).replace('.', ',')}`;
+    const miles = (n) => `${Math.round((n || 0) / 1000)}k`;
+    for (const t of turnos.slice(0, 40)) {
+      const d = document.createElement('details');
+      d.className = 'gasto-turno';
+      const h = new Date(t.inicio);
+      const quien = t.usuario_id === 1 ? '' : ` · invitado ${t.usuario_id}`;
+      d.innerHTML = '<summary><span class="g-hora"></span><span class="g-que"></span><strong class="g-usd"></strong></summary><div class="g-det">Cargando…</div>';
+      d.querySelector('.g-hora').textContent = h.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+      d.querySelector('.g-que').textContent = `${t.llamadas} llamada${t.llamadas === 1 ? '' : 's'} · ${String(t.modelos || '').replace(/claude-/g, '')} · ${miles(t.entrada)} entrada / ${miles(t.salida)} salida${t.busquedas ? ` · ${t.busquedas} búsq.` : ''}${t.encargo_id ? ` · encargo #${t.encargo_id}` : ''}${quien}${t.error ? ' · ⚠' : ''}`;
+      d.querySelector('.g-usd').textContent = usd(t.costo_usd);
+      d.addEventListener('toggle', async () => {
+        if (!d.open || d.dataset.cargado) return;
+        d.dataset.cargado = '1';
+        try {
+          const det = await api(`/api/gasto/turnos/${t.turno_id}`);
+          const div = d.querySelector('.g-det');
+          div.innerHTML = '';
+          for (const l of det.llamadas) {
+            const p = document.createElement('p');
+            p.textContent = `Paso ${l.paso} · ${l.modelo.replace('claude-', '')} · ${(l.duracion_ms / 1000 || 0).toFixed(1)} s · ${l.input_tokens} ent / ${l.output_tokens} sal / caché ${l.cache_creacion}+${l.cache_lectura} · ${usd(l.costo_usd)} · ${l.stop_reason || ''}${l.herramientas ? ` → ${l.herramientas}` : ''}${l.error ? ` · error: ${l.error}` : ''}`;
+            div.appendChild(p);
+          }
+          if (det.herramientas.length) {
+            const ul = document.createElement('ul');
+            for (const o of det.herramientas) {
+              const li = document.createElement('li');
+              li.textContent = `${o.herramienta}${o.objetivo ? ` (${o.objetivo})` : ''}${o.repetida ? ' · repetida, no se ejecutó' : ''}${o.ok ? '' : ` · error: ${o.error}`}`;
+              ul.appendChild(li);
+            }
+            div.appendChild(ul);
+          }
+        } catch (e) { d.querySelector('.g-det').textContent = e.message; }
+      });
+      lista.appendChild(d);
+    }
+  }
+
   async function pintarPersonas() {
     const cont = $('#lista-personas');
     let lista = [];
@@ -1710,6 +1764,7 @@
         + (consumo.tope_invitado > 0 ? ` Tope por invitado: ${usd(consumo.tope_invitado)} al día; al pasarlo sigue con el modelo rápido.` : '');
       res.hidden = false;
     }
+    pintarGastoTurnos();
     cont.innerHTML = '';
     if (!lista.length) { cont.innerHTML = '<p class="meta">Aún no invitas a nadie.</p>'; return; }
     for (const p of lista) {

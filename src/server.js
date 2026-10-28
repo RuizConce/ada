@@ -11,7 +11,7 @@ const Avisos = require('./avisos');
 const { MODELO_RAPIDO, MODELO_PROFUNDO } = require('./claude');
 const Agenda = require('./agenda');
 const Lab = require('./lab');
-const { conversar, construirContexto } = require('./ada');
+const { conversar, construirContexto, cancelar } = require('./ada');
 const E = require('./encargos');
 const C = require('./conversaciones');
 const Voz = require('./voz');
@@ -271,6 +271,18 @@ app.post('/api/reuniones', auth, envolver((req) => Reuniones.crear(req.body || {
 app.post('/api/reuniones/traducir', auth, envolver((req) => Reuniones.traducir((req.body || {}).texto)));
 app.post('/api/reuniones/:id/segmentos', auth, envolver((req) => Reuniones.agregar(parseInt(req.params.id, 10), (req.body || {}).segmentos)));
 app.post('/api/reuniones/:id/terminar', auth, envolver((req) => Reuniones.terminar(parseInt(req.params.id, 10), req.body || {})));
+// Detener de verdad el trabajo en curso (no solo cerrar la pantalla).
+app.post('/api/cancelar', auth, envolver((req) => cancelar(req.usuario.id)));
+// Gasto detallado: por turno (cada mensaje) con sus llamadas a Claude y herramientas; solo Cristian.
+const Registro = require('./registro');
+app.get('/api/gasto/turnos', auth, soloAdmin, envolver((req) => {
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(req.query.dia || '') ? req.query.dia : null;
+  const desde = dia ? new Date(`${dia}T00:00:00`) : new Date(Date.now() - 24 * 3600 * 1000);
+  const hasta = dia ? new Date(desde.getTime() + 24 * 3600 * 1000) : new Date(Date.now() + 60000);
+  return Registro.porTurno({ desde, hasta, usuarioId: parseInt(req.query.usuario, 10) || null });
+}));
+app.get('/api/gasto/turnos/:id', auth, soloAdmin, envolver((req) => Registro.detalleTurno(String(req.params.id).slice(0, 36))));
+app.get('/api/gasto/encargos', auth, soloAdmin, envolver(() => Registro.porEncargo()));
 app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));

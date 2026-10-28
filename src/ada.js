@@ -10,6 +10,19 @@ require('./drive'); // registra las herramientas de Drive
 const M = require('./gmail'); // registra las herramientas de correo
 const { claude, elegirModelo, costoUSD } = require('./claude');
 const Consumo = require('./consumo');
+const Registro = require('./registro');
+
+// Turno en curso por persona, para poder detenerlo de verdad (no solo cerrar la pantalla).
+const enCurso = new Map(); // persona → { cancelado, stream }
+function cancelar(uid = usuario().id) {
+  const t = enCurso.get(uid);
+  if (!t) return { cancelado: false, motivo: 'no había trabajo en curso' };
+  t.cancelado = true;
+  try { if (t.stream && typeof t.stream.abort === 'function') t.stream.abort(); } catch (_) {}
+  return { cancelado: true };
+}
+// Herramientas que solo leen: si se repiten idénticas en el mismo turno, no se vuelven a ejecutar.
+const SOLO_LECTURA = /^(buscar_|leer_|listar_|ver_)/;
 const Metricas = require('./metricas');
 
 const MAX_ALERTAS = () => parseInt(process.env.ADA_MAX_ALERTAS || '2', 10);
@@ -440,6 +453,8 @@ async function llamarClaude(params, alEvento) {
     return r;
   }
   const stream = cli.messages.stream(params);
+  const t = enCurso.get(u.id);
+  if (t) t.stream = stream;
   stream.on('text', (delta) => alEvento('texto', { delta }));
   stream.on('streamEvent', (ev) => {
     if (ev.type === 'content_block_start') {
@@ -492,12 +507,22 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   alEvento('conversacion', { conversacion_id: conversacionId });
   const t0 = Date.now();
   const tiempos = { herramientas_ms: 0 };
-  const [contexto, historial, prefs, sobreTope] = await Promise.all([
-    construirContexto(), historialParaClaude(conversacionId), H.preferencias(), Consumo.sobreTope().catch(() => false),
+  const [contexto, historial, prefs, presupuesto] = await Promise.all([
+    construirContexto(), historialParaClaude(conversacionId), H.preferencias(),
+    Consumo.presupuestoDelDia().catch(() => ({ nivel: 'ok', gasto: 0, tope: 0, duro: 0 })),
   ]);
-  // Invitado que ya pasó su tope del día: sigue conversando, pero con el modelo rápido.
-  const eleccion = sobreTope
-    ? { ...elegirModelo(textoUsuario, { conversacionId, modo: 'rapido' }), motivo: 'tope diario del invitado' }
+  const turnoId = Registro.nuevoId();
+  // Tope del día alcanzado: primero solo modelo rápido; sobre el tope máximo, ADA no llama a Claude.
+  if (presupuesto.nivel === 'detenido') {
+    const msg = `Hoy ya se gastaron US$${presupuesto.gasto.toFixed(2).replace('.', ',')} en IA y llegamos al máximo del día (US$${presupuesto.duro.toFixed(2).replace('.', ',')}), así que no voy a procesar más hasta mañana. Si necesitas seguir hoy, sube el tope en Railway (ADA_TOPE_DIARIO_MAX).`;
+    await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('user', ?, ?, ?)", [textoUsuario, conversacionId, new Date()]);
+    await q("INSERT INTO mensajes (rol, contenido, conversacion_id, creado_en) VALUES ('assistant', ?, ?, ?)", [msg, conversacionId, new Date()]);
+    alEvento('texto', { delta: msg });
+    console.warn(`Presupuesto u${usuario().id}: detenido (US$${presupuesto.gasto.toFixed(2)})`);
+    return { respuesta: msg, tiempos: { total_ms: Date.now() - t0 }, modelo: null, acciones: [], documentos: [], archivos: [], conversacion_id: conversacionId, presupuesto: 'detenido' };
+  }
+  const eleccion = presupuesto.nivel === 'rapido'
+    ? { ...elegirModelo(textoUsuario, { conversacionId, modo: 'rapido' }), motivo: 'tope diario alcanzado: solo modelo rápido' }
     : elegirModelo(textoUsuario, { conversacionId, modo: prefs.modelo_modo });
   let busquedas = 0;
   const uso = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
@@ -554,6 +579,14 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   };
 
   const MAX_VUELTAS = 10;
+  const TOPE_TURNO = Consumo.topeTurno();
+  let costoTurno = 0;
+  let ultimoCosto = 0;
+  let encargoId = null;
+  let detenidoPor = null; // 'presupuesto' | 'cancelado'
+  const yaEjecutadas = new Map(); // herramienta+entrada → resultado (solo lectura, este turno)
+  const control = { cancelado: false, stream: null };
+  enCurso.set(usuario().id, control);
   const paradas = []; // por qué terminó cada paso (para los logs)
   let ultimaConTexto = false;
   let usoHerramientas = false;
@@ -562,13 +595,33 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
     // En el último paso permitido, se le pide responder sin más herramientas (antes podía quedarse callada).
     const sinHerramientas = vuelta === MAX_VUELTAS - 1;
-    const resp = await llamarClaude({
-      model: eleccion.modelo,
-      // Un informe completo puede ser largo: si se corta por tamaño, no se entrega nada.
-      max_tokens: eleccion.nivel === 'profundo' ? 16000 : 4000,
-      system, tools, messages,
-      ...(sinHerramientas ? { tool_choice: { type: 'none' } } : {}),
-    }, emitir);
+    if (control.cancelado) { detenidoPor = 'cancelado'; break; }
+    // Reserva: la próxima llamada cuesta al menos lo que la anterior (el contexto solo crece);
+    // si con ella se pasaría del presupuesto del mensaje, se para antes de hacerla.
+    if (TOPE_TURNO > 0 && costoTurno > 0 && costoTurno + ultimoCosto > TOPE_TURNO) { detenidoPor = 'presupuesto'; break; }
+    const tC = Date.now();
+    let resp;
+    try {
+      resp = await llamarClaude({
+        model: eleccion.modelo,
+        // Un informe completo puede ser largo: si se corta por tamaño, no se entrega nada.
+        max_tokens: eleccion.nivel === 'profundo' ? 16000 : 4000,
+        system, tools, messages,
+        ...(sinHerramientas ? { tool_choice: { type: 'none' } } : {}),
+      }, emitir);
+    } catch (e) {
+      await Registro.llamada({ conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: {}, duracionMs: Date.now() - tC, error: control.cancelado ? 'cancelado por la persona' : `${e.status || ''} ${e.message}` });
+      if (control.cancelado) { detenidoPor = 'cancelado'; break; }
+      enCurso.delete(usuario().id);
+      throw e;
+    }
+    const pedidas = (resp.content || []).filter((b) => b.type === 'tool_use' || b.type === 'server_tool_use').map((b) => b.name);
+    const reg = await Registro.llamada({
+      conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: resp.usage,
+      duracionMs: Date.now() - tC, stopReason: resp.stop_reason, herramientas: pedidas.join(','), requestId: resp._request_id || resp.id,
+    });
+    costoTurno += reg.costo;
+    ultimoCosto = reg.costo;
     paradas.push(resp.stop_reason);
     ultimaConTexto = (resp.content || []).some((b) => b.type === 'text' && b.text && b.text.trim());
     for (const k of Object.keys(uso)) uso[k] += (resp.usage && resp.usage[k]) || 0;
@@ -617,14 +670,26 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
       break;
     }
     usoHerramientas = true;
+    // Presupuesto del mensaje alcanzado: no se ejecutan más herramientas ni se vuelve a llamar a Claude.
+    if (costoTurno >= TOPE_TURNO && TOPE_TURNO > 0) { detenidoPor = 'presupuesto'; break; }
+    if (control.cancelado) { detenidoPor = 'cancelado'; break; }
 
     messages.push({ role: 'assistant', content: resp.content });
     const resultados = [];
     for (const bloque of resp.content) {
       if (bloque.type !== 'tool_use') continue;
       const tH = Date.now();
-      const r = await H.ejecutar(bloque.name, bloque.input, { conversacionId });
+      const claveRep = SOLO_LECTURA.test(bloque.name) ? `${bloque.name}:${JSON.stringify(bloque.input)}` : null;
+      const repetida = !!(claveRep && yaEjecutadas.has(claveRep));
+      const r = repetida
+        ? { repetida: true, nota: 'Ya hiciste exactamente esta consulta en este mismo paso de trabajo: usa ese resultado (está más arriba) y avanza.' }
+        : await H.ejecutar(bloque.name, bloque.input, { conversacionId });
+      if (claveRep && !repetida) yaEjecutadas.set(claveRep, true);
       tiempos.herramientas_ms += Date.now() - tH;
+      encargoId = encargoId || Registro.encargoDe(bloque.name, bloque.input, r);
+      const textoR = JSON.stringify(r) || '';
+      Registro.operacion({ conversacionId, turnoId, llamadaId: reg.id, herramienta: bloque.name, input: bloque.input, resultado: r,
+        error: r && r.error ? String(r.error) : null, tamano: textoR.length, repetida, duracionMs: Date.now() - tH });
       revisado.push({ herramienta: bloque.name, entrada: recortarTexto(JSON.stringify(bloque.input), 300), resultado: recortarTexto(JSON.stringify(r), 4000) });
       const etiqueta = ETIQUETAS[bloque.name] && !r.error ? ETIQUETAS[bloque.name](bloque.input, r) : null;
       if (etiqueta) acciones.push({ herramienta: bloque.name, etiqueta });
@@ -652,6 +717,17 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
     messages.push({ role: 'user', content: resultados });
   }
 
+  enCurso.delete(usuario().id);
+  if (detenidoPor) {
+    const hechas = [...new Set(revisado.map((r) => r.herramienta))];
+    const msg = detenidoPor === 'cancelado'
+      ? 'Detuve el trabajo, como pediste.'
+      : `Paré aquí para no pasar el presupuesto de este mensaje (US$${TOPE_TURNO.toFixed(2).replace('.', ',')}; van US$${costoTurno.toFixed(2).replace('.', ',')}).${hechas.length ? ` Alcancé a usar: ${hechas.join(', ')}.` : ''} Si quieres que siga, dime "sigue" y continúo desde lo que ya revisé.`;
+    if (separar && partes.length) { partes.push(' '); pantalla.texto(' '); }
+    partes.push(msg);
+    pantalla.texto(msg);
+    console.warn(`ADA detenida u${usuario().id} turno ${turnoId}: ${detenidoPor} (US$${costoTurno.toFixed(4)})`);
+  }
   pantalla.terminar();
   const completo = partes.join('').replace(/[ \t]+\n/g, '\n');
   const corte = completo.indexOf(MARCA_PANTALLA);
@@ -674,8 +750,8 @@ async function conversar(textoUsuario, opciones = {}, alEvento = () => {}) {
   const costo = costoUSD(eleccion.modelo, uso) + busquedas * 0.01;
   Consumo.registrar({ modelo: eleccion.modelo, costo: costoUSD(eleccion.modelo, uso), busquedas }).catch((e) => console.error('Consumo:', e.message));
   Metricas.registrar({ conversacion_id: conversacionId, voz: !!opciones.voz, modelo: eleccion.modelo, nivel: eleccion.nivel, costo_usd: costo, tokens: uso, ...tiempos });
-  if (process.env.ADA_LOG_TIEMPOS !== 'no') console.log(`ADA tiempos u${usuario().id} [${eleccion.nivel}: ${eleccion.modelo}, ${eleccion.motivo}, ~US$${costo.toFixed(4)}]: contexto ${tiempos.contexto_ms}ms · primer texto ${tiempos.primer_texto_ms}ms · herramientas ${tiempos.herramientas_ms}ms · total ${tiempos.total_ms}ms`);
-  return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), tiempos, modelo: { nombre: eleccion.modelo, nivel: eleccion.nivel }, acciones, documentos, archivos, ...(llamadas.length ? { llamadas } : {}), conversacion_id: conversacionId };
+  if (process.env.ADA_LOG_TIEMPOS !== 'no') console.log(`ADA tiempos u${usuario().id} turno ${turnoId} conv ${conversacionId} [${eleccion.nivel}: ${eleccion.modelo}, ${eleccion.motivo}, ~US$${costo.toFixed(4)}]: contexto ${tiempos.contexto_ms}ms · primer texto ${tiempos.primer_texto_ms}ms · herramientas ${tiempos.herramientas_ms}ms · total ${tiempos.total_ms}ms`);
+  return { respuesta: respuestaFinal, ...(detalle ? { detalle } : {}), ...(detenidoPor ? { detenido: detenidoPor } : {}), turno_id: turnoId, tiempos, modelo: { nombre: eleccion.modelo, nivel: eleccion.nivel }, acciones, documentos, archivos, ...(llamadas.length ? { llamadas } : {}), conversacion_id: conversacionId };
 }
 
-module.exports = { conversar, construirContexto, separarPantalla };
+module.exports = { conversar, construirContexto, separarPantalla, cancelar };

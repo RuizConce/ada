@@ -275,6 +275,45 @@ async function initDb() {
     creado_en DATETIME NOT NULL,
     ultimo_ingreso DATETIME NULL
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Registro de cada llamada a Claude y de cada herramienta (sin contenido: solo metadatos).
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS llamadas_ia (
+    id CHAR(36) PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    conversacion_id INT NULL,
+    turno_id CHAR(36) NOT NULL,
+    encargo_id INT NULL,
+    paso INT NOT NULL,
+    modelo VARCHAR(80) NOT NULL,
+    input_tokens INT NOT NULL DEFAULT 0,
+    output_tokens INT NOT NULL DEFAULT 0,
+    cache_creacion INT NOT NULL DEFAULT 0,
+    cache_lectura INT NOT NULL DEFAULT 0,
+    busquedas INT NOT NULL DEFAULT 0,
+    costo_usd DECIMAL(12,6) NOT NULL DEFAULT 0,
+    duracion_ms INT NULL,
+    stop_reason VARCHAR(40) NULL,
+    herramientas VARCHAR(400) NULL,
+    request_id VARCHAR(120) NULL,
+    error VARCHAR(300) NULL,
+    creado_en DATETIME NOT NULL,
+    INDEX idx_turno (turno_id), INDEX idx_conv (usuario_id, conversacion_id), INDEX idx_dia (usuario_id, creado_en)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS operaciones_herramienta (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    conversacion_id INT NULL,
+    turno_id CHAR(36) NOT NULL,
+    llamada_id CHAR(36) NULL,
+    herramienta VARCHAR(80) NOT NULL,
+    objetivo VARCHAR(240) NULL,
+    ok TINYINT NOT NULL DEFAULT 1,
+    error VARCHAR(300) NULL,
+    tamano_resultado INT NULL,
+    repetida TINYINT NOT NULL DEFAULT 0,
+    duracion_ms INT NULL,
+    creado_en DATETIME NOT NULL,
+    INDEX idx_turno (turno_id), INDEX idx_conv (usuario_id, conversacion_id)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   // Gasto estimado en Claude por persona, día y modelo.
   await qPrincipal(`CREATE TABLE IF NOT EXISTS consumo (
     usuario_id INT NOT NULL,

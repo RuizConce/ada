@@ -528,3 +528,15 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 .llamada-cuenta { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 14px; background: rgba(94, 234, 168, 0.12); border: 1px solid var(--borde-verde); font-size: 14px; }
 .llamada-cuenta button { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo-2); color: var(--texto); }
+
+/* Gasto por mensaje (Ajustes → Personas) */
+.gasto-turnos { margin: 8px 0 12px; font-size: 13px; }
+.gasto-turnos > summary { cursor: pointer; color: var(--texto-suave); padding: 6px 0; }
+.gasto-turno { border-top: 1px solid var(--borde); }
+.gasto-turno summary { display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; padding: 8px 0; cursor: pointer; list-style: none; }
+.gasto-turno .g-hora { color: var(--texto-suave); }
+.gasto-turno .g-que { color: var(--texto-suave); min-width: 0; }
+.g-det { padding: 0 0 10px 56px; color: var(--texto-suave); font-size: 12px; }
+.g-det p { margin: 2px 0; }
+.g-det ul { margin: 4px 0; padding-left: 16px; }
+#hablar.detener { background: linear-gradient(90deg, #fca5a5, #ef4444); color: #fff; }
