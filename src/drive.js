@@ -246,7 +246,7 @@ async function leer(a = {}, ctx = {}) {
     cuerpo = { tipo: c.tipo_archivo, titulo: c.titulo, hojas: c.hojas };
     await Extracciones.evento('lectura_tramo', contexto, { archivoId: f.id, nombre: f.name, version: previo.version, desde: 0, hasta: JSON.stringify(c).length, caracteres: JSON.stringify(c).length });
   } else {
-    cuerpo = { tipo: c.tipo_archivo, ...recortar(c.texto, max, desde) };
+    cuerpo = { tipo: c.tipo_archivo, ...recortar(c.texto, max, desde), ...(!c.texto.trim() ? { nota: 'Este archivo no tiene texto extraíble (probablemente es un escaneo o una imagen). No inventes su contenido.' } : {}) };
     await Extracciones.evento('lectura_tramo', contexto, { archivoId: f.id, nombre: f.name, version: previo.version, desde, hasta: Math.min(c.texto.length, desde + max), caracteres: c.texto.length });
   }
   const r = { ...base, version: previo.version, ...origen, ...cuerpo };

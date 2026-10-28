@@ -291,6 +291,13 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(r.status === 200 && !r.eventos.some((e) => e.tipo === 'consentimiento_extracciones') && sql('SELECT COUNT(*) FROM extracciones') === '0' && /1 lecturas/.test(r.texto),
     'sin ADA_EXTRACCIONES=si: lee igual, no pregunta y no guarda nada');
   await parar('O');
+  // Modo "prueba": solo guarda archivos de la carpeta de prueba aprobada.
+  await ctl('/control/archivos', { archivos: [{ ...doc('Z1', 'Z1_fuera.pdf', PDF), parents: ['otra-carpeta'] }] });
+  await arrancar('P', 3204, { ADA_EXTRACCIONES: 'prueba', ADA_DRIVE_CARPETA_PRUEBA: 'carpeta-prueba' });
+  const tkP = await login(3204);
+  r = await lee([[{ id: 'A1' }, { id: 'Z1' }]], { puerto: 3204, tk: tkP });
+  ok(r.status === 200 && sql("SELECT GROUP_CONCAT(archivo_id) FROM extracciones") === 'A1', 'modo prueba: guarda solo lo de la carpeta de prueba (A1), no lo de fuera (Z1)');
+  await parar('P');
   await arrancar('A', 3200);
 
   // ===== 14. Logs del servidor sin texto de documentos =====

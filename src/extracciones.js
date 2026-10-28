@@ -21,8 +21,11 @@ const TEXTO_CONSENTIMIENTO = 'Para no volver a descargar ni convertir los mismos
 
 const err = (m, extra = {}) => Object.assign(new Error(m), extra);
 const ahora = () => new Date();
-// Apagado por defecto en producción hasta aprobar la prueba con Drive real: ADA_EXTRACCIONES=si lo enciende.
-const habilitado = () => process.env.ADA_EXTRACCIONES === 'si' && usuario().id === 1;
+// Apagado por defecto en producción. ADA_EXTRACCIONES=prueba: solo guarda archivos de la carpeta de prueba
+// (ADA_DRIVE_CARPETA_PRUEBA), para la prueba con Drive real. ADA_EXTRACCIONES=si: todos los archivos.
+const modo = () => (['si', 'prueba'].includes(process.env.ADA_EXTRACCIONES) ? process.env.ADA_EXTRACCIONES : 'no');
+const habilitado = () => modo() !== 'no' && usuario().id === 1;
+const enAlcance = (meta) => modo() !== 'prueba' || (!!process.env.ADA_DRIVE_CARPETA_PRUEBA && (meta.parents || []).includes(process.env.ADA_DRIVE_CARPETA_PRUEBA));
 
 // ---------- Consentimiento ----------
 
@@ -196,7 +199,7 @@ async function obtener(archivoId, drive, ctx = {}) {
   }
   const version = claveVersion(meta);
   if (drive.leible && !drive.leible(meta)) return { meta, version, noLeible: true };
-  const guardar = await puedeGuardar();
+  const guardar = enAlcance(meta) ? await puedeGuardar() : { ok: false, motivo: 'fuera_de_prueba' };
 
   // 2. Reutilizar si hay una extracción válida de esta misma versión.
   let motivoNueva = 'primera';
@@ -280,7 +283,7 @@ async function resumen() {
     [usuario().id, ahora()]);
   const pendientes = await qPrincipal("SELECT COUNT(*) AS n FROM temporales_drive WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]).catch(() => [{ n: 0 }]);
   return {
-    habilitado: habilitado(), clave: Cifrado.disponible(), consentimiento: c, texto_consentimiento: TEXTO_CONSENTIMIENTO, retencion_dias: RETENCION_DIAS(),
+    habilitado: habilitado(), modo: modo(), clave: Cifrado.disponible(), consentimiento: c, texto_consentimiento: TEXTO_CONSENTIMIENTO, retencion_dias: RETENCION_DIAS(),
     documentos: r.n, caracteres: Number(r.caracteres), proximo_vencimiento: r.proximo_vencimiento, temporales_pendientes: pendientes[0].n,
   };
 }
