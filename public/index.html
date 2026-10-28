@@ -224,6 +224,22 @@
             <dt>Error de configuración</dt><dd id="cif-error">—</dd>
           </dl>
           <div class="ajuste-botones"><button id="cif-revisar" type="button">Revisar de nuevo</button></div>
+          <div id="docs-guardados" hidden>
+            <h4>Documentos guardados</h4>
+            <p class="meta">Texto que ADA extrae de tus archivos de Drive, cifrado, para no volver a descargarlos. Solo se reutiliza si el archivo no cambió y sigues teniendo acceso.</p>
+            <dl class="cifrado-estado">
+              <dt>Guardar</dt><dd id="dg-consentimiento">—</dd>
+              <dt>Documentos</dt><dd id="dg-cantidad">—</dd>
+              <dt>Se borran a los</dt><dd id="dg-retencion">—</dd>
+              <dt>Copias temporales sin borrar</dt><dd id="dg-temporales">—</dd>
+            </dl>
+            <div class="ajuste-botones">
+              <button id="dg-aceptar" type="button" hidden>Aceptar guardar cifrado</button>
+              <button id="dg-retirar" type="button" hidden>Dejar de guardar</button>
+              <button id="dg-borrar" type="button">Borrar documentos guardados</button>
+              <button id="dg-reintentar" type="button" hidden>Reintentar borrar copias temporales</button>
+            </div>
+          </div>
         </section>
         <section id="ajuste-personas" class="ajuste" hidden>
           <h3>Personas de la prueba</h3>

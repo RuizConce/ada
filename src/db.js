@@ -35,7 +35,7 @@ function poolDe(id) {
     pools.set(id, mysql.createPool({
       uri: u.toString(),
       waitForConnections: true,
-      connectionLimit: id === 1 ? 5 : 2,
+      connectionLimit: id === 1 ? 8 : 2,
       // Las fechas se guardan y leen en la hora local del proceso (TZ=America/Santiago).
       timezone: 'local',
       dateStrings: false,
@@ -209,6 +209,28 @@ const ESQUEMA = [
     INDEX idx_encargo (encargo_id),
     FOREIGN KEY (encargo_id) REFERENCES encargos(id) ON DELETE CASCADE
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  // Fase 3b: texto extraído de documentos de Drive, cifrado, por archivo y versión (máx. 30 días).
+  `CREATE TABLE IF NOT EXISTS extracciones (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    archivo_id VARCHAR(128) NOT NULL,
+    version VARCHAR(120) NOT NULL,
+    md5 VARCHAR(64) NULL,
+    nombre VARCHAR(250) NULL,
+    mime VARCHAR(120) NULL,
+    caracteres INT NOT NULL DEFAULT 0,
+    texto_cifrado LONGTEXT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'valida',
+    motivo VARCHAR(40) NULL,
+    extraido_en DATETIME(3) NOT NULL,
+    vence_en DATETIME(3) NOT NULL,
+    ultimo_acceso DATETIME(3) NULL,
+    invalidada_en DATETIME(3) NULL,
+    usos INT NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_archivo_version (usuario_id, archivo_id, version),
+    INDEX idx_archivo (usuario_id, archivo_id, estado),
+    INDEX idx_vence (vence_en)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS integraciones (
     nombre VARCHAR(40) PRIMARY KEY,
     datos TEXT NOT NULL,
@@ -292,6 +314,40 @@ async function initDb() {
     nota VARCHAR(160) NULL,
     creado_en DATETIME NOT NULL,
     ultimo_ingreso DATETIME NULL
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Fase 3b: eventos de la capa de extracciones (métricas). Solo metadatos: nunca texto de documentos.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS extraccion_eventos (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    tipo VARCHAR(30) NOT NULL,
+    motivo VARCHAR(60) NULL,
+    archivo_id VARCHAR(128) NULL,
+    nombre VARCHAR(250) NULL,
+    version VARCHAR(120) NULL,
+    origen VARCHAR(20) NOT NULL DEFAULT 'chat',
+    conversacion_id INT NULL,
+    turno_id CHAR(36) NULL,
+    trabajo_id CHAR(36) NULL,
+    paso_id CHAR(36) NULL,
+    desde INT NULL,
+    hasta INT NULL,
+    caracteres INT NULL,
+    duracion_ms INT NULL,
+    creado_en DATETIME(3) NOT NULL,
+    INDEX idx_usuario (usuario_id, creado_en), INDEX idx_conv (usuario_id, conversacion_id), INDEX idx_turno (turno_id), INDEX idx_trabajo (trabajo_id)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Copias temporales propias ("ADA temporal - …") que no se pudieron borrar al primer intento.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS temporales_drive (
+    usuario_id INT NOT NULL,
+    copia_id VARCHAR(128) NOT NULL,
+    original_id VARCHAR(128) NOT NULL,
+    nombre VARCHAR(250) NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+    intentos INT NOT NULL DEFAULT 1,
+    error VARCHAR(300) NULL,
+    creado_en DATETIME NOT NULL,
+    actualizado_en DATETIME NOT NULL,
+    PRIMARY KEY (usuario_id, copia_id)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   // Registro de cada llamada a Claude y de cada herramienta (sin contenido: solo metadatos).
   await qPrincipal(`CREATE TABLE IF NOT EXISTS llamadas_ia (

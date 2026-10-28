@@ -552,3 +552,6 @@ button:disabled { opacity: 0.45; cursor: default; }
 .cifrado-estado dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .cifrado-estado dd.cif-ok { color: #2e9d5b; }
 .cifrado-estado dd.cif-mal { color: #d0473b; }
+
+#docs-guardados h4 { margin: 18px 0 4px; font-size: 1rem; }
+.tarjeta-consentimiento p { margin: 6px 0 10px; line-height: 1.4; }

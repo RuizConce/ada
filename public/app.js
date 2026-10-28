@@ -161,6 +161,7 @@
   // ---------- Entregas: documentos y mensajes por autorizar ----------
   const ICONO_DOC = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5v12.5H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4.5M9.5 12.5h6M9.5 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   let autorizaciones = [];
+  let consentimientoPendiente = null; // pregunta para guardar extracciones cifradas (Fase 3b)
 
   const ICONO_ARCHIVO = {
     word: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5v12.5H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.5 11.5l1.2 5 1.3-4 1.3 4 1.2-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -224,6 +225,32 @@
       cont.appendChild(b);
     }
     for (const a of autorizaciones) cont.appendChild(tarjetaAutorizacion(a));
+    if (consentimientoPendiente) cont.appendChild(tarjetaConsentimiento(consentimientoPendiente));
+  }
+
+  // Consentimiento explícito para guardar (cifrado, máx. 30 días) lo que ADA extrae de los documentos.
+  function tarjetaConsentimiento(c) {
+    const t = document.createElement('div');
+    t.className = 'tarjeta tarjeta-consentimiento';
+    t.innerHTML = '<div class="tarjeta-cab"><span><strong>¿Guardo lo que extraigo de tus documentos?</strong></span></div><p class="meta"></p>'
+      + '<div class="tarjeta-botones"><button type="button" class="principal">Aceptar y guardar cifrado</button><button type="button" class="descartar">No guardar</button></div>';
+    t.querySelector('p').textContent = c.texto;
+    const responder = async (acepto) => {
+      t.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      try {
+        await api('/api/extracciones/consentimiento', { method: 'POST', body: JSON.stringify({ acepto }) });
+        consentimientoPendiente = null;
+        pintarEntregas();
+        aviso(acepto ? 'Listo: guardo cifrado lo que extraiga (máx. 30 días). Lo borras cuando quieras en Ajustes.' : 'Entendido: no guardo nada. Sigo leyendo tus documentos igual.');
+        if (!$('#ajuste-cifrado').hidden) pintarDocumentosGuardados();
+      } catch (e) {
+        t.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+        aviso(e.message, true);
+      }
+    };
+    t.querySelector('.principal').addEventListener('click', () => responder(true));
+    t.querySelector('.descartar').addEventListener('click', () => responder(false));
+    return t;
   }
 
   // Botón para llamar: marca desde el teléfono solo cuando Cristian lo toca.
@@ -969,6 +996,9 @@
           llamadasActuales.push(d);
           pintarEntregas();
           if (window.AdaAndroid) llamarDirecto(d);
+        } else if (tipo === 'consentimiento_extracciones') {
+          consentimientoPendiente = d;
+          pintarEntregas();
         } else if (tipo === 'documento') {
           docsActuales.push(d);
           pintarEntregas();
@@ -1650,7 +1680,7 @@
       $('#ajuste-personas').hidden = !a.usuario.admin;
       $('#ajuste-lab').hidden = !a.usuario.admin;
       $('#ajuste-cifrado').hidden = !a.usuario.admin;
-      if (a.usuario.admin) pintarCifrado();
+      if (a.usuario.admin) { pintarCifrado(); pintarDocumentosGuardados(); }
       if (a.usuario.admin) pintarPersonas();
     }
     $('#ia-estado').textContent = `Modelos: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
@@ -1722,6 +1752,44 @@
     }
   }
   $('#cif-revisar').addEventListener('click', pintarCifrado);
+
+  // Documentos guardados (Fase 3b): estado del consentimiento, cuántos hay y botones para borrar. Nunca muestra texto.
+  async function pintarDocumentosGuardados() {
+    const caja = $('#docs-guardados');
+    try {
+      const r = await api('/api/extracciones');
+      const est = r.consentimiento.estado;
+      $('#dg-consentimiento').textContent = est === 'aceptado' ? `Aceptado (${new Date(r.consentimiento.fecha).toLocaleDateString('es-CL')})` : est === 'rechazado' ? 'No guardar' : 'Sin responder';
+      $('#dg-cantidad').textContent = `${r.documentos} (${Math.round(r.caracteres / 1000)} mil caracteres)`;
+      $('#dg-retencion').textContent = `${r.retencion_dias} días desde que se extrae`;
+      $('#dg-temporales').textContent = String(r.temporales_pendientes);
+      $('#dg-aceptar').hidden = est === 'aceptado';
+      $('#dg-retirar').hidden = est !== 'aceptado';
+      $('#dg-reintentar').hidden = !r.temporales_pendientes;
+      caja.hidden = false;
+    } catch (e) {
+      $('#dg-consentimiento').textContent = e.message;
+      caja.hidden = false;
+    }
+  }
+  $('#dg-aceptar').addEventListener('click', async () => {
+    try { await api('/api/extracciones/consentimiento', { method: 'POST', body: JSON.stringify({ acepto: true }) }); consentimientoPendiente = null; pintarEntregas(); aviso('Listo: guardo cifrado lo que extraiga (máx. 30 días).'); } catch (e) { aviso(e.message, true); }
+    pintarDocumentosGuardados();
+  });
+  $('#dg-retirar').addEventListener('click', async () => {
+    if (!confirm('¿Dejar de guardar y borrar todos los documentos guardados?')) return;
+    try { const r = await api('/api/extracciones/consentimiento', { method: 'POST', body: JSON.stringify({ acepto: false }) }); aviso(`Listo: no guardo más y borré ${r.borradas} documento(s).`); } catch (e) { aviso(e.message, true); }
+    pintarDocumentosGuardados();
+  });
+  $('#dg-borrar').addEventListener('click', async () => {
+    if (!confirm('¿Borrar todos los documentos guardados? Se volverán a extraer cuando hagan falta.')) return;
+    try { const r = await api('/api/extracciones', { method: 'DELETE' }); aviso(`Borré ${r.borradas} documento(s) guardado(s).`); } catch (e) { aviso(e.message, true); }
+    pintarDocumentosGuardados();
+  });
+  $('#dg-reintentar').addEventListener('click', async () => {
+    try { const r = await api('/api/extracciones/temporales/reintentar', { method: 'POST' }); aviso(`Copias temporales: ${r.borrados} borradas, ${r.fallidos} con error, ${r.omitidos} sin la marca de ADA (no se tocaron).`); } catch (e) { aviso(e.message, true); }
+    pintarDocumentosGuardados();
+  });
 
   // Exportación del diagnóstico (solo Cristian).
   $('#diag-buscar').addEventListener('click', async () => {

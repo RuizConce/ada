@@ -255,6 +255,15 @@ const EJECUTORES = {
     await dormir(entrada.ms_despues || 0, senal); // ventana en que un corte deja el efecto hecho pero sin anotar
     return { resultado: { efecto_id: creado.id }, costo: 0 };
   },
+  // Extracción de un documento (Fase 3b): código, sin IA. Usa la misma capa de extracciones que la
+  // conversación: si el archivo no cambió y hay una extracción válida, no se vuelve a descargar.
+  // El resultado del paso guarda solo metadatos (id, versión, tamaño, de dónde salió), nunca el texto.
+  async extraer({ entrada, trabajoId, pasoId }) {
+    if (!entrada.archivo_id) throw new Error('extraer necesita archivo_id');
+    const Drive = require('./drive');
+    const r = await Drive.extraerParaTrabajo(entrada.archivo_id, { trabajoId, pasoId });
+    return { resultado: r, costo: 0 };
+  },
   // Punto de control: propone una lista (p. ej. los requisitos extraídos) y espera aprobación humana.
   async sim_aprobacion({ entrada }) {
     return { esperar: true, resultado: { lista: entrada.lista || [], pregunta: entrada.pregunta || '¿Apruebas esta lista?' }, costo: 0 };
@@ -465,7 +474,7 @@ async function ejecutarPaso(t, p, senal) {
       const [v] = await qPrincipal('SELECT lease_epoch, lease_de FROM trabajos WHERE id = ?', [t.id]);
       if (!v || v.lease_epoch !== t.lease_epoch || v.lease_de !== INSTANCIA || senal.aborted) throw Object.assign(new Error('perdió el turno de ejecución'), { cancelado: true, perdido: true });
     };
-    salida = await EJECUTORES[p.tipo]({ entrada, intento, senal, previos, efectoClave, trabajoId: t.id, confirmarLease });
+    salida = await EJECUTORES[p.tipo]({ entrada, intento, senal, previos, efectoClave, trabajoId: t.id, pasoId: p.id, confirmarLease });
   } catch (e) {
     const costoParcial = e.cancelado ? num(entrada.estimado) * 0.5 : 0;
     await Registro.llamada({ origen: 'simulacion', turnoId: t.id, trabajoId: t.id, pasoId: p.id, paso: intento, modelo: 'simulado', usage: {}, costoForzado: costoParcial, duracionMs: Date.now() - t0, error: e.cancelado ? 'cancelado' : e.message, estimado: requerido });

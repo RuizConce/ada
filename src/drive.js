@@ -2,11 +2,17 @@
 // Leer y buscar es libre; mover, renombrar, enviar a la papelera o editar exige confirmación.
 const G = require('./google');
 const H = require('./herramientas');
+const Extracciones = require('./extracciones');
+const { qPrincipal, usuario } = require('./db');
 
-const DRIVE = 'https://www.googleapis.com/drive/v3';
-const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets';
+// ADA_DRIVE_URL solo existe en el entorno de pruebas (Drive simulado); en producción se usa Google.
+const SIMULADO = process.env.ADA_DRIVE_URL || '';
+const DRIVE = SIMULADO ? `${SIMULADO}/drive/v3` : 'https://www.googleapis.com/drive/v3';
+const SHEETS = SIMULADO ? `${SIMULADO}/sheets/v4/spreadsheets` : 'https://sheets.googleapis.com/v4/spreadsheets';
 const DOCS = 'https://docs.googleapis.com/v1/documents';
 const CAMPOS = 'id,name,mimeType,modifiedTime,webViewLink,parents,size,owners(displayName)';
+const CAMPOS_VERSION = `${CAMPOS},version,md5Checksum,trashed`;
+const PREFIJO_TEMPORAL = 'ADA temporal - ';
 
 const TIPOS = {
   'application/vnd.google-apps.document': 'Google Docs',
@@ -36,17 +42,25 @@ async function conectado() {
 }
 
 async function gfetch(url, opciones = {}) {
-  const token = await G.tokenAcceso();
-  const res = await fetch(url, {
+  const token = SIMULADO ? 'simulado' : await G.tokenAcceso();
+  let res;
+  try {
+    res = await fetch(url, {
     ...opciones,
     headers: {
       Authorization: `Bearer ${token}`,
       ...(opciones.body && !opciones.sinJson ? { 'Content-Type': 'application/json' } : {}),
       ...(opciones.headers || {}),
     },
-  });
+    });
+  } catch (e) {
+    throw Object.assign(new Error(`No pude conectar con Google Drive (${e.message})`), { temporal: true });
+  }
   if (opciones.crudo) {
-    if (!res.ok) throw new Error(`Google Drive respondió ${res.status}`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(`Google Drive respondió ${res.status}`), { status: res.status, razon: razonDe(data) });
+    }
     return res;
   }
   if (res.status === 204) return {};
@@ -54,12 +68,13 @@ async function gfetch(url, opciones = {}) {
   if (!res.ok) {
     const msg = (data.error && data.error.message) || `Google respondió ${res.status}`;
     if (/has not been used|is disabled/i.test(msg)) {
-      throw new Error(`Falta habilitar una API en Google Cloud (${msg.match(/(Google \w+ API|\w+\.googleapis\.com)/)?.[0] || 'Drive/Sheets/Docs'}).`);
+      throw Object.assign(new Error(`Falta habilitar una API en Google Cloud (${msg.match(/(Google \w+ API|\w+\.googleapis\.com)/)?.[0] || 'Drive/Sheets/Docs'}).`), { status: res.status, config: true });
     }
-    throw new Error(msg);
+    throw Object.assign(new Error(msg), { status: res.status, razon: razonDe(data) });
   }
   return data;
 }
+const razonDe = (data) => (data && data.error && Array.isArray(data.error.errors) && data.error.errors[0] ? data.error.errors[0].reason : '') || '';
 
 const comillas = (t) => String(t).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
@@ -142,45 +157,151 @@ async function leerHoja(id, maxFilas = 300) {
   };
 }
 
-// Convierte una copia temporal a formato Google para poder leer Word, Excel o PDF.
-async function leerConvirtiendo(f, destino, max, desde = 0) {
-  const copia = await gfetch(`${DRIVE}/files/${f.id}/copy?fields=id`, {
+// Registro de copias temporales que no se pudieron borrar (solo las que ADA creó y anotó).
+async function anotarTemporal(copia, original, estado, error) {
+  await qPrincipal(`INSERT INTO temporales_drive (usuario_id, copia_id, original_id, nombre, estado, error, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE estado = VALUES(estado), error = VALUES(error), actualizado_en = VALUES(actualizado_en), intentos = intentos + 1`,
+  [usuario().id, copia.id, original.id, `${PREFIJO_TEMPORAL}${original.name}`.slice(0, 250), estado, error ? String(error).slice(0, 300) : null, new Date(), new Date()]).catch(() => {});
+}
+
+// Borra una copia temporal propia: espera la confirmación y reintenta una vez. Nunca toca el original.
+async function borrarTemporal(copia, original, ctx) {
+  if (!copia || !copia.id || copia.id === original.id) return { ok: false };
+  let ultimo = null;
+  for (let intento = 1; intento <= 2; intento++) {
+    try {
+      await gfetch(`${DRIVE}/files/${encodeURIComponent(copia.id)}?supportsAllDrives=true`, { method: 'DELETE' });
+      await Extracciones.evento('temporal_borrado', ctx, { archivoId: original.id, motivo: intento > 1 ? 'al_reintento' : null });
+      return { ok: true };
+    } catch (e) {
+      if (e.status === 404) return { ok: true }; // ya no está
+      ultimo = e;
+      if (intento === 1) await Extracciones.evento('reintento', ctx, { archivoId: original.id, motivo: `borrar_temporal:${e.status || 'red'}` });
+    }
+  }
+  await Extracciones.evento('temporal_fallido', ctx, { archivoId: original.id, motivo: String(ultimo && (ultimo.status || 'red')) });
+  await anotarTemporal(copia, original, 'pendiente', ultimo && ultimo.message);
+  console.warn(`Drive: no se pudo borrar una copia temporal propia (copia ${copia.id}, de ${original.id}); queda anotada para reintentar.`);
+  return { ok: false };
+}
+
+// Convierte una copia temporal a formato Google para poder leer Word, Excel o PDF (texto completo).
+async function extraerConvirtiendo(f, destino, ctx) {
+  const copia = await gfetch(`${DRIVE}/files/${encodeURIComponent(f.id)}/copy?fields=id,name&supportsAllDrives=true`, {
     method: 'POST',
-    body: JSON.stringify({ name: `ADA temporal - ${f.name}`, mimeType: destino }),
+    body: JSON.stringify({ name: `${PREFIJO_TEMPORAL}${f.name}`, mimeType: destino, appProperties: { ada_temporal: '1', ada_original: f.id } }),
   });
   try {
-    if (destino.endsWith('spreadsheet')) return { tipo: TIPOS[f.mimeType], ...(await leerHoja(copia.id)) };
+    if (destino.endsWith('spreadsheet')) return { tipo: 'hoja', tipo_archivo: TIPOS[f.mimeType], ...(await leerHoja(copia.id)) };
     const res = await gfetch(`${DRIVE}/files/${copia.id}/export?mimeType=text/plain`, { crudo: true });
-    return { tipo: TIPOS[f.mimeType], ...recortar(await res.text(), max, desde) };
+    return { tipo: 'texto', tipo_archivo: TIPOS[f.mimeType], texto: await res.text() };
   } finally {
-    gfetch(`${DRIVE}/files/${copia.id}`, { method: 'DELETE' }).catch(() => {});
+    await borrarTemporal(copia, f, ctx);
   }
 }
 
-async function leer(a = {}) {
+const LEIBLE = (m) => m === 'application/vnd.google-apps.spreadsheet' || m === 'application/vnd.google-apps.document' || m === 'application/vnd.google-apps.presentation'
+  || m.startsWith('text/') || m.includes('spreadsheetml') || m === 'application/vnd.ms-excel'
+  || m === 'application/pdf' || m.includes('wordprocessingml') || m === 'application/msword' || m.includes('opendocument.text') || m === 'application/rtf';
+
+// Extrae el contenido completo de un archivo (código, sin IA). Lo usa la capa de extracciones.
+async function extraerContenido(f, ctx) {
+  const m = f.mimeType;
+  if (m === 'application/vnd.google-apps.spreadsheet') return { tipo: 'hoja', tipo_archivo: 'Google Sheets', ...(await leerHoja(f.id)) };
+  if (m === 'application/vnd.google-apps.document' || m === 'application/vnd.google-apps.presentation') {
+    const res = await gfetch(`${DRIVE}/files/${f.id}/export?mimeType=text/plain`, { crudo: true });
+    return { tipo: 'texto', tipo_archivo: TIPOS[m], texto: await res.text() };
+  }
+  if (m.startsWith('text/')) {
+    const res = await gfetch(`${DRIVE}/files/${f.id}?alt=media`, { crudo: true });
+    return { tipo: 'texto', tipo_archivo: TIPOS[m] || 'Texto', texto: await res.text() };
+  }
+  if (m.includes('spreadsheetml') || m === 'application/vnd.ms-excel') return extraerConvirtiendo(f, 'application/vnd.google-apps.spreadsheet', ctx);
+  return extraerConvirtiendo(f, 'application/vnd.google-apps.document', ctx);
+}
+
+const metadatos = (id) => gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?fields=${CAMPOS_VERSION}&supportsAllDrives=true`);
+const DRIVE_EXTRACCION = { metadatos, extraer: extraerContenido, leible: (m) => LEIBLE(m.mimeType || '') };
+
+// Lee un archivo: lo guardado si sigue valiendo (misma versión y con acceso), o lo extrae una sola vez.
+async function leer(a = {}, ctx = {}) {
   if (!a.id) throw new Error('id es obligatorio (búscalo con buscar_drive)');
   const max = Math.min(parseInt(a.max_caracteres, 10) || 20000, 60000);
   const desde = Math.max(0, parseInt(a.desde, 10) || 0);
-  const f = await gfetch(`${DRIVE}/files/${encodeURIComponent(a.id)}?fields=${CAMPOS}&supportsAllDrives=true`);
+  const contexto = { origen: ctx.trabajoId ? 'trabajo' : 'chat', conversacionId: ctx.conversacionId, turnoId: ctx.turnoId, trabajoId: ctx.trabajoId, pasoId: ctx.pasoId };
+  // Carpetas y tipos sin texto: solo sus datos (no se descarga ni se extrae nada).
+  const previo = await Extracciones.obtener(a.id, { metadatos, extraer: extraerContenido, leible: (m) => LEIBLE(m.mimeType || '') }, contexto);
+  const f = previo.meta;
   const base = { id: f.id, nombre: f.name, enlace: f.webViewLink };
-  const m = f.mimeType;
-  if (m === 'application/vnd.google-apps.spreadsheet') return { ...base, tipo: 'Google Sheets', ...(await leerHoja(f.id)) };
-  if (m === 'application/vnd.google-apps.document' || m === 'application/vnd.google-apps.presentation') {
-    const res = await gfetch(`${DRIVE}/files/${f.id}/export?mimeType=text/plain`, { crudo: true });
-    return { ...base, tipo: TIPOS[m], ...recortar(await res.text(), max, desde) };
+  if (previo.noLeible) {
+    if (f.mimeType === 'application/vnd.google-apps.folder') return { ...base, tipo: 'Carpeta', ...(await listarCarpeta({ carpeta_id: f.id })) };
+    return { ...base, tipo: TIPOS[f.mimeType] || f.mimeType, nota: 'No puedo leer el contenido de este tipo de archivo; solo sus datos.' };
   }
-  if (m === 'application/vnd.google-apps.folder') return { ...base, tipo: 'Carpeta', ...(await listarCarpeta({ carpeta_id: f.id })) };
-  if (m.startsWith('text/')) {
-    const res = await gfetch(`${DRIVE}/files/${f.id}?alt=media`, { crudo: true });
-    return { ...base, tipo: TIPOS[m] || 'Texto', ...recortar(await res.text(), max, desde) };
+  const c = previo.contenido;
+  const origen = previo.fuente === 'guardado' || previo.fuente === 'simultanea'
+    ? { fuente: 'guardado', nota_fuente: 'Contenido ya extraído de esta misma versión: no se volvió a descargar.' }
+    : { fuente: 'drive' };
+  let cuerpo;
+  if (c.tipo === 'hoja') {
+    cuerpo = { tipo: c.tipo_archivo, titulo: c.titulo, hojas: c.hojas };
+    await Extracciones.evento('lectura_tramo', contexto, { archivoId: f.id, nombre: f.name, version: previo.version, desde: 0, hasta: JSON.stringify(c).length, caracteres: JSON.stringify(c).length });
+  } else {
+    cuerpo = { tipo: c.tipo_archivo, ...recortar(c.texto, max, desde) };
+    await Extracciones.evento('lectura_tramo', contexto, { archivoId: f.id, nombre: f.name, version: previo.version, desde, hasta: Math.min(c.texto.length, desde + max), caracteres: c.texto.length });
   }
-  if (m.includes('spreadsheetml') || m === 'application/vnd.ms-excel') {
-    return { ...base, ...(await leerConvirtiendo(f, 'application/vnd.google-apps.spreadsheet', max, desde)) };
+  const r = { ...base, version: previo.version, ...origen, ...cuerpo };
+  if (previo.sinGuardar === 'consentimiento_pendiente' && contexto.origen === 'chat' && typeof ctx.emitir === 'function' && !ctx.consentimientoPedido) {
+    ctx.consentimientoPedido = true;
+    ctx.emitir('consentimiento_extracciones', { texto: Extracciones.TEXTO_CONSENTIMIENTO });
+    r.aviso_guardado = 'Te aparece en pantalla una pregunta para guardar cifrado lo que extraigo de tus documentos (30 días como máximo). Menciónaselo en una frase: decide con los botones; si no acepta, todo sigue funcionando sin guardar.';
   }
-  if (m === 'application/pdf' || m.includes('wordprocessingml') || m === 'application/msword' || m.includes('opendocument.text') || m === 'application/rtf') {
-    return { ...base, ...(await leerConvirtiendo(f, 'application/vnd.google-apps.document', max, desde)) };
+  return r;
+}
+
+// Para los encargos (motor de trabajos): extrae o reutiliza sin devolver texto al resultado del paso.
+// Hasta aprobar la prueba con Drive real, solo funciona con Drive simulado o en la carpeta de prueba aprobada.
+async function extraerParaTrabajo(archivoId, ctx) {
+  const carpetaPrueba = process.env.ADA_DRIVE_CARPETA_PRUEBA || '';
+  if (!SIMULADO && !carpetaPrueba) {
+    throw Object.assign(new Error('Los encargos todavía no pueden leer documentos reales: solo Drive simulado o la carpeta de prueba aprobada.'), { status: 409, config: true });
   }
-  return { ...base, tipo: TIPOS[m] || m, nota: 'No puedo leer el contenido de este tipo de archivo; solo sus datos.' };
+  const r = await Extracciones.obtener(archivoId, {
+    metadatos: async (id) => {
+      const meta = await metadatos(id);
+      if (!SIMULADO && !(carpetaPrueba && (meta.parents || []).includes(carpetaPrueba))) {
+        throw Object.assign(new Error('Los encargos todavía no pueden leer documentos reales: solo Drive simulado o la carpeta de prueba aprobada.'), { status: 409, config: true });
+      }
+      return meta;
+    },
+    extraer: extraerContenido,
+    leible: (m) => LEIBLE(m.mimeType || ''),
+  }, { ...ctx, origen: 'trabajo' });
+  if (r.noLeible) return { archivo_id: r.meta.id, nombre: r.meta.name, version: r.version, caracteres: 0, fuente: 'sin_texto', guardado: false };
+  const total = r.contenido.tipo === 'texto' ? r.contenido.texto.length : JSON.stringify(r.contenido).length;
+  return { archivo_id: r.meta.id, nombre: r.meta.name, version: r.version, caracteres: total, fuente: r.fuente === 'guardado' || r.fuente === 'simultanea' ? 'guardado' : 'drive', guardado: !r.sinGuardar };
+}
+
+// Reintenta borrar las copias temporales propias que quedaron anotadas. Antes de borrar, comprueba que la
+// copia lleva la marca de ADA y el nombre esperado: nunca borra originales ni archivos sin esa marca.
+async function reintentarTemporales() {
+  const filas = await qPrincipal("SELECT copia_id, original_id, nombre FROM temporales_drive WHERE usuario_id = ? AND estado = 'pendiente' LIMIT 50", [usuario().id]);
+  let borrados = 0; let fallidos = 0; let omitidos = 0;
+  for (const t of filas) {
+    try {
+      const m = await gfetch(`${DRIVE}/files/${encodeURIComponent(t.copia_id)}?fields=id,name,appProperties&supportsAllDrives=true`);
+      const propio = m.appProperties && m.appProperties.ada_temporal === '1' && String(m.name || '').startsWith(PREFIJO_TEMPORAL) && m.id !== t.original_id;
+      if (!propio) { omitidos += 1; await qPrincipal("UPDATE temporales_drive SET estado = 'omitido', actualizado_en = ? WHERE usuario_id = ? AND copia_id = ?", [new Date(), usuario().id, t.copia_id]); continue; }
+      await gfetch(`${DRIVE}/files/${encodeURIComponent(t.copia_id)}?supportsAllDrives=true`, { method: 'DELETE' });
+      borrados += 1;
+      await qPrincipal("UPDATE temporales_drive SET estado = 'borrado', actualizado_en = ? WHERE usuario_id = ? AND copia_id = ?", [new Date(), usuario().id, t.copia_id]);
+      await Extracciones.evento('temporal_borrado', { origen: 'ajustes' }, { archivoId: t.original_id, motivo: 'reintento_manual' });
+    } catch (e) {
+      if (e.status === 404) { borrados += 1; await qPrincipal("UPDATE temporales_drive SET estado = 'borrado', actualizado_en = ? WHERE usuario_id = ? AND copia_id = ?", [new Date(), usuario().id, t.copia_id]); continue; }
+      fallidos += 1;
+      await qPrincipal("UPDATE temporales_drive SET intentos = intentos + 1, error = ?, actualizado_en = ? WHERE usuario_id = ? AND copia_id = ?", [String(e.message).slice(0, 300), new Date(), usuario().id, t.copia_id]);
+    }
+  }
+  return { revisados: filas.length, borrados, fallidos, omitidos };
 }
 
 // ---------- Ordenar ----------
@@ -399,4 +520,4 @@ H.registrar([
   editar_documento_drive: editarDocumento,
 });
 
-module.exports = { conectado, subirComoGoogle, buscar, leer };
+module.exports = { conectado, subirComoGoogle, buscar, leer, extraerParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };

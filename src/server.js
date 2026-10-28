@@ -315,8 +315,18 @@ app.get('/api/cifrado', auth, soloAdmin, envolver(() => Cifrado.estado()));
 app.post('/api/cifrado/recifrar', auth, soloAdmin, envolver(() => Cifrado.recifrar([
   { tabla: 'trabajos', id: 'id', col: 'objetivo_cifrado' }, { tabla: 'trabajos', id: 'id', col: 'esperado_cifrado' },
   { tabla: 'trabajos', id: 'id', col: 'resultado_cifrado' }, { tabla: 'trabajo_pasos', id: 'id', col: 'entrada_cifrada' },
-  { tabla: 'trabajo_pasos', id: 'id', col: 'resultado_cifrado' },
+  { tabla: 'trabajo_pasos', id: 'id', col: 'resultado_cifrado' }, { tabla: 'extracciones', id: 'id', col: 'texto_cifrado', alFallar: "UPDATE extracciones SET texto_cifrado = NULL, estado = 'invalidada', motivo = 'clave_distinta' WHERE id = ?" },
 ])));
+// Fase 3b: extracciones de documentos (solo la cuenta principal). Nunca devuelven texto de documentos.
+const Extracciones = require('./extracciones');
+app.get('/api/extracciones', auth, soloAdmin, envolver(async () => ({ ...(await Extracciones.resumen()), archivos: await Extracciones.listar() })));
+app.post('/api/extracciones/consentimiento', auth, soloAdmin, envolver((req) => Extracciones.responderConsentimiento(!!(req.body || {}).acepto)));
+app.delete('/api/extracciones', auth, soloAdmin, envolver(() => Extracciones.borrarTodo()));
+app.delete('/api/extracciones/:archivo', auth, soloAdmin, envolver((req) => Extracciones.borrarArchivo(req.params.archivo)));
+app.get('/api/extracciones/metricas', auth, soloAdmin, envolver((req) => Extracciones.metricas({
+  desde: req.query.desde, hasta: req.query.hasta, conversacionId: parseInt(req.query.conversacion, 10) || null, turnoId: req.query.turno || null, trabajoId: req.query.trabajo || null,
+})));
+app.post('/api/extracciones/temporales/reintentar', auth, soloAdmin, envolver(() => require('./drive').reintentarTemporales()));
 app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
@@ -426,6 +436,10 @@ initDb()
     Avisos.iniciar();
     require('./registro').marcarInterrumpidos(); // turnos que el reinicio dejó a medias
     Trabajos.iniciar(); // ejecutor de encargos complejos (ADA_TRABAJOS=no lo apaga)
+    // Extracciones vencidas (30 días): limpieza al arrancar y cada 6 horas (además, nunca se usan vencidas).
+    const limpiar = () => comoUsuario({ id: 1, nombre: 'Cristian', admin: true }, () => Extracciones.limpiarVencidas()).catch((e) => console.error('Extracciones (limpieza):', e.message));
+    limpiar();
+    setInterval(limpiar, 6 * 3600e3).unref();
   })
   .catch((e) => {
     console.error('No pude iniciar la base de datos:', e.message);

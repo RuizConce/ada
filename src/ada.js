@@ -11,6 +11,7 @@ const M = require('./gmail'); // registra las herramientas de correo
 const { claude, elegirModelo, costoUSD, estimarCosto } = require('./claude');
 const Consumo = require('./consumo');
 const Registro = require('./registro');
+const Extracciones = require('./extracciones');
 
 // Turno en curso por persona, para poder detenerlo de verdad (no solo cerrar la pantalla).
 const enCurso = new Map(); // persona → { cancelado, stream }
@@ -266,6 +267,12 @@ async function revisadoEnConversacion(conversacionId, maxCaracteres = 16000) {
 
 // Historial de la conversación actual. Si recién empieza, incluye el cierre de la anterior para dar continuidad.
 // Qué consultó ADA en una respuesta, en una línea ("buscar_correos, web_search").
+// Resultado de leer_drive sin el contenido del documento (para guardarlo en el historial de mensajes).
+function sinTextoDeDocumento(r) {
+  const { texto, hojas, ...resto } = r;
+  return { ...resto, ...(texto != null ? { caracteres_leidos: String(texto).length } : {}), ...(hojas ? { hojas: hojas.map((h) => ({ nombre: h.nombre, filas_totales: h.filas_totales })) } : {}) };
+}
+
 function consultasDe(revisadoJSON) {
   if (!revisadoJSON) return '';
   try {
@@ -299,6 +306,17 @@ async function historialParaClaude(conversacionId, limite = 40) {
     const last = msgs[msgs.length - 1];
     if (last && last.role === r.rol) last.content += `\n\n${contenido}`;
     else msgs.push({ role: r.rol, content: contenido });
+  }
+  // Documentos de Drive ya leídos en esta conversación (solo id, nombre y hasta dónde): así ADA sabe qué leyó
+  // aunque el contenido no esté en el historial, y no afirma haber leído menos (ni más) de lo real.
+  const leidos = await Extracciones.leidosEnConversacion(conversacionId);
+  if (leidos.length) {
+    const guardar = await Extracciones.puedeGuardar().catch(() => ({ ok: false }));
+    const lista = leidos.map((d) => `${d.nombre || '(sin nombre)'} [id ${d.archivo_id}]${d.total && d.hasta < d.total ? ` (leído hasta el carácter ${d.hasta} de ${d.total})` : ''}`).join('; ');
+    const nota = `[Sistema: documentos de Drive que leíste de verdad en esta conversación (${leidos.length}): ${lista}. Si te preguntan qué leíste, responde con esta lista. ${guardar.ok
+      ? 'Su texto está guardado cifrado: si necesitas el contenido, vuelve a llamar leer_drive con el mismo id; si el archivo no cambió, sale de lo guardado sin descargarlo de nuevo.'
+      : 'Su contenido no está en el historial: si lo necesitas, vuelve a leerlo con leer_drive.'}]`;
+    pendiente = pendiente ? `${pendiente}\n${nota}` : nota;
   }
   msgs.notaFinal = pendiente; // para anteponer al mensaje nuevo
   return msgs;
@@ -537,6 +555,8 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
   ]);
   const turnoId = Registro.nuevoId();
   await Registro.iniciarTurno({ turnoId, conversacionId, origen: 'conversacion' });
+  // Contexto de las herramientas: una vez por turno (así la pregunta de consentimiento sale una sola vez).
+  const ctxHerramientas = { conversacionId, turnoId, emitir: (tipo, datos) => alEvento(tipo, datos) };
   // Tope del día alcanzado: primero solo modelo rápido; sobre el tope máximo, ADA no llama a Claude.
   if (presupuesto.nivel === 'detenido') {
     const msg = `Hoy ya se gastaron US$${presupuesto.gasto.toFixed(2).replace('.', ',')} en IA y llegamos al máximo del día (US$${presupuesto.duro.toFixed(2).replace('.', ',')}), así que no voy a procesar más hasta mañana. Si necesitas seguir hoy, sube el tope en Railway (ADA_TOPE_DIARIO_MAX).`;
@@ -729,14 +749,16 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
       const repetida = !!(claveRep && yaEjecutadas.has(claveRep));
       const r = repetida
         ? { repetida: true, nota: 'Ya hiciste exactamente esta consulta en este mismo paso de trabajo: usa ese resultado (está más arriba) y avanza.' }
-        : await H.ejecutar(bloque.name, bloque.input, { conversacionId });
+        : await H.ejecutar(bloque.name, bloque.input, ctxHerramientas);
       if (claveRep && !repetida) yaEjecutadas.set(claveRep, true);
       tiempos.herramientas_ms += Date.now() - tH;
       encargoId = encargoId || Registro.encargoDe(bloque.name, bloque.input, r);
       const textoR = JSON.stringify(r) || '';
       Registro.operacion({ conversacionId, turnoId, llamadaId: reg.id, herramienta: bloque.name, input: bloque.input, resultado: r,
         error: r && r.error ? String(r.error) : null, tamano: textoR.length, repetida, duracionMs: Date.now() - tH });
-      revisado.push({ herramienta: bloque.name, entrada: recortarTexto(JSON.stringify(bloque.input), 300), resultado: recortarTexto(JSON.stringify(r), 4000) });
+      // El texto de los documentos no se guarda en el historial (va cifrado en extracciones): solo sus datos.
+      const paraRevisado = bloque.name === 'leer_drive' && r && !r.error ? sinTextoDeDocumento(r) : r;
+      revisado.push({ herramienta: bloque.name, entrada: recortarTexto(JSON.stringify(bloque.input), 300), resultado: recortarTexto(JSON.stringify(paraRevisado), 4000) });
       const etiqueta = ETIQUETAS[bloque.name] && !r.error ? ETIQUETAS[bloque.name](bloque.input, r) : null;
       if (etiqueta) acciones.push({ herramienta: bloque.name, etiqueta });
       if (bloque.name === 'crear_archivo' && r.ok) {

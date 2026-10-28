@@ -78,14 +78,23 @@ async function recifrar(columnas) {
   const c = claves();
   if (!c.vigente) throw new Error('Falta la clave vigente');
   let cambiados = 0;
-  for (const { tabla, id, col } of columnas) {
+  let anulados = 0;
+  for (const { tabla, id, col, alFallar } of columnas) {
     const filas = await qPrincipal(`SELECT ${id} AS id, ${col} AS v FROM ${tabla} WHERE ${col} IS NOT NULL AND ${col} NOT LIKE ?`, [`v1:${c.vigente.kid}:%`]);
     for (const f of filas) {
-      await qPrincipal(`UPDATE ${tabla} SET ${col} = ? WHERE ${id} = ?`, [cifrar(descifrar(f.v)), f.id]);
+      let claro;
+      try {
+        claro = descifrar(f.v);
+      } catch (e) {
+        // Datos recuperables (p. ej. extracciones, que se vuelven a extraer): se anulan en vez de detener todo.
+        if (alFallar && e.sinClave) { await qPrincipal(alFallar, [f.id]); anulados += 1; continue; }
+        throw e;
+      }
+      await qPrincipal(`UPDATE ${tabla} SET ${col} = ? WHERE ${id} = ?`, [cifrar(claro), f.id]);
       cambiados += 1;
     }
   }
-  return { recifrados: cambiados, id_clave: c.vigente.kid };
+  return { recifrados: cambiados, anulados, id_clave: c.vigente.kid };
 }
 
 module.exports = { estado, disponible, cifrar, descifrar, cifrarJSON, descifrarJSON, idDe, recifrar };
