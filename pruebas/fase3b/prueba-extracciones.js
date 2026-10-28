@@ -291,10 +291,16 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(r.status === 200 && !r.eventos.some((e) => e.tipo === 'consentimiento_extracciones') && sql('SELECT COUNT(*) FROM extracciones') === '0' && /1 lecturas/.test(r.texto),
     'sin ADA_EXTRACCIONES=si: lee igual, no pregunta y no guarda nada');
   await parar('O');
-  // Modo "prueba": solo guarda archivos de la carpeta de prueba aprobada, aunque se pidan directo por id.
+  // Modo "prueba": solo se abre contenido de la carpeta de prueba; lo de fuera se bloquea en el servidor.
   await ctl('/control/archivos', { archivos: [{ ...doc('Z1', 'Z1_fuera.pdf', PDF), parents: ['otra-carpeta'] }, { ...doc('Z2', 'Z2_subcarpeta.pdf', PDF), parents: ['subcarpeta-de-prueba'] }] });
-  sql("DELETE FROM integraciones WHERE nombre='extracciones_consentimiento'");
   sql('DELETE FROM extracciones');
+  // Antes de la prueba (modo encendido), Z1 queda guardado: durante la prueba tampoco debe reutilizarse.
+  await arrancar('Q', 3205, { ADA_EXTRACCIONES: 'si' });
+  const tkQ = await login(3205);
+  await lee([[{ id: 'Z1' }]], { puerto: 3205, tk: tkQ });
+  ok(sql("SELECT estado FROM extracciones WHERE archivo_id='Z1'") === 'valida', 'preparación: Z1 guardado antes de la prueba');
+  await parar('Q');
+  sql("DELETE FROM integraciones WHERE nombre='extracciones_consentimiento'");
   await arrancar('P', 3204, { ADA_EXTRACCIONES: 'prueba', ADA_DRIVE_CARPETA_PRUEBA: 'carpeta-prueba' });
   const tkP = await login(3204);
   r = await chat('ESTADO GUARDADO', { puerto: 3204, tk: tkP });
@@ -302,26 +308,41 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(est.modo === 'prueba' && est.cifrado_listo === true && est.carpeta_prueba_configurada === true && est.carpeta_prueba_termina_en === 'prueba' && est.consentimiento === 'sin_responder' && est.puede_guardar === false && /tarjeta de consentimiento/.test(est.siguiente_paso),
     `ADA puede consultar al servidor si puede seguir (estado_guardado_documentos): modo ${est.modo}, cifrado listo, carpeta configurada, consentimiento ${est.consentimiento}`);
   ok(!/prueba3b-|ADA_CLAVE|DATABASE_URL/.test(r.texto), 'el estado no muestra claves ni variables');
+  const ev0 = desdeUltimo();
   let s0 = await stats();
   r = await lee([[{ id: 'Z1' }, { id: 'Z2' }]], { puerto: 3204, tk: tkP });
   let s1 = await stats();
-  ok(!r.eventos.some((e) => e.tipo === 'consentimiento_extracciones') && sql('SELECT COUNT(*) FROM extracciones') === '0', 'modo prueba, archivos fuera de la carpeta pedidos por id (y uno en una subcarpeta): no pide consentimiento ni guarda');
-  ok(/Estados=leido_sin_guardar:fuera_de_prueba:carpeta=false,leido_sin_guardar:fuera_de_prueba:carpeta=false/.test(r.texto), `ADA recibe el motivo: ${r.texto.split('Estados=')[1]}`);
+  ok(/2 con error/.test(r.texto), `archivos externos pedidos directo por id (uno guardado antes y uno en una subcarpeta): rechazados (${r.texto.split(' Estados')[0]})`);
+  ok(descargasDe(s1, 'Z1') === descargasDe(s0, 'Z1') && descargasDe(s1, 'Z2') === descargasDe(s0, 'Z2') && (s1.copias.Z1 || 0) === (s0.copias.Z1 || 0) && (s1.copias.Z2 || 0) === (s0.copias.Z2 || 0),
+    'rechazados antes de descargar o convertir: 0 descargas y 0 copias');
+  ok(nEventos('reutilizacion', `AND id > ${ev0} AND archivo_id IN ('Z1','Z2')`) === 0 && nEventos('extraccion_nueva', `AND id > ${ev0} AND archivo_id IN ('Z1','Z2')`) === 0 && nEventos('extraccion_sin_guardar', `AND id > ${ev0} AND archivo_id IN ('Z1','Z2')`) === 0,
+    'fuera de la carpeta: ninguna extracción ni reutilización (tampoco de lo guardado antes)');
+  ok(nEventos('bloqueado_prueba', `AND id > ${ev0}`) === 2, 'cada bloqueo queda registrado');
+  const revZ = sql("SELECT revisado FROM mensajes WHERE revisado IS NOT NULL ORDER BY id DESC LIMIT 1");
+  ok(/solo puedo abrir el contenido de archivos de la carpeta de prueba/.test(revZ) && !revZ.includes(`${MARCA}-Z`), 'ADA recibe el motivo del bloqueo, sin contenido');
+  r = await chat('hola', { puerto: 3204, tk: tkP });
+  ok(r.status === 200 && r.texto === 'ok', 'la conversación normal sigue funcionando');
   r = await lee([[{ id: 'A1' }]], { puerto: 3204, tk: tkP });
-  ok(r.eventos.filter((e) => e.tipo === 'consentimiento_extracciones').length === 1 && sql('SELECT COUNT(*) FROM extracciones') === '0' && /consentimiento_pendiente:carpeta=true/.test(r.texto),
-    'archivo de la carpeta de prueba: aparece la tarjeta real de consentimiento y nada se guarda antes de aceptar');
+  ok(r.eventos.filter((e) => e.tipo === 'consentimiento_extracciones').length === 1 && sql("SELECT COUNT(*) FROM extracciones WHERE archivo_id='A1'") === '0' && /consentimiento_pendiente:carpeta=true/.test(r.texto) && /0 con error/.test(r.texto),
+    'archivo de la carpeta autorizada: se lee, aparece la tarjeta real y nada se guarda antes de aceptar');
   await post('/api/extracciones/consentimiento', { acepto: true }, 3204, tkP);
   s0 = await stats();
   r = await lee([[{ id: 'A1' }]], { puerto: 3204, tk: tkP });
-  ok(/Estados=extraccion_nueva_guardada:carpeta=true/.test(r.texto) && descargasDe(await stats(), 'A1') === descargasDe(s0, 'A1') + 1, 'primera lectura tras aceptar: una descarga y extracción nueva guardada');
+  ok(/Estados=extraccion_nueva_guardada:carpeta=true/.test(r.texto) && descargasDe(await stats(), 'A1') === descargasDe(s0, 'A1') + 1, 'primera lectura tras aceptar: una descarga y extracción nueva cifrada');
   s0 = await stats();
   r = await lee([[{ id: 'A1' }, { id: 'Z1' }]], { puerto: 3204, tk: tkP });
   s1 = await stats();
-  ok(/Estados=reutilizada:carpeta=true,leido_sin_guardar:fuera_de_prueba:carpeta=false/.test(r.texto) && descargasDe(s1, 'A1') === descargasDe(s0, 'A1') && descargasDe(s1, 'Z1') === descargasDe(s0, 'Z1') + 1,
-    'segunda lectura: A1 reutilizada sin descargar; Z1 (fuera) se lee sin guardar ni reutilizar');
-  ok(sql("SELECT GROUP_CONCAT(archivo_id) FROM extracciones") === 'A1', 'en la base solo queda A1 (la carpeta de prueba)');
+  ok(/Estados=reutilizada:carpeta=true,error/.test(r.texto) && descargasDe(s1, 'A1') === descargasDe(s0, 'A1') && descargasDe(s1, 'Z1') === descargasDe(s0, 'Z1'),
+    'en el mismo mensaje: A1 reutilizada sin descargar y Z1 rechazado; el turno termina normal');
   r = await api('/api/extracciones', {}, 3204, tkP);
   ok(r.d.modo === 'prueba' && r.d.carpeta_prueba_termina_en === 'prueba', 'Ajustes muestra el modo del servidor y el final del id de la carpeta');
+  m = (await api(`/api/extracciones/metricas?desde=${encodeURIComponent(new Date(Date.now() - 600e3).toISOString())}`, {}, 3204, tkP)).d;
+  ok(m.bloqueados_fuera_de_prueba >= 3, `métricas: ${m.bloqueados_fuera_de_prueba} lecturas bloqueadas fuera de la carpeta`);
+  await parar('P');
+  // Al terminar la prueba se quita el modo y Drive vuelve a la normalidad.
+  await arrancar('P', 3204, { ADA_EXTRACCIONES: '' });
+  r = await lee([[{ id: 'Z1' }]], { puerto: 3204, tk: tkP });
+  ok(/0 con error/.test(r.texto), 'sin el modo prueba, el archivo externo se vuelve a leer con normalidad');
   await parar('P');
   await arrancar('A', 3200);
 

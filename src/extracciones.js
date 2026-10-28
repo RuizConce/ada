@@ -199,6 +199,12 @@ async function obtener(archivoId, drive, ctx = {}) {
   }
   const version = claveVersion(meta);
   if (drive.leible && !drive.leible(meta)) return { meta, version, noLeible: true };
+  // Durante la prueba (ADA_EXTRACCIONES=prueba) solo se lee contenido de la carpeta de prueba: lo de fuera se
+  // rechaza aquí, en el servidor, antes de descargar, convertir o reutilizar nada (también lo guardado antes).
+  if (modo() === 'prueba' && usuario().id === 1 && !enCarpetaDePrueba(meta)) {
+    await evento('bloqueado_prueba', ctx, { archivoId, version, nombre: meta.name });
+    throw err('Durante la prueba de guardado (Fase 3b) solo puedo abrir el contenido de archivos de la carpeta de prueba. Este archivo está fuera, así que no lo abrí. Se vuelve a la normalidad al terminar la prueba.', { bloqueado: true, status: 403 });
+  }
   const guardar = enAlcance(meta) ? await puedeGuardar() : { ok: false, motivo: 'fuera_de_prueba' };
 
   // 2. Reutilizar si hay una extracción válida de esta misma versión.
@@ -300,7 +306,7 @@ async function estadoPublico() {
   const listo = m !== 'no' && Cifrado.disponible() && (m !== 'prueba' || !!carpeta);
   return {
     modo: m,
-    descripcion_modo: m === 'no' ? 'apagado: se lee sin guardar nada' : m === 'prueba' ? 'prueba: solo se guarda lo de la carpeta de prueba; lo de fuera se lee sin guardar' : 'encendido: se guarda lo que se lee',
+    descripcion_modo: m === 'no' ? 'apagado: se lee sin guardar nada' : m === 'prueba' ? 'prueba: solo se puede abrir y guardar el contenido de la carpeta de prueba; lo de fuera está bloqueado hasta terminar la prueba' : 'encendido: se guarda lo que se lee',
     cifrado_listo: Cifrado.disponible(),
     carpeta_prueba_configurada: !!carpeta,
     carpeta_prueba_termina_en: carpeta ? carpeta.slice(-6) : null,
@@ -364,6 +370,7 @@ async function metricas({ desde, hasta, conversacionId, turnoId, trabajoId } = {
     verificaciones_fallidas: cuenta('verificacion_fallida'),
     temporales_borrados: cuenta('temporal_borrado'),
     temporales_fallidos: cuenta('temporal_fallido'),
+    bloqueados_fuera_de_prueba: cuenta('bloqueado_prueba'),
     costo_por_paso_ia: costoPorPaso,
   };
 }
