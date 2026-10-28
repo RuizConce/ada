@@ -28,7 +28,7 @@ async function gastoHoy(uid = usuario().id) {
   const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
   const [[r], [l]] = await Promise.all([
     qPrincipal('SELECT COALESCE(SUM(costo_usd), 0) AS c FROM consumo WHERE usuario_id = ? AND dia = ?', [uid, diaClave(ahora)]),
-    qPrincipal('SELECT COALESCE(SUM(costo_usd), 0) AS c FROM llamadas_ia WHERE usuario_id = ? AND creado_en >= ?', [uid, inicio]).catch(() => [{ c: 0 }]),
+    qPrincipal("SELECT COALESCE(SUM(costo_usd), 0) AS c FROM llamadas_ia WHERE usuario_id = ? AND creado_en >= ? AND origen <> 'simulacion'", [uid, inicio]).catch(() => [{ c: 0 }]),
   ]);
   return Math.max(Number(r.c), Number(l.c));
 }
@@ -94,26 +94,40 @@ async function resumen() {
 }
 
 // ---------- Reserva antes de cada llamada ----------
-// El gasto ya hecho sale de la base (persistente: sobrevive reinicios). Lo que está "en vuelo"
-// (llamadas iniciadas que aún no informan su costo) se reserva en memoria con su estimación, así dos
-// solicitudes simultáneas no pueden pasar juntas el tope del día. (Vale con una sola instancia de
-// servidor, que es como corre ADA en Railway.)
-const enVuelo = new Map(); // persona → Map(id → estimado)
-let siguienteReserva = 1;
-const reservado = (uid) => [...(enVuelo.get(uid) || new Map()).values()].reduce((a, b) => a + b, 0);
-async function reservar(estimado) {
+// Las reservas viven en MySQL (tabla reservas_ia): valen entre procesos y reinicios y vencen solas
+// (10 min por defecto) si el proceso que las hizo muere. La fila de la persona en `usuarios` se
+// bloquea durante la reserva, así dos solicitudes simultáneas no pueden pasar juntas el tope.
+async function reservado(uid = usuario().id) {
+  const [r] = await qPrincipal("SELECT COALESCE(SUM(monto), 0) AS r FROM reservas_ia WHERE usuario_id = ? AND estado = 'activa' AND vence_en > ?", [uid, new Date()]);
+  return Number(r.r);
+}
+async function reservar(estimado, { trabajoId = null, pasoId = null, turnoId = null, venceMs = 10 * 60 * 1000, tope = null } = {}) {
+  const { transaccionPrincipal } = require('./db');
   const u = usuario();
   const gasto = await gastoHoy(u.id);
-  const duro = topeDuro(u);
-  const ocupado = reservado(u.id);
-  if (duro > 0 && gasto + ocupado + estimado > duro) {
-    return { ok: false, gasto, duro, motivo: `tope diario: van US$${gasto.toFixed(2)} + US$${ocupado.toFixed(2)} en curso; esta llamada (~US$${estimado.toFixed(2)}) pasaría el máximo de US$${duro.toFixed(2)}`, liberar: () => {} };
-  }
-  const id = siguienteReserva++;
-  if (!enVuelo.has(u.id)) enVuelo.set(u.id, new Map());
-  enVuelo.get(u.id).set(id, estimado);
-  let liberada = false;
-  return { ok: true, gasto, duro, liberar: () => { if (!liberada) { liberada = true; enVuelo.get(u.id).delete(id); } } };
+  const duro = tope != null ? tope : topeDuro(u);
+  const r = await transaccionPrincipal(async (tq) => {
+    await tq('SELECT id FROM usuarios WHERE id = ? FOR UPDATE', [u.id]);
+    const ahora = new Date();
+    const [{ r: ocupado }] = await tq("SELECT COALESCE(SUM(monto), 0) AS r FROM reservas_ia WHERE usuario_id = ? AND estado = 'activa' AND vence_en > ?", [u.id, ahora]);
+    if (duro > 0 && gasto + Number(ocupado) + estimado > duro) {
+      return { ok: false, gasto, duro, motivo: `tope diario: van US$${gasto.toFixed(2)} + US$${Number(ocupado).toFixed(2)} en curso; esta llamada (~US$${estimado.toFixed(2)}) pasaría el máximo de US$${duro.toFixed(2)}` };
+    }
+    const ins = await tq('INSERT INTO reservas_ia (usuario_id, trabajo_id, paso_id, turno_id, monto, estado, creado_en, vence_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [u.id, trabajoId, pasoId, turnoId, estimado, 'activa', ahora, new Date(ahora.getTime() + venceMs)]);
+    return { ok: true, id: ins.insertId, gasto, duro };
+  });
+  if (!r.ok) return { ...r, liberar: async () => {} };
+  let hecho = false;
+  // liberar(costoReal): sin costo = no se usó; con costo = se liquidó con lo real.
+  r.liberar = async (costoReal) => {
+    if (hecho) return;
+    hecho = true;
+    try {
+      await qPrincipal("UPDATE reservas_ia SET estado = ?, costo_real = ? WHERE id = ? AND estado = 'activa'", [costoReal == null ? 'liberada' : 'liquidada', costoReal == null ? null : costoReal, r.id]);
+    } catch (e) { console.error('Reserva:', e.message); }
+  };
+  return r;
 }
 
 // ---------- Autorización de un mensaje que no cabe en el tope ----------

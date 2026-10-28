@@ -223,8 +223,9 @@ const envolver = (fn) => async (req, res) => {
     if (r === null || r === undefined) return res.status(404).json({ error: 'No encontrado' });
     res.json(r);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
+    const status = Number.isInteger(e.status) && e.status >= 400 && e.status < 600 ? e.status : 500;
+    if (status >= 500) console.error(e);
+    res.status(status).json({ error: e.message });
   }
 };
 
@@ -298,6 +299,24 @@ app.get('/api/diagnostico/conversaciones', auth, soloAdmin, envolver((req) => {
 }));
 app.get('/api/diagnostico/conversaciones/:id', auth, soloAdmin, envolver((req) =>
   Diagnostico.exportar(parseInt(req.params.id, 10), { conTexto: req.query.texto === '1', usuarioId: req.usuario.id })));
+// ---------- Encargos complejos (Etapa 3; fase 3a: solo trabajos simulados, solo Cristian) ----------
+const Trabajos = require('./trabajos');
+app.get('/api/trabajos', auth, soloAdmin, envolver(() => Trabajos.listar()));
+app.post('/api/trabajos', auth, soloAdmin, envolver((req) => Trabajos.crear(req.body || {})));
+app.get('/api/trabajos/:id', auth, soloAdmin, envolver((req) => Trabajos.ver(req.params.id, { conResultado: req.query.resultado === '1' })));
+for (const accion of ['aprobar', 'pausar', 'reanudar', 'cancelar', 'reintentar']) {
+  app.post(`/api/trabajos/:id/${accion}`, auth, soloAdmin, envolver((req) => Trabajos[accion](req.params.id)));
+}
+app.post('/api/trabajos/:id/aprobar-paso', auth, soloAdmin, envolver((req) => Trabajos.aprobarPaso(req.params.id, { lista: (req.body || {}).lista })));
+app.post('/api/trabajos/:id/ampliar', auth, soloAdmin, envolver((req) => Trabajos.ampliar(req.params.id, (req.body || {}).monto)));
+// Cifrado: estado (sin revelar la clave) y recifrado tras rotar la clave.
+const Cifrado = require('./cifrado');
+app.get('/api/cifrado', auth, soloAdmin, envolver(() => Cifrado.estado()));
+app.post('/api/cifrado/recifrar', auth, soloAdmin, envolver(() => Cifrado.recifrar([
+  { tabla: 'trabajos', id: 'id', col: 'objetivo_cifrado' }, { tabla: 'trabajos', id: 'id', col: 'esperado_cifrado' },
+  { tabla: 'trabajos', id: 'id', col: 'resultado_cifrado' }, { tabla: 'trabajo_pasos', id: 'id', col: 'entrada_cifrada' },
+  { tabla: 'trabajo_pasos', id: 'id', col: 'resultado_cifrado' },
+])));
 app.get('/api/consumo', auth, soloAdmin, envolver(() => require('./consumo').resumen()));
 app.post('/api/usuarios', auth, soloAdmin, envolver((req) => U.crear(req.body || {})));
 app.post('/api/usuarios/:id/clave', auth, soloAdmin, envolver((req) => U.nuevaClave(parseInt(req.params.id, 10))));
@@ -406,6 +425,7 @@ initDb()
     Lab.conectarOido(servidor); // oído en tiempo real del laboratorio (WebSocket)
     Avisos.iniciar();
     require('./registro').marcarInterrumpidos(); // turnos que el reinicio dejó a medias
+    Trabajos.iniciar(); // ejecutor de encargos complejos (ADA_TRABAJOS=no lo apaga)
   })
   .catch((e) => {
     console.error('No pude iniciar la base de datos:', e.message);

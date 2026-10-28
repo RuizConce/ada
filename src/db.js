@@ -59,6 +59,24 @@ async function qPrincipal(sql, params = []) {
   return rows;
 }
 
+// Transacción en la base principal: fn recibe una consulta ligada a la misma conexión.
+// Si fn lanza un error, se deshace todo.
+async function transaccionPrincipal(fn) {
+  const cx = await poolDe(1).getConnection();
+  try {
+    await cx.beginTransaction();
+    const tq = async (sql, params = []) => (await cx.query(sql, params))[0];
+    const r = await fn(tq);
+    await cx.commit();
+    return r;
+  } catch (e) {
+    try { await cx.rollback(); } catch (_) {}
+    throw e;
+  } finally {
+    cx.release();
+  }
+}
+
 const ESQUEMA = [
   `CREATE TABLE IF NOT EXISTS lab_voz (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -302,6 +320,8 @@ async function initDb() {
   for (const [col, sql] of [
     ['origen', "ALTER TABLE llamadas_ia ADD COLUMN origen VARCHAR(20) NOT NULL DEFAULT 'conversacion'"],
     ['costo_estimado', 'ALTER TABLE llamadas_ia ADD COLUMN costo_estimado DECIMAL(12,6) NULL'],
+    ['trabajo_id', 'ALTER TABLE llamadas_ia ADD COLUMN trabajo_id CHAR(36) NULL, ADD INDEX idx_trabajo (trabajo_id)'],
+    ['paso_id', 'ALTER TABLE llamadas_ia ADD COLUMN paso_id CHAR(36) NULL'],
   ]) {
     const [{ n }] = await qPrincipal("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'llamadas_ia' AND COLUMN_NAME = ?", [col]);
     if (!n) await qPrincipal(sql);
@@ -320,6 +340,96 @@ async function initDb() {
     inicio DATETIME(3) NOT NULL,
     fin DATETIME(3) NULL,
     INDEX idx_estado (estado), INDEX idx_usuario (usuario_id, inicio)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // ---------- Etapa 3: encargos complejos persistentes (trabajos) ----------
+  // Un solo trabajo activo por persona: columna generada + índice único (vale con solicitudes simultáneas).
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS trabajos (
+    id CHAR(36) PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    tipo VARCHAR(40) NOT NULL,
+    titulo VARCHAR(200) NOT NULL,
+    objetivo_cifrado MEDIUMTEXT NULL,
+    esperado_cifrado MEDIUMTEXT NULL,
+    estado VARCHAR(30) NOT NULL,
+    activo_usuario INT AS (CASE WHEN estado IN ('propuesto','ejecutando','esperando_aprobacion','pausado','pausado_presupuesto','bloqueado') THEN usuario_id ELSE NULL END) STORED,
+    presupuesto_usd DECIMAL(12,6) NOT NULL,
+    gastado_usd DECIMAL(12,6) NOT NULL DEFAULT 0,
+    estimado_total_usd DECIMAL(12,6) NULL,
+    etapa VARCHAR(40) NULL,
+    pasos_total INT NOT NULL DEFAULT 0,
+    pasos_hechos INT NOT NULL DEFAULT 0,
+    pausa_solicitada TINYINT NOT NULL DEFAULT 0,
+    cancelar_solicitado TINYINT NOT NULL DEFAULT 0,
+    lease_de VARCHAR(80) NULL,
+    lease_hasta DATETIME(3) NULL,
+    lease_epoch INT NOT NULL DEFAULT 0,
+    motivo VARCHAR(300) NULL,
+    resultado_cifrado MEDIUMTEXT NULL,
+    resultado_hash CHAR(64) NULL,
+    creado_en DATETIME(3) NOT NULL,
+    aprobado_en DATETIME(3) NULL,
+    actualizado_en DATETIME(3) NOT NULL,
+    terminado_en DATETIME(3) NULL,
+    UNIQUE KEY uq_un_activo (activo_usuario),
+    INDEX idx_estado (estado, lease_hasta)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS trabajo_pasos (
+    id CHAR(36) PRIMARY KEY,
+    trabajo_id CHAR(36) NOT NULL,
+    clave VARCHAR(190) NOT NULL,
+    orden INT NOT NULL,
+    etapa VARCHAR(40) NULL,
+    tipo VARCHAR(40) NOT NULL,
+    entrada_cifrada MEDIUMTEXT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+    intentos INT NOT NULL DEFAULT 0,
+    max_intentos INT NOT NULL DEFAULT 3,
+    externo TINYINT NOT NULL DEFAULT 0,
+    efecto_clave VARCHAR(190) NULL,
+    efecto_estado VARCHAR(20) NULL,
+    lease_epoch INT NULL,
+    estimado_usd DECIMAL(12,6) NULL,
+    costo_usd DECIMAL(12,6) NOT NULL DEFAULT 0,
+    resultado_cifrado MEDIUMTEXT NULL,
+    resultado_hash CHAR(64) NULL,
+    error VARCHAR(300) NULL,
+    inicio DATETIME(3) NULL,
+    fin DATETIME(3) NULL,
+    UNIQUE KEY uq_paso (trabajo_id, clave),
+    INDEX idx_trabajo (trabajo_id, estado, orden)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS trabajo_eventos (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    trabajo_id CHAR(36) NOT NULL,
+    tipo VARCHAR(40) NOT NULL,
+    detalle VARCHAR(300) NULL,
+    monto DECIMAL(12,6) NULL,
+    actor VARCHAR(60) NULL,
+    creado_en DATETIME(3) NOT NULL,
+    INDEX idx_trabajo (trabajo_id, id)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Reservas de presupuesto en MySQL: valen entre procesos y reinicios; vencen solas.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS reservas_ia (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    trabajo_id CHAR(36) NULL,
+    paso_id CHAR(36) NULL,
+    turno_id CHAR(36) NULL,
+    monto DECIMAL(12,6) NOT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'activa',
+    costo_real DECIMAL(12,6) NULL,
+    creado_en DATETIME(3) NOT NULL,
+    vence_en DATETIME(3) NOT NULL,
+    INDEX idx_usuario (usuario_id, estado, vence_en),
+    INDEX idx_trabajo (trabajo_id, estado)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Sistema externo SIMULADO para probar que una acción con efecto fuera de ADA no se repite.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS efectos_simulados (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    clave VARCHAR(190) NOT NULL,
+    trabajo_id CHAR(36) NOT NULL,
+    creado_en DATETIME(3) NOT NULL,
+    INDEX idx_clave (clave)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   await qPrincipal(`CREATE TABLE IF NOT EXISTS operaciones_herramienta (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -390,4 +500,4 @@ async function prepararBase(proyectosIniciales) {
   }
 }
 
-module.exports = { q, qPrincipal, initDb, getPool, usuario, comoUsuario, prepararInvitado, baseDe };
+module.exports = { q, qPrincipal, transaccionPrincipal, initDb, getPool, usuario, comoUsuario, prepararInvitado, baseDe };

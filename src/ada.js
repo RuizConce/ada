@@ -646,27 +646,27 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
       break;
     }
     // Y siempre dentro del tope del día (gasto persistido + lo que está en curso).
-    const reserva = await Consumo.reservar(estimado);
+    const reserva = await Consumo.reservar(estimado, { turnoId });
     if (!reserva.ok) { detenidoPor = 'presupuesto_diario'; motivoDetencion = reserva.motivo; break; }
     const tC = Date.now();
     let resp;
     try {
       resp = await llamarClaude(params, emitir);
     } catch (e) {
-      reserva.liberar();
       const parcial = control.parcial || {};
-      await Registro.llamada({ conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: parcial, duracionMs: Date.now() - tC, estimado,
+      const regErr = await Registro.llamada({ conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: parcial, duracionMs: Date.now() - tC, estimado,
         error: control.cancelado ? 'cancelado por la persona (uso parcial informado hasta el corte)' : `${e.status || ''} ${e.message}` });
+      await reserva.liberar(regErr.costo);
       if (control.cancelado) { detenidoPor = 'cancelado'; break; }
       await Registro.cerrarTurno(turnoId, 'error', `${e.status || ''} ${e.message}`);
       throw e;
     }
-    reserva.liberar();
     const pedidas = (resp.content || []).filter((b) => b.type === 'tool_use' || b.type === 'server_tool_use').map((b) => b.name);
     const reg = await Registro.llamada({
       conversacionId, turnoId, encargoId, paso: vuelta + 1, modelo: eleccion.modelo, usage: resp.usage,
       duracionMs: Date.now() - tC, stopReason: resp.stop_reason, herramientas: pedidas.join(','), requestId: resp._request_id || resp.id, estimado,
     });
+    await reserva.liberar(reg.costo);
     costoTurno += reg.costo;
     paradas.push(resp.stop_reason);
     ultimaConTexto = (resp.content || []).some((b) => b.type === 'text' && b.text && b.text.trim());

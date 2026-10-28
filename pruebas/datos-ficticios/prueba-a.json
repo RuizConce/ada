@@ -1,0 +1,24 @@
+{
+  "_nota": "Datos 100% ficticios para la prueba A (1 documento, 3 requisitos). Ninguna persona, empresa ni trámite es real. El resultado correcto se conoce de antemano para comprobar que ADA clasifica bien, no solo que produce archivos.",
+  "documento_base": {
+    "archivo_id": "ficticio-norma-001",
+    "nombre": "Norma ficticia NF-7 para salas de procedimientos.pdf",
+    "version": "md5:4f1c0a7e9b2d6c3a8e5f0b1d2c3e4f50|v3",
+    "requisitos": [
+      { "id": "R1", "texto": "La sala debe contar con un extintor PQS de al menos 6 kg con carga vigente." },
+      { "id": "R2", "texto": "Debe existir un plano de evacuación visible en cada piso del recinto (el recinto tiene 2 pisos)." },
+      { "id": "R3", "texto": "Si se esterilizan materiales en el recinto, el autoclave debe tener validación anual vigente." }
+    ]
+  },
+  "documento_evidencia": {
+    "archivo_id": "ficticio-expediente-002",
+    "nombre": "Expediente ficticio Sala Aurora.gdoc",
+    "version": "gdoc:v58|2026-10-20T14:03:00Z",
+    "texto": "Página 1. Certificado de mantención: extintor PQS de 6 kg, recarga realizada en septiembre de 2026, vigente hasta septiembre de 2027.\nPágina 2. Señalética: se instaló el plano de evacuación en el primer piso. El plano del segundo piso está encargado y aún no se instala.\nPágina 3. Procedimientos: la sala trabaja exclusivamente con material estéril desechable de un solo uso; no se esteriliza material en el recinto y no cuenta con autoclave."
+  },
+  "resultado_correcto": [
+    { "id": "R1", "estado": "cumple", "ubicacion": "página 1", "cita": "extintor PQS de 6 kg ... vigente hasta septiembre de 2027" },
+    { "id": "R2", "estado": "parcial", "ubicacion": "página 2", "cita": "plano de evacuación en el primer piso. El plano del segundo piso ... aún no se instala" },
+    { "id": "R3", "estado": "no_aplica_justificado", "ubicacion": "página 3", "cita": "no se esteriliza material en el recinto", "justificacion": "El requisito aplica solo si se esteriliza en el recinto; el expediente indica que no se esteriliza." }
+  ]
+}

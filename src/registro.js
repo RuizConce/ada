@@ -37,19 +37,19 @@ async function llamada(d) {
   const id = nuevoId();
   const usage = d.usage || {};
   const busquedas = (usage.server_tool_use && usage.server_tool_use.web_search_requests) || 0;
-  const costo = costoUSD(d.modelo, usage) + busquedas * COSTO_BUSQUEDA;
+  const costo = d.costoForzado != null ? d.costoForzado : costoUSD(d.modelo, usage) + busquedas * COSTO_BUSQUEDA;
   try {
     await qPrincipal(
       `INSERT INTO llamadas_ia (id, usuario_id, conversacion_id, turno_id, encargo_id, paso, modelo, input_tokens, output_tokens,
         cache_creacion, cache_lectura, busquedas, costo_usd, duracion_ms, stop_reason, herramientas, request_id, error, creado_en,
-        origen, costo_estimado)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        origen, costo_estimado, trabajo_id, paso_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, u.id, d.conversacionId || null, d.turnoId, d.encargoId || null, d.paso, String(d.modelo).slice(0, 80),
         usage.input_tokens || 0, usage.output_tokens || 0, usage.cache_creation_input_tokens || 0, usage.cache_read_input_tokens || 0,
         busquedas, costo, d.duracionMs || null, d.stopReason || null, corto(d.herramientas, 400), corto(d.requestId, 120),
-        corto(d.error, 300), new Date(), String(d.origen || 'conversacion').slice(0, 20), d.estimado == null ? null : d.estimado]
+        corto(d.error, 300), new Date(), String(d.origen || 'conversacion').slice(0, 20), d.estimado == null ? null : d.estimado, d.trabajoId || null, d.pasoId || null]
     );
-    if (d.turnoId) await qPrincipal('UPDATE turnos_ia SET llamadas = llamadas + 1, costo_usd = costo_usd + ? WHERE turno_id = ?', [costo, d.turnoId]);
+    if (d.turnoId && !d.trabajoId) await qPrincipal('UPDATE turnos_ia SET llamadas = llamadas + 1, costo_usd = costo_usd + ? WHERE turno_id = ?', [costo, d.turnoId]);
   } catch (e) {
     console.error('Registro llamada:', e.message);
   }
@@ -102,7 +102,7 @@ async function llamadaUnica(origen, params, { conversacionId } = {}) {
   const Consumo = require('./consumo');
   const turnoId = nuevoId();
   const estimado = estimarCosto(params);
-  const reserva = await Consumo.reservar(estimado);
+  const reserva = await Consumo.reservar(estimado, { turnoId });
   if (!reserva.ok) {
     await iniciarTurno({ turnoId, conversacionId, origen });
     await cerrarTurno(turnoId, 'detenido_presupuesto_diario', reserva.motivo);
@@ -115,13 +115,14 @@ async function llamadaUnica(origen, params, { conversacionId } = {}) {
     await llamada({ origen, conversacionId, turnoId, paso: 1, modelo: params.model, usage: resp.usage, duracionMs: Date.now() - t0,
       stopReason: resp.stop_reason, requestId: resp._request_id || resp.id, estimado });
     await cerrarTurno(turnoId, 'completado');
+    await reserva.liberar(costoUSD(params.model, resp.usage || {}));
     return resp;
   } catch (e) {
     await llamada({ origen, conversacionId, turnoId, paso: 1, modelo: params.model, usage: {}, duracionMs: Date.now() - t0, error: `${e.status || ''} ${e.message}`, estimado });
     await cerrarTurno(turnoId, 'error', e.message);
     throw e;
   } finally {
-    reserva.liberar();
+    await reserva.liberar();
   }
 }
 
