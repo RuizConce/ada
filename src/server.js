@@ -76,7 +76,32 @@ app.post('/compartir', (req, res) => res.redirect(303, '/?compartido=0'));
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-app.post('/api/chat', auth, async (req, res) => {
+// ---------- Freno de gasto ----------
+// 1) ADA_PAUSA=si en Railway: ADA no llama a Claude (interruptor de emergencia).
+// 2) Ráfagas: más de 8 turnos en 2 minutos, o el mismo mensaje repetido, se frenan (p. ej. la app
+//    escuchando música o una TV y mandando cada frase a Claude).
+const turnosRecientes = new Map(); // persona → [{t, texto}]
+function freno(req, res, next) {
+  if (process.env.ADA_PAUSA === 'si') return res.status(503).json({ error: 'ADA está en pausa (ADA_PAUSA=si en Railway).', freno: true });
+  const texto = String((req.body && req.body.mensaje) || '').trim();
+  const uid = req.usuario ? req.usuario.id : 0;
+  const ahora = Date.now();
+  const lista = (turnosRecientes.get(uid) || []).filter((x) => ahora - x.t < 2 * 60 * 1000);
+  const norm = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9ñ ]/g, '').replace(/\s+/g, ' ').trim();
+  const limite = parseInt(process.env.ADA_TURNOS_2MIN, 10) || 8;
+  if (lista.length >= limite) {
+    console.warn(`Freno u${uid}: ${lista.length} turnos en 2 minutos`);
+    return res.status(429).json({ error: 'Pausé la conversación: llegaron demasiados mensajes seguidos (¿música o TV cerca?). Toca para seguir.', freno: true });
+  }
+  if (texto && lista.some((x) => ahora - x.t < 60 * 1000 && norm(x.texto) === norm(texto))) {
+    return res.status(429).json({ error: 'Ese mensaje ya me llegó recién; no lo repito.', freno: true });
+  }
+  lista.push({ t: ahora, texto });
+  turnosRecientes.set(uid, lista);
+  next();
+}
+
+app.post('/api/chat', auth, freno, async (req, res) => {
   const texto = String((req.body && req.body.mensaje) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
   if (texto.length > 24000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
@@ -93,7 +118,7 @@ app.post('/api/chat', auth, async (req, res) => {
 });
 
 // Respuesta en tiempo real (Server-Sent Events): texto a medida que se genera, estados y documentos.
-app.post('/api/chat/stream', auth, async (req, res) => {
+app.post('/api/chat/stream', auth, freno, async (req, res) => {
   const texto = String((req.body && req.body.mensaje) || '').trim();
   if (!texto) return res.status(400).json({ error: 'Mensaje vacío' });
   if (texto.length > 24000) return res.status(400).json({ error: 'Mensaje demasiado largo' });

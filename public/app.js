@@ -943,7 +943,11 @@
         body: JSON.stringify({ mensaje: texto, voz: !!opciones.voz, acuse: opciones.acuse || null, conversacion_id: convId }),
       });
       if (res.status === 401) { salir(); throw new Error('Sesión expirada'); }
-      if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
+      if (!res.ok || !res.body) {
+        // Un freno del servidor (pausa, ráfaga de mensajes) termina la conversación por voz: no se reintenta.
+        errorFlujo = (await res.json().catch(() => ({}))).error || `Error ${res.status}`;
+        throw new Error(errorFlujo);
+      }
       await leerFlujo(res, (tipo, d) => {
         if (tipo === 'conversacion') {
           if (d.conversacion_id !== convId) { docsActuales = []; archivosActuales = []; pintarEntregas(); }

@@ -274,6 +274,23 @@ public class MainActivity extends Activity {
         else super.onBackPressed();
     }
 
+    // Pantalla apagada o app en segundo plano: la página queda "oculta" y deja de escuchar.
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (web != null) {
+            web.evaluateJavascript("window.__adaOido && window.__adaOido.cerrar()", null);
+            web.onPause();
+        }
+        if (puente != null) puente.liberar();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) web.onResume();
+    }
+
     @Override
     protected void onDestroy() {
         if (puente != null) puente.liberar();
