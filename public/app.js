@@ -1798,6 +1798,21 @@
       caja.hidden = false;
     }
   }
+  $('#dg-verif-generar').addEventListener('click', async () => {
+    const dia = $('#dg-verif-desde').value || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    $('#dg-verif-desde').value = dia;
+    $('#dg-verif-json').textContent = 'Preparando…';
+    $('#dg-verif-salida').hidden = false;
+    try {
+      const desde = new Date(`${dia}T00:00:00`);
+      const r = await api(`/api/extracciones/verificacion?desde=${encodeURIComponent(desde.toISOString())}`);
+      $('#dg-verif-json').textContent = JSON.stringify(r, null, 2);
+    } catch (e) { $('#dg-verif-json').textContent = e.message; }
+  });
+  $('#dg-verif-copiar').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('#dg-verif-json').textContent); aviso('Informe copiado.'); }
+    catch (_) { const r = document.createRange(); r.selectNodeContents($('#dg-verif-json')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); aviso('Selecciónalo y cópialo.'); }
+  });
   $('#dg-aceptar').addEventListener('click', async () => {
     try { await api('/api/extracciones/consentimiento', { method: 'POST', body: JSON.stringify({ acepto: true }) }); consentimientoPendiente = null; pintarEntregas(); aviso('Listo: guardo cifrado lo que extraiga (máx. 30 días).'); } catch (e) { aviso(e.message, true); }
     pintarDocumentosGuardados();

@@ -336,6 +336,10 @@ async function initDb() {
     creado_en DATETIME(3) NOT NULL,
     INDEX idx_usuario (usuario_id, creado_en), INDEX idx_conv (usuario_id, conversacion_id), INDEX idx_turno (turno_id), INDEX idx_trabajo (trabajo_id)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  {
+    const [{ n }] = await qPrincipal("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'extraccion_eventos' AND COLUMN_NAME = 'instancia'");
+    if (!n) await qPrincipal('ALTER TABLE extraccion_eventos ADD COLUMN instancia VARCHAR(80) NULL');
+  }
   // Copias temporales propias ("ADA temporal - …") que no se pudieron borrar al primer intento.
   await qPrincipal(`CREATE TABLE IF NOT EXISTS temporales_drive (
     usuario_id INT NOT NULL,

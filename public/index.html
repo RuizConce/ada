@@ -237,6 +237,11 @@
             <p class="meta"><strong>Métricas de hoy</strong> (sin contenido)</p>
             <dl id="dg-metricas" class="cifrado-estado"></dl>
             <details class="gasto-turnos"><summary>Detalle de hoy (archivo por archivo)</summary><div id="dg-detalle" class="dg-detalle"></div></details>
+            <details id="dg-verif" class="gasto-turnos"><summary>Informe de verificación (para copiar)</summary>
+              <p class="meta">Secuencia por archivo desde la fecha indicada: verificaciones, descargas, extracciones, reutilizaciones, invalidaciones, borrados, versión y servidor. Sin contenido.</p>
+              <div class="diag-fila"><input id="dg-verif-desde" type="date"><button id="dg-verif-generar" type="button">Generar</button></div>
+              <div id="dg-verif-salida" hidden><button id="dg-verif-copiar" type="button">Copiar informe</button><pre id="dg-verif-json"></pre></div>
+            </details>
             <div class="ajuste-botones">
               <button id="dg-aceptar" type="button" hidden>Aceptar guardar cifrado</button>
               <button id="dg-retirar" type="button" hidden>Dejar de guardar</button>

@@ -272,6 +272,7 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(Number(sql("SELECT COUNT(*) FROM extraccion_eventos WHERE trabajo_id IS NOT NULL AND paso_id IS NOT NULL AND tipo IN ('extraccion_nueva','reutilizacion','descarga')")) >= 1, 'y en encargos, con su trabajo y paso');
 
   // ===== 13. Motor sin Drive simulado: no lee documentos reales =====
+  await parar('A'); // un solo ejecutor de encargos: si no, el servidor con Drive simulado podría tomar este trabajo
   await arrancar('R', 3202, { ADA_DRIVE_URL: '' });
   const tkR = await login(3202);
   const tr = await post('/api/trabajos', { titulo: 'Real', presupuesto: 1, pasos: [{ clave: 'extraer:real', tipo: 'extraer', entrada: { archivo_id: 'cualquiera' }, max_intentos: 1 }] }, 3202, tkR);
@@ -281,6 +282,7 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(/^fallido\|Los encargos/.test(pr) && /documentos reales/.test(pr), `sin Drive simulado ni carpeta de prueba aprobada, el encargo no lee documentos (${pr.slice(0, 60)})`);
   await post(`/api/trabajos/${tr.d.id}/cancelar`, {}, 3202, tkR);
   await parar('R');
+  await arrancar('A', 3200);
 
   // ===== 13b. Apagado por defecto (producción sin ADA_EXTRACCIONES=si) =====
   await parar('A');

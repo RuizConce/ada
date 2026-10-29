@@ -59,13 +59,13 @@ async function puedeGuardar() {
 async function evento(tipo, ctx = {}, datos = {}) {
   try {
     await qPrincipal(`INSERT INTO extraccion_eventos (usuario_id, tipo, motivo, archivo_id, nombre, version, origen, conversacion_id, turno_id, trabajo_id, paso_id,
-        desde, hasta, caracteres, duracion_ms, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        desde, hasta, caracteres, duracion_ms, instancia, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [usuario().id, tipo, datos.motivo ? String(datos.motivo).slice(0, 60) : null, datos.archivoId ? String(datos.archivoId).slice(0, 128) : null,
       datos.nombre ? String(datos.nombre).slice(0, 250) : null,
       datos.version ? String(datos.version).slice(0, 120) : null, ctx.origen || (ctx.trabajoId ? 'trabajo' : 'chat'),
       ctx.conversacionId || null, ctx.turnoId || null, ctx.trabajoId || null, ctx.pasoId || null,
       datos.desde != null ? datos.desde : null, datos.hasta != null ? datos.hasta : null, datos.caracteres != null ? datos.caracteres : null,
-      datos.duracionMs != null ? datos.duracionMs : null, ahora()]);
+      datos.duracionMs != null ? datos.duracionMs : null, require('./registro').INSTANCIA, ahora()]);
   } catch (e) {
     console.error('Extracciones (registro):', e.message);
   }
@@ -142,14 +142,17 @@ async function limpiarVencidas() {
 }
 
 async function borrarTodo({ motivo = 'borrado_voluntario' } = {}) {
+  const antes = await q("SELECT archivo_id, nombre, version FROM extracciones WHERE usuario_id = ? AND estado = 'valida'", [usuario().id]);
   const r = await q('DELETE FROM extracciones WHERE usuario_id = ?', [usuario().id]);
-  await evento('borrado', { origen: 'ajustes' }, { motivo, caracteres: r.affectedRows });
-  return { borradas: r.affectedRows };
+  for (const f of antes) await evento('borrado', { origen: 'ajustes' }, { archivoId: f.archivo_id, nombre: f.nombre, version: f.version, motivo });
+  if (!antes.length) await evento('borrado', { origen: 'ajustes' }, { motivo: `${motivo} (nada guardado)` });
+  return { borradas: antes.length, registros_eliminados: r.affectedRows };
 }
 
 async function borrarArchivo(archivoId) {
+  const [f] = await q("SELECT nombre FROM extracciones WHERE usuario_id = ? AND archivo_id = ? ORDER BY id DESC LIMIT 1", [usuario().id, String(archivoId)]);
   const r = await q('DELETE FROM extracciones WHERE usuario_id = ? AND archivo_id = ?', [usuario().id, String(archivoId)]);
-  await evento('borrado', { origen: 'ajustes' }, { archivoId, motivo: 'borrado_voluntario' });
+  await evento('borrado', { origen: 'ajustes' }, { archivoId, nombre: f && f.nombre, motivo: 'borrado_voluntario' });
   return { borradas: r.affectedRows };
 }
 
@@ -399,6 +402,48 @@ async function eventos({ desde, limite = 60 } = {}) {
   };
 }
 
+// Informe de verificación (cierre de la Fase 3b): por archivo, la secuencia de eventos con hora, versión,
+// instancia del servidor (para probar reinicios) y su estado actual. Sin contenido.
+async function verificacion({ desde } = {}) {
+  const u = usuario().id;
+  const ini = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
+  const ev = await qPrincipal(`SELECT id, creado_en, tipo, motivo, archivo_id, nombre, version, origen, conversacion_id, instancia FROM extraccion_eventos
+    WHERE usuario_id = ? AND creado_en >= ? AND tipo <> 'lectura_tramo' ORDER BY id`, [u, ini]);
+  const corta = (v) => (v ? crypto.createHash('sha256').update(String(v)).digest('hex').slice(0, 8) : null);
+  const instancias = [...new Set(ev.map((e) => e.instancia).filter(Boolean))];
+  const nInst = (i) => (i ? instancias.indexOf(i) + 1 : null);
+  const archivos = new Map();
+  for (const e of ev) {
+    if (!e.archivo_id) continue;
+    const a = archivos.get(e.archivo_id) || { archivo: e.nombre || `…${e.archivo_id.slice(-6)}`, id_termina_en: e.archivo_id.slice(-6), conteo: {}, secuencia: [] };
+    if (e.nombre) a.archivo = e.nombre;
+    const k = e.motivo && !['consulta_metadatos', 'descarga', 'reutilizacion'].includes(e.tipo) ? `${e.tipo}:${e.motivo}` : e.tipo;
+    a.conteo[k] = (a.conteo[k] || 0) + 1;
+    a.secuencia.push({ hora: e.creado_en, evento: e.tipo, motivo: e.motivo || undefined, version: corta(e.version) || undefined, servidor: nInst(e.instancia), conversacion: e.conversacion_id || undefined });
+    archivos.set(e.archivo_id, a);
+  }
+  const ids = [...archivos.keys()];
+  const filas = ids.length ? await q(`SELECT archivo_id, version, estado, motivo, extraido_en, vence_en, usos, ultimo_acceso, caracteres, (texto_cifrado IS NOT NULL) AS con_texto,
+      (texto_cifrado LIKE 'v1:%') AS cifrado FROM extracciones WHERE usuario_id = ? AND archivo_id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, [u, ...ids]) : [];
+  for (const f of filas) {
+    const a = archivos.get(f.archivo_id);
+    (a.estado_actual = a.estado_actual || []).push({ version: corta(f.version), estado: f.estado, motivo: f.motivo || undefined, con_texto: !!f.con_texto, cifrado: !!f.cifrado,
+      extraido_en: f.extraido_en, vence_en: f.vence_en, usos: f.usos, caracteres: f.caracteres });
+  }
+  for (const a of archivos.values()) if (!a.estado_actual) a.estado_actual = 'sin extracción guardada';
+  const temporales = await qPrincipal('SELECT estado, COUNT(*) AS n FROM temporales_drive WHERE usuario_id = ? GROUP BY estado', [u]).catch(() => []);
+  const borradosGenerales = ev.filter((e) => e.tipo === 'borrado' && !e.archivo_id).map((e) => ({ hora: e.creado_en, motivo: e.motivo }));
+  return {
+    generado_en: new Date(), desde: ini, modo: modo(), carpeta_prueba_termina_en: (process.env.ADA_DRIVE_CARPETA_PRUEBA || '').slice(-6) || null,
+    servidores: instancias.length, nota_servidores: 'Cada número de "servidor" es una instancia distinta de ADA (un reinicio o despliegue crea una nueva).',
+    nota_version: 'La versión se muestra como huella de 8 caracteres: si cambia, cambió el archivo en Drive.',
+    archivos: [...archivos.values()],
+    copias_temporales: { borradas: ev.filter((e) => e.tipo === 'temporal_borrado').length, fallidas: ev.filter((e) => e.tipo === 'temporal_fallido').length,
+      pendientes_ahora: Number((temporales.find((t) => t.estado === 'pendiente') || { n: 0 }).n) },
+    borrados_sin_archivo: borradosGenerales,
+  };
+}
+
 // Para la conversación: documentos ya leídos en una conversación (solo metadatos: id, versión y hasta dónde).
 async function leidosEnConversacion(conversacionId) {
   if (!conversacionId) return [];
@@ -408,6 +453,6 @@ async function leidosEnConversacion(conversacionId) {
 }
 
 module.exports = {
-  obtener, eventos, estadoPublico, enCarpetaDePrueba, modo, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
+  obtener, eventos, verificacion, estadoPublico, enCarpetaDePrueba, modo, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
   invalidarArchivo, evento, claveVersion, leidosEnConversacion, habilitado, TEXTO_CONSENTIMIENTO, esTemporal, esSinAcceso,
 };
