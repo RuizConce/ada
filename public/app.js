@@ -241,10 +241,47 @@
   const encargosAuditoria = new Map();
   let audChatTimer = null;
   const usdAud = (n) => `US$${Number(n || 0).toFixed(4).replace('.', ',')}`;
-  const ESTADO_AUD = { cumple: 'Cumple', parcial: 'Parcial', no_cumple: 'No cumple', sin_evidencia: 'Sin evidencia', no_aplica_justificado: 'No aplica (justificado)', no_evaluado: 'No evaluado' };
+  const ESTADO_AUD = { cumple: 'Cumple', parcial: 'Parcial', no_cumple: 'No cumple', sin_evidencia: 'Sin evidencia', no_aplica_justificado: 'No aplica (justificado)', no_evaluado: 'No evaluado', contradictorio: 'Contradictorio' };
   const ETAPA_AUD = { ejecutando: 'Trabajando', pausado: 'En pausa', pausado_presupuesto: 'Detenido: se acabó el presupuesto', bloqueado: 'Detenido por un error', completado: 'Terminada', cancelado: 'Cancelada', fallido: 'Falló', esperando_aprobacion: 'Esperando aprobación' };
 
+  // Paso 1 de una auditoría con norma: extraer la lista de requisitos (su propio costo y aprobación).
+  function tarjetaExtraccion(p, origen) {
+    const t = document.createElement('div');
+    t.className = 'tarjeta tarjeta-auditoria';
+    t.dataset.propuesta = p.id;
+    t.innerHTML = '<div class="tarjeta-cab"><span><strong>Extraer requisitos de la norma</strong></span><em class="aud-estado"></em></div>'
+      + '<p class="meta aud-norma"></p><p class="meta aud-archivos"></p>'
+      + '<div class="aud-fila"><label class="aud-campo">Presupuesto para extraer US$<input type="number" step="0.01" min="0.01" class="aud-pres"></label></div>'
+      + '<p class="meta aud-est"></p><div class="tarjeta-botones"><button type="button" class="principal">Aprobar extracción</button><button type="button" class="descartar">Descartar</button></div>';
+    t.querySelector('.aud-estado').textContent = `Paso 1 de 2 · ${p.id.slice(0, 8)}`;
+    t.querySelector('.aud-norma').textContent = `Norma: ${p.norma.nombre} (${p.norma.caracteres.toLocaleString('es-CL')} caracteres, ${p.norma.bloques} bloque${p.norma.bloques === 1 ? '' : 's'})`;
+    t.querySelector('.aud-archivos').textContent = `Documentos a auditar después (${p.archivos.length}): ${p.archivos.map((a) => a.nombre).join(' · ')}`;
+    const pres = t.querySelector('.aud-pres');
+    pres.value = String(p.presupuesto_sugerido);
+    t.querySelector('.aud-est').textContent = `Extraer: hasta ${usdAud(p.estimado_usd)} (Sonnet; se cobra solo lo real). Al terminar verás la lista para revisarla y aprobarla junto con el presupuesto de la auditoría (referencia ~${usdAud(p.estimado_auditoria_usd)}). Nada se analiza contra tus documentos antes de eso.`;
+    const botones = t.querySelectorAll('.tarjeta-botones button');
+    t.querySelector('.principal').addEventListener('click', async () => {
+      botones.forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), origen }) });
+        propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+        encargosAuditoria.set(r.trabajo_id, { id: r.trabajo_id, propuesta_id: r.propuesta_id, modo: 'requisitos', estado: r.estado, pasos_hechos: 0, pasos_total: 0, bloques_hechos: 0, bloques_total: p.norma.bloques, costo_real_usd: 0, presupuesto_usd: r.presupuesto });
+        pintarEntregas();
+        if (!$('#ajuste-auditoria').hidden) pintarPendientesAjustes();
+        seguirAuditorias();
+      } catch (e) { botones.forEach((b) => { b.disabled = false; }); aviso(e.message, true); }
+    });
+    t.querySelector('.descartar').addEventListener('click', async () => {
+      botones.forEach((b) => { b.disabled = true; });
+      try { await api(`/api/auditorias/propuestas/${p.id}/descartar`, { method: 'POST' }); } catch (_) {}
+      propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+      pintarEntregas();
+    });
+    return t;
+  }
+
   function tarjetaPropuestaAuditoria(p, origen = 'tarjeta_chat') {
+    if (p.tipo === 'extraer_requisitos') return tarjetaExtraccion(p, origen);
     const t = document.createElement('div');
     t.className = 'tarjeta tarjeta-auditoria';
     t.dataset.propuesta = p.id;
@@ -252,8 +289,18 @@
       + '<label class="aud-campo">Requisitos (uno por línea: R1 | texto)<textarea rows="5" class="aud-req"></textarea></label>'
       + '<div class="aud-fila"><label class="aud-campo">Configuración<select class="aud-conf"></select></label><label class="aud-campo">Presupuesto US$<input type="number" step="0.01" min="0.01" class="aud-pres"></label></div>'
       + '<p class="meta aud-est"></p><div class="tarjeta-botones"><button type="button" class="principal">Aprobar y empezar</button><button type="button" class="descartar">Descartar</button></div>';
-    t.querySelector('.aud-estado').textContent = `Pendiente · ${p.id.slice(0, 8)}`;
-    t.querySelector('.aud-archivos').textContent = `${p.archivos.map((a) => a.nombre).join(' · ')}${p.motivo ? ` — ${p.motivo}` : ''}`;
+    t.querySelector('.aud-estado').textContent = `${p.origen ? 'Paso 2 de 2 · ' : ''}Pendiente · ${p.id.slice(0, 8)}`;
+    if (p.origen) t.querySelector('strong').textContent = `Revisa los ${p.requisitos.length} requisitos y aprueba la auditoría`;
+    t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${p.archivos.map((a) => a.nombre).join(' · ')}${p.motivo ? ` — ${p.motivo}` : ''}`;
+    // Con lista extraída de una norma: de dónde sale cada requisito (cita textual de la norma), para revisarla.
+    if (p.requisitos.some((r) => r.fuente)) {
+      const d = document.createElement('details');
+      d.className = 'aud-fuentes';
+      d.innerHTML = '<summary>Ver de dónde sale cada requisito en la norma</summary><ol></ol>';
+      for (const r of p.requisitos) { const li = document.createElement('li'); li.textContent = `${r.id} · ${r.fuente || 'sin fuente'}`; d.querySelector('ol').appendChild(li); }
+      t.querySelector('.aud-archivos').after(d);
+    }
+    if (p.requisitos.length > 8) t.querySelector('.aud-req').rows = 12;
     t.querySelector('.aud-req').value = p.requisitos.map((r) => `${r.id} | ${r.texto}`).join('\n');
     const sel = t.querySelector('.aud-conf');
     for (const k of ['K1', 'K2', 'K3']) { const o = document.createElement('option'); o.value = k; o.textContent = k === 'K1' ? 'K1 · Sonnet (recomendada)' : k === 'K2' ? 'K2 · Haiku (económica)' : 'K3 · Haiku con escalamiento'; sel.appendChild(o); }
@@ -300,23 +347,32 @@
     t.innerHTML = '<div class="tarjeta-cab"><span><strong>Auditoría en curso</strong></span><em class="aud-estado"></em></div>'
       + '<div class="aud-barra"><i></i></div><p class="meta aud-avance"></p><ul class="aud-matriz"></ul><div class="tarjeta-botones"></div>';
     const terminado = a.estado === 'completado';
-    t.querySelector('strong').textContent = terminado ? 'Auditoría terminada' : 'Auditoría en curso';
+    const extraccion = a.modo === 'requisitos';
+    t.querySelector('strong').textContent = extraccion ? (terminado ? 'Requisitos extraídos' : 'Extrayendo requisitos de la norma') : (terminado ? 'Auditoría terminada' : 'Auditoría en curso');
     t.querySelector('.aud-estado').textContent = a.estado === 'ejecutando' && a.estado_real === 'esperando ejecutor' ? 'Esperando turno' : (ETAPA_AUD[a.estado] || a.estado);
     const pct = a.pasos_total ? Math.round((100 * a.pasos_hechos) / a.pasos_total) : 0;
     t.querySelector('.aud-barra i').style.width = `${pct}%`;
-    t.querySelector('.aud-avance').textContent = `Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
+    t.querySelector('.aud-avance').textContent = `Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
     const ul = t.querySelector('.aud-matriz');
     for (const f of a.matriz || []) {
       const li = document.createElement('li');
-      li.textContent = `${f.requisito}: ${ESTADO_AUD[f.estado] || f.estado}${f.cita_verificada ? ` · cita verificada (${f.ubicacion})` : ''}`;
+      li.textContent = `${f.requisito}: ${ESTADO_AUD[f.estado] || f.estado}${f.evidencias > 1 ? ` · ${f.evidencias} citas verificadas${f.archivos > 1 ? ` de ${f.archivos} archivos` : ''}` : f.cita_verificada ? ` · cita verificada (${f.ubicacion})` : ''}`;
       li.className = `aud-${f.estado}`;
       ul.appendChild(li);
     }
     const botones = t.querySelector('.tarjeta-botones');
     const boton = (texto, fn, clase) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = texto; if (clase) b.className = clase; b.addEventListener('click', () => fn(b)); botones.appendChild(b); return b; };
     const accion = async (b, ruta, cuerpo) => { b.disabled = true; try { await api(`/api/trabajos/${a.id}/${ruta}`, { method: 'POST', body: JSON.stringify(cuerpo || {}) }); seguirAuditorias(); } catch (e) { b.disabled = false; aviso(e.message, true); } };
+    if (extraccion && terminado) {
+      const nota = document.createElement('p');
+      nota.className = 'meta';
+      nota.textContent = a.lista_propuesta ? `Lista de ${a.lista_propuesta.requisitos} requisitos lista: revísala y apruébala en la tarjeta de abajo (paso 2).` : a.lista_error ? `No pude preparar la lista: ${a.lista_error}` : 'Preparando la lista…';
+      t.querySelector('.aud-matriz').before(nota);
+      boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
+    }
     if (terminado && a.excel_listo) {
       boton('Descargar Excel', (b) => descargar('auditoria', a.id, b), 'principal');
+      if (a.informe_listo) boton('Descargar informe', (b) => descargar('auditoria_informe', a.id, b), 'principal');
       boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
     }
     if (a.estado === 'pausado_presupuesto') {
@@ -371,7 +427,10 @@
         const a = await api(`/api/auditorias/${id}/avance`);
         const antes = encargosAuditoria.get(id);
         encargosAuditoria.set(id, a);
-        if (antes && antes.estado !== 'completado' && a.estado === 'completado') aviso('La auditoría terminó: el Excel está listo para descargar.');
+        if (antes && antes.estado !== 'completado' && a.estado === 'completado') {
+          if (a.modo === 'requisitos') { aviso('Requisitos extraídos: revisa la lista y aprueba la auditoría.'); cargarAuditoriasActivas(); }
+          else aviso(a.informe_listo ? 'La auditoría terminó: el Excel y el informe están listos.' : 'La auditoría terminó: el Excel está listo para descargar.');
+        }
         if (a.estado === 'ejecutando') vivas = true;
       } catch (_) {}
     }

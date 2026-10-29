@@ -297,7 +297,7 @@ const EJECUTORES = {
 };
 
 // Verificación final por tipo de trabajo: "completado" solo si el resultado es íntegro y corresponde.
-const ESTADOS_EVIDENCIA = ['cumple', 'parcial', 'no_cumple', 'sin_evidencia', 'no_evaluado', 'no_aplica_justificado'];
+const ESTADOS_EVIDENCIA = ['cumple', 'parcial', 'no_cumple', 'contradictorio', 'sin_evidencia', 'no_evaluado', 'no_aplica_justificado'];
 // Integridad común a todos los tipos: cada paso hecho y su resultado (descifrado) igual a su huella.
 function integridad(pasos) {
   const problemas = [];
@@ -433,10 +433,19 @@ async function recuperarPaso(t, p) {
       return 'hecho';
     }
   }
+  // Lo que el proceso caído alcanzó a gastar en IA en este paso (quedó en llamadas_ia) se suma al trabajo, para que
+  // el presupuesto refleje todo lo pagado; y su reserva se libera (el proceso que la tenía ya no existe).
+  const [{ pagado }] = await qPrincipal('SELECT COALESCE(SUM(costo_usd), 0) AS pagado FROM llamadas_ia WHERE paso_id = ?', [p.id]);
+  const sinContar = Math.max(0, num(pagado) - num(p.costo_usd));
+  if (sinContar > 0) {
+    await qPrincipal('UPDATE trabajo_pasos SET costo_usd = costo_usd + ? WHERE id = ?', [sinContar, p.id]);
+    await qPrincipal('UPDATE trabajos SET gastado_usd = gastado_usd + ? WHERE id = ?', [sinContar, t.id]);
+  }
+  await qPrincipal("UPDATE reservas_ia SET estado = 'liberada' WHERE paso_id = ? AND estado = 'activa'", [p.id]);
   const agotado = p.intentos >= p.max_intentos;
   await qPrincipal('UPDATE trabajo_pasos SET estado = ?, error = ? WHERE id = ? AND estado = \'en_curso\'',
     [agotado ? 'fallido' : 'pendiente', agotado ? 'se cortó en todos sus intentos' : 'cortado por reinicio; se reintenta', p.id]);
-  await evento(t.id, 'paso_recuperado', `${p.clave}: ${agotado ? 'agotó sus intentos' : 'vuelve a pendiente'}`, null, 'ejecutor');
+  await evento(t.id, 'paso_recuperado', `${p.clave}: ${agotado ? 'agotó sus intentos' : 'vuelve a pendiente'}${sinContar > 0 ? ` (se suman US$${sinContar.toFixed(5)} ya gastados en el intento cortado)` : ''}`, sinContar || null, 'ejecutor');
   return agotado ? 'fallido' : 'pendiente';
 }
 
@@ -578,6 +587,7 @@ async function correr(t, { maxPasos = Infinity } = {}) {
         if (!v.ok) { await estadoEjecutor(t, 'bloqueado', `verificación final: ${v.problemas.slice(0, 3).join('; ')}`); return 'bloqueado'; }
         const final = { matriz: v.matriz, verificado: true, ...(v.extra || {}) };
         await estadoEjecutor(t, 'completado', 'verificación final aprobada', { terminado_en: new Date(), resultado_cifrado: Cifrado.cifrarJSON(final), resultado_hash: hash(JSON.stringify(final)) });
+        await qPrincipal("UPDATE reservas_ia SET estado = 'liberada' WHERE trabajo_id = ? AND estado = 'activa'", [t.id]);
         if (AL_TERMINAR[t.tipo]) Promise.resolve().then(() => AL_TERMINAR[t.tipo](t, final)).catch((e) => console.error(`Al terminar ${t.tipo}:`, e.message));
         return 'completado';
       }

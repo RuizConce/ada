@@ -1,0 +1,81 @@
+{
+  "_nota": "Prueba H (Fase 3e): una pauta normativa ficticia con 10 requisitos y 5 documentos ficticios de un centro ficticio. Todo es inventado; no corresponde a ninguna norma ni establecimiento real. El resultado correcto está escrito de antemano para medir precisión. 'simulado' son las respuestas del Claude simulado (solo para probar el mecanismo, no la precisión real).",
+  "norma": {
+    "nombre": "Pauta ficticia de salas de procedimientos (prueba H).pdf",
+    "texto": "PAUTA FICTICIA DE AUTORIZACIÓN DE SALAS DE PROCEDIMIENTOS\nDocumento de prueba. No corresponde a ninguna norma real.\nPágina 1\nTítulo I. Objeto y definiciones\nEsta pauta establece las condiciones mínimas que deben cumplir las salas de procedimientos ambulatorios para obtener su autorización de funcionamiento. Para efectos de esta pauta, se entiende por personal clínico a quienes realizan o asisten procedimientos a pacientes.\nTítulo II. Requisitos de la sala\nArtículo 1. La sala de procedimientos debe contar con un lavamanos de accionamiento no manual.\nArtículo 2. El recinto debe disponer de al menos un extintor de polvo químico seco (PQS) de 6 kg con carga vigente.\nArtículo 3. Debe existir un plano de evacuación visible en cada piso del recinto.\nArtículo 4. Todo el personal clínico debe acreditar capacitación vigente en reanimación cardiopulmonar (RCP).\nPágina 2\nTítulo III. Procesos clínicos\nArtículo 5. Si en el recinto se esteriliza material, el autoclave debe contar con validación anual vigente.\nArtículo 6. Los residuos especiales deben almacenarse en un recinto exclusivo, con acceso restringido y señalizado.\nArtículo 7. El botiquín de primeros auxilios debe contener al menos 10 unidades de gasa estéril.\nArtículo 8. Si se atiende a menores de edad, la ficha clínica debe incluir el consentimiento firmado del apoderado.\nPágina 3\nTítulo IV. Equipamiento de respaldo\nArtículo 9. El refrigerador de vacunas debe contar con un registro diario de temperatura.\nArtículo 10. El recinto debe contar con un generador eléctrico de respaldo.\nTítulo V. Disposiciones finales\nArtículo 11. La autoridad sanitaria podrá fiscalizar el cumplimiento de esta pauta en cualquier momento.\nArtículo 12. La presente pauta entra en vigencia desde su publicación."
+  },
+  "documentos": [
+    {
+      "id": "HD1", "nombre": "Informe de visita técnica (ficticio).pdf",
+      "texto": "INFORME DE VISITA TÉCNICA — CENTRO FICTICIO BAHÍA SERENA\nDocumento ficticio para pruebas.\nPágina 1\nAntecedentes generales\nLa visita se realizó el 14 de septiembre de 2026 a las dependencias del centro, ubicado en un edificio de dos pisos. Participaron la directora técnica y el encargado de mantención. Se recorrieron la sala de procedimientos, la bodega, los pasillos y la recepción.\nSala de procedimientos\nLa sala de procedimientos cuenta con un lavamanos con grifería de pedal, de accionamiento no manual, en buen estado de funcionamiento.\nSeguridad contra incendios\nSe verificó la existencia de un extintor de polvo químico seco (PQS) de 6 kg, con carga vigente hasta marzo de 2027 según su etiqueta de mantención.\nPágina 2\nVías de evacuación\nEn el primer piso se encuentra instalado un plano de evacuación visible junto a la escalera. En el segundo piso no se observó ningún plano de evacuación instalado.\nRefrigerador de vacunas\nEl refrigerador de vacunas cuenta con un registro diario de temperatura, completo para todos los días de agosto y septiembre de 2026, firmado por la técnica responsable.\nObservaciones generales\nLos pasillos se encuentran despejados y la iluminación es adecuada. La recepción cuenta con sillas para cinco personas."
+    },
+    {
+      "id": "HD2", "nombre": "Nómina y certificados del personal (ficticio).pdf",
+      "texto": "NÓMINA DEL PERSONAL — CENTRO FICTICIO BAHÍA SERENA\nDocumento ficticio para pruebas.\nPágina 1\nPersonal clínico del centro\nEl personal clínico del centro está compuesto por tres personas: la Dra. Ana Rojas, odontóloga; el Sr. Luis Pérez, técnico paramédico; y la Sra. Carla Soto, asistente dental.\nPersonal administrativo\nLa recepción está a cargo de la Sra. Marta Díaz. La contabilidad se externaliza a una empresa ficticia.\nPágina 2\nCapacitación del personal clínico\nCertificados de capacitación en reanimación cardiopulmonar (RCP) presentados: Dra. Ana Rojas, certificado de RCP vigente hasta mayo de 2027; Sr. Luis Pérez, certificado de RCP vigente hasta agosto de 2027.\nEl certificado de RCP de la Sra. Carla Soto se adjunta en el anexo de certificados.\nOtras capacitaciones\nTodo el personal asistió a una charla de atención al usuario en junio de 2026."
+    },
+    {
+      "id": "HD3", "nombre": "Registro de esterilización (ficticio).pdf",
+      "texto": "REGISTRO DE ESTERILIZACIÓN — CENTRO FICTICIO BAHÍA SERENA\nDocumento ficticio para pruebas.\nPágina 1\nProceso de esterilización\nEn el recinto se esteriliza material clínico en un autoclave de mesa, con ciclos registrados diariamente en la bitácora de esterilización.\nValidación del equipo\nEl autoclave cuenta con certificado de validación anual emitido en enero de 2026, vigente hasta enero de 2027, según consta en este registro.\nPágina 2\nControl de ciclos\nCada ciclo registra fecha, hora, temperatura alcanzada y responsable. Durante septiembre de 2026 se registraron 42 ciclos sin incidentes. Los indicadores químicos se archivan junto a la bitácora."
+    },
+    {
+      "id": "HD4", "nombre": "Acta de fiscalización (ficticia).pdf",
+      "texto": "ACTA DE FISCALIZACIÓN — CENTRO FICTICIO BAHÍA SERENA\nDocumento ficticio para pruebas.\nPágina 1\nIdentificación\nFiscalización de rutina realizada el 2 de octubre de 2026 por un equipo ficticio de la autoridad sanitaria.\nEsterilización\nLa validación anual del autoclave se encuentra vencida desde 2024; durante la fiscalización no se presentó un certificado de validación vigente.\nResiduos especiales\nLos residuos especiales se almacenan en una bodega compartida con insumos de aseo, sin señalización y sin acceso restringido.\nPágina 2\nPrimeros auxilios\nEl botiquín de primeros auxilios contiene 4 unidades de gasa estéril, además de vendas y antiséptico.\nCierre\nSe otorgan 30 días para presentar descargos. El acta se firma en dos ejemplares."
+    },
+    {
+      "id": "HD5", "nombre": "Anexo de certificados y atención (ficticio).pdf",
+      "texto": "ANEXO DE CERTIFICADOS Y ATENCIÓN — CENTRO FICTICIO BAHÍA SERENA\nDocumento ficticio para pruebas.\nPágina 1\nCertificado de capacitación\nSe adjunta el certificado de capacitación en reanimación cardiopulmonar (RCP) de la Sra. Carla Soto, asistente dental, vigente hasta diciembre de 2026.\nPágina 2\nPerfil de pacientes\nEl centro atiende exclusivamente a pacientes adultos; no se atiende a menores de edad, según su reglamento interno de admisión.\nHorario\nEl centro atiende de lunes a viernes, de 9:00 a 18:00 horas."
+    }
+  ],
+  "requisitos_esperados": [
+    { "id": "R1", "referencia": "Art. 1", "texto": "La sala de procedimientos debe contar con un lavamanos de accionamiento no manual." },
+    { "id": "R2", "referencia": "Art. 2", "texto": "El recinto debe disponer de al menos un extintor de polvo químico seco (PQS) de 6 kg con carga vigente." },
+    { "id": "R3", "referencia": "Art. 3", "texto": "Debe existir un plano de evacuación visible en cada piso del recinto." },
+    { "id": "R4", "referencia": "Art. 4", "texto": "Todo el personal clínico debe acreditar capacitación vigente en reanimación cardiopulmonar (RCP)." },
+    { "id": "R5", "referencia": "Art. 5", "texto": "Si en el recinto se esteriliza material, el autoclave debe contar con validación anual vigente." },
+    { "id": "R6", "referencia": "Art. 6", "texto": "Los residuos especiales deben almacenarse en un recinto exclusivo, con acceso restringido y señalizado." },
+    { "id": "R7", "referencia": "Art. 7", "texto": "El botiquín de primeros auxilios debe contener al menos 10 unidades de gasa estéril." },
+    { "id": "R8", "referencia": "Art. 8", "texto": "Si se atiende a menores de edad, la ficha clínica debe incluir el consentimiento firmado del apoderado." },
+    { "id": "R9", "referencia": "Art. 9", "texto": "El refrigerador de vacunas debe contar con un registro diario de temperatura." },
+    { "id": "R10", "referencia": "Art. 10", "texto": "El recinto debe contar con un generador eléctrico de respaldo." }
+  ],
+  "resultado_correcto": [
+    { "id": "R1", "estado": "cumple", "archivos": ["HD1"] },
+    { "id": "R2", "estado": "cumple", "archivos": ["HD1"] },
+    { "id": "R3", "estado": "parcial", "archivos": ["HD1"] },
+    { "id": "R4", "estado": "cumple", "archivos": ["HD2", "HD5"], "nota": "evidencia repartida en dos archivos" },
+    { "id": "R5", "estado": "contradictorio", "archivos": ["HD3", "HD4"], "nota": "un documento acredita la validación vigente y otro dice que está vencida" },
+    { "id": "R6", "estado": "no_cumple", "archivos": ["HD4"] },
+    { "id": "R7", "estado": "no_cumple", "archivos": ["HD4"], "nota": "cantidad menor a la exigida" },
+    { "id": "R8", "estado": "no_aplica_justificado", "archivos": ["HD5"] },
+    { "id": "R9", "estado": "cumple", "archivos": ["HD1"] },
+    { "id": "R10", "estado": "sin_evidencia", "archivos": [] }
+  ],
+  "simulado": {
+    "requisitos": [
+      { "referencia": "Art. 1", "texto": "La sala de procedimientos debe contar con un lavamanos de accionamiento no manual.", "cita": "La sala de procedimientos debe contar con un lavamanos de accionamiento no manual." },
+      { "referencia": "Art. 2", "texto": "El recinto debe disponer de al menos un extintor de polvo químico seco (PQS) de 6 kg con carga vigente.", "cita": "El recinto debe disponer de al menos un extintor de polvo químico seco (PQS) de 6 kg con carga vigente." },
+      { "referencia": "Art. 3", "texto": "Debe existir un plano de evacuación visible en cada piso del recinto.", "cita": "Debe existir un plano de evacuación visible en cada piso del recinto." },
+      { "referencia": "Art. 4", "texto": "Todo el personal clínico debe acreditar capacitación vigente en reanimación cardiopulmonar (RCP).", "cita": "Todo el personal clínico debe acreditar capacitación vigente en reanimación cardiopulmonar (RCP)." },
+      { "referencia": "Art. 5", "texto": "Si en el recinto se esteriliza material, el autoclave debe contar con validación anual vigente.", "cita": "Si en el recinto se esteriliza material, el autoclave debe contar con validación anual vigente." },
+      { "referencia": "Art. 6", "texto": "Los residuos especiales deben almacenarse en un recinto exclusivo, con acceso restringido y señalizado.", "cita": "Los residuos especiales deben almacenarse en un recinto exclusivo, con acceso restringido y señalizado." },
+      { "referencia": "Art. 7", "texto": "El botiquín de primeros auxilios debe contener al menos 10 unidades de gasa estéril.", "cita": "El botiquín de primeros auxilios debe contener al menos 10 unidades de gasa estéril." },
+      { "referencia": "Art. 8", "texto": "Si se atiende a menores de edad, la ficha clínica debe incluir el consentimiento firmado del apoderado.", "cita": "Si se atiende a menores de edad, la ficha clínica debe incluir el consentimiento firmado del apoderado." },
+      { "referencia": "Art. 9", "texto": "El refrigerador de vacunas debe contar con un registro diario de temperatura.", "cita": "El refrigerador de vacunas debe contar con un registro diario de temperatura." },
+      { "referencia": "Art. 10", "texto": "El recinto debe contar con un generador eléctrico de respaldo.", "cita": "El recinto debe contar con un generador eléctrico de respaldo." },
+      { "referencia": "Art. 1 (repetido)", "texto": "La sala de procedimientos debe contar con un lavamanos de accionamiento no manual.", "cita": "La sala de procedimientos debe contar con un lavamanos de accionamiento no manual." },
+      { "referencia": "Art. 99", "texto": "El recinto debe tener un ascensor para camillas.", "cita": "El recinto debe tener un ascensor para camillas en todos sus pisos." }
+    ],
+    "evaluaciones": {
+      "R1": { "estado": "cumple", "evidencias": [{ "cita": "La sala de procedimientos cuenta con un lavamanos con grifería de pedal, de accionamiento no manual", "aporta": "a_favor" }], "justificacion": "La visita técnica constata un lavamanos de accionamiento no manual en la sala." },
+      "R2": { "estado": "cumple", "evidencias": [{ "cita": "extintor de polvo químico seco (PQS) de 6 kg, con carga vigente hasta marzo de 2027", "aporta": "a_favor" }], "justificacion": "Hay un extintor PQS de 6 kg con carga vigente." },
+      "R3": { "estado": "parcial", "evidencias": [{ "cita": "En el primer piso se encuentra instalado un plano de evacuación visible junto a la escalera", "aporta": "a_favor" }, { "cita": "En el segundo piso no se observó ningún plano de evacuación instalado", "aporta": "en_contra" }], "justificacion": "Hay plano en el primer piso, pero no en el segundo de los dos pisos." },
+      "R4": { "estado": "cumple", "evidencias": [{ "cita": "El personal clínico del centro está compuesto por tres personas", "aporta": "a_favor" }, { "cita": "Dra. Ana Rojas, certificado de RCP vigente hasta mayo de 2027; Sr. Luis Pérez, certificado de RCP vigente hasta agosto de 2027", "aporta": "a_favor" }, { "cita": "certificado de capacitación en reanimación cardiopulmonar (RCP) de la Sra. Carla Soto, asistente dental, vigente hasta diciembre de 2026", "aporta": "a_favor" }], "justificacion": "Las tres personas del personal clínico tienen RCP vigente: dos en la nómina y la tercera en el anexo." },
+      "R5": { "estado": "contradictorio", "evidencias": [{ "cita": "El autoclave cuenta con certificado de validación anual emitido en enero de 2026, vigente hasta enero de 2027", "aporta": "a_favor" }, { "cita": "La validación anual del autoclave se encuentra vencida desde 2024", "aporta": "en_contra" }], "justificacion": "Se esteriliza en el recinto; el registro acredita validación vigente y el acta de fiscalización la declara vencida." },
+      "R6": { "estado": "no_cumple", "evidencias": [{ "cita": "Los residuos especiales se almacenan en una bodega compartida con insumos de aseo, sin señalización y sin acceso restringido", "aporta": "en_contra" }], "justificacion": "El almacenamiento no es exclusivo, ni señalizado, ni restringido." },
+      "R7": { "estado": "no_cumple", "evidencias": [{ "cita": "El botiquín de primeros auxilios contiene 4 unidades de gasa estéril", "aporta": "en_contra" }], "justificacion": "Tiene 4 unidades; se exigen al menos 10." },
+      "R8": { "estado": "no_aplica_justificado", "evidencias": [{ "cita": "El centro atiende exclusivamente a pacientes adultos; no se atiende a menores de edad", "aporta": "a_favor" }], "justificacion": "El requisito aplica solo si se atiende a menores y el centro atiende exclusivamente a adultos." },
+      "R9": { "estado": "cumple", "evidencias": [{ "cita": "El refrigerador de vacunas cuenta con un registro diario de temperatura", "aporta": "a_favor" }], "justificacion": "Existe registro diario completo." },
+      "R10": { "estado": "sin_evidencia", "evidencias": [], "justificacion": "Ningún documento menciona un generador de respaldo." }
+    }
+  }
+}

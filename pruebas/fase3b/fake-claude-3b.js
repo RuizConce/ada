@@ -76,10 +76,42 @@ async function auditar(req) {
   return { id: `msg_a${++n}`, stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: `a${n}`, name: 'evaluar_requisito', input: { estado: r.estado, fragmento: f ? f.id : '', cita: r.cita, justificacion: r.justificacion } }] };
 }
 
+// ---- Fase 3e ----
+const usoDe = (req, salida = 300) => ({ input_tokens: Math.ceil((JSON.stringify(req.system) + JSON.stringify(req.messages) + JSON.stringify(req.tools)).length / 3.5), output_tokens: salida });
+global.__h = { extraccion: 0, recomendaciones: 0, evaluaciones: 0 };
+function extraerRequisitos(req) {
+  const h = require(process.env.FAKE_H);
+  const texto = String(req.messages[0].content);
+  global.__h.extraccion += 1;
+  const lista = (process.env.FAKE_H_EXTRACCION === 'vacia' ? [] : h.simulado.requisitos).filter((r) => process.env.FAKE_H_EXTRACCION === 'todas' || texto.includes(r.cita.split(' ').slice(0, 3).join(' ')));
+  return { id: `msg_r${++n}`, stop_reason: 'tool_use', usage: usoDe(req, 80 * lista.length + 50), content: [{ type: 'tool_use', id: `r${n}`, name: 'registrar_requisitos', input: { requisitos: lista } }] };
+}
+function recomendaciones(req) {
+  global.__h.recomendaciones += 1;
+  const ids = [...String(req.messages[0].content).matchAll(/^- (\S+) \(/gm)].map((m) => m[1]);
+  const lista = ids.map((id) => ({ requisito: id, accion: `Acción ficticia para subsanar el hallazgo ${id} y documentarla.`, prioridad: 'alta' }));
+  return { id: `msg_c${++n}`, stop_reason: 'tool_use', usage: usoDe(req, 60 * ids.length + 40), content: [{ type: 'tool_use', id: `c${n}`, name: 'proponer_recomendaciones', input: { recomendaciones: lista } }] };
+}
+function auditarH(req) {
+  const h = require(process.env.FAKE_H);
+  global.__h.evaluaciones += 1;
+  const texto = String(req.messages[0].content);
+  const id = (texto.match(/^Requisito (\S+):/) || [])[1];
+  const frags = [...texto.matchAll(/\[(F\d+) · [^\]]+\]\n([\s\S]*?)(?=\n\n\[F\d+ · |\n\nTu respuesta|\n\nRevisión|$)/g)].map((m) => ({ id: m[1], texto: m[2] }));
+  const r = h.simulado.evaluaciones[id] || { estado: 'sin_evidencia', evidencias: [], justificacion: 'Sin información.' };
+  const mal = String(process.env.FAKE_H_MAL || '').split(',').includes(id);
+  const evidencias = r.evidencias.map((e) => ({ fragmento: (frags.find((f) => f.texto.includes(e.cita)) || {}).id || 'F1', cita: mal ? `${e.cita} y además todo está perfecto` : e.cita, aporta: e.aporta }));
+  return { id: `msg_e${++n}`, stop_reason: 'tool_use', usage: usoDe(req, 150), content: [{ type: 'tool_use', id: `e${n}`, name: 'evaluar_requisito', input: { estado: r.estado, evidencias, justificacion: r.justificacion } }] };
+}
+
 class FakeAnthropic {
   constructor() {
     this.messages = {
       create: async (req, opciones) => {
+        // Fase 3e (prueba H): extracción de requisitos de una norma y recomendaciones del informe.
+        if (req.tools && req.tools.some((t) => t.name === 'registrar_requisitos')) return extraerRequisitos(req);
+        if (req.tools && req.tools.some((t) => t.name === 'proponer_recomendaciones')) return recomendaciones(req);
+        if (req.tools && req.tools.some((t) => t.name === 'evaluar_requisito') && process.env.FAKE_H) return auditarH(req);
         if (req.tools && req.tools.some((t) => t.name === 'evaluar_requisito')) {
           if (opciones && opciones.signal && opciones.signal.aborted) throw Object.assign(new Error('Request was aborted.'), { name: 'APIUserAbortError' });
           // Igual que la API real: Sonnet/Opus 5.5 rechazan la herramienta forzada con 400.

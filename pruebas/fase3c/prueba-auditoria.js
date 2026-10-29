@@ -34,7 +34,8 @@ async function esperar(id, estados = ['completado', 'bloqueado', 'cancelado', 'p
   return v;
 }
 const auditoria = (config, presupuesto, archivo = 'AUD1') => post('/api/auditorias', { archivo_id: archivo, requisitos: REQ, esperado: ESP, configuracion: config, presupuesto });
-const llamadasDe = (id) => sql(`SELECT CONCAT(modelo,'|',IFNULL(error,'')) FROM llamadas_ia WHERE trabajo_id='${id}' ORDER BY creado_en`).split('\n').filter(Boolean);
+// Llamadas de verificación de requisitos (sin la del informe ejecutivo, que la 3e agrega al final con Sonnet).
+const llamadasDe = (id) => sql(`SELECT CONCAT(l.modelo,'|',IFNULL(l.error,'')) FROM llamadas_ia l LEFT JOIN trabajo_pasos p ON p.id = l.paso_id WHERE l.trabajo_id='${id}' AND (p.clave IS NULL OR p.clave <> 'informe') ORDER BY l.creado_en`).split('\n').filter(Boolean);
 
 (async () => {
   try { execSync('service mariadb status >/dev/null 2>&1 || service mariadb start', { stdio: 'ignore' }); } catch (_) {}
@@ -82,7 +83,7 @@ const llamadasDe = (id) => sql(`SELECT CONCAT(modelo,'|',IFNULL(error,'')) FROM 
   const ExcelJS = require(require.resolve('exceljs', { paths: ['/home/claude/ada'] }));
   const libro = new ExcelJS.Workbook(); await libro.xlsx.load(buf);
   const hoja = libro.getWorksheet('Matriz');
-  const ex = []; hoja.eachRow((row, n) => { if (n > 1) ex.push([row.getCell(1).value, row.getCell(3).value, row.getCell(5).value]); });
+  const ex = []; hoja.eachRow((row, n) => { if (n > 1) ex.push([row.getCell(1).value, row.getCell(4).value, row.getCell(5).value]); });
   ok(xr.status === 200 && ex.length === 3 && ex.map((x) => x[1]).join(',') === 'cumple,parcial,no_aplica_justificado' && ex.every((x) => x[2]), `Excel real: 3 filas con estados, citas y justificaciones (${ex.map((x) => `${x[0]}=${x[1]}`).join(', ')})`);
 
   // ---- Segunda auditoría del mismo documento: 0 descargas (reutiliza 3b) ----
@@ -91,7 +92,7 @@ const llamadasDe = (id) => sql(`SELECT CONCAT(modelo,'|',IFNULL(error,'')) FROM 
   v = await esperar(r.d.id);
   st = await ctl('/control/stats');
   ok(v.estado === 'completado' && Object.keys(st.export).length === 0 && st.total_meta === 2, `K2 sobre el mismo documento: ${v.estado}, 0 descargas (solo ${st.total_meta} consultas de permisos y versión)`);
-  ok(llamadasDe(r.d.id).every((x) => /haiku/.test(x)) && v.resultado.precision.aciertos === 3, `K2 (solo Haiku): ${v.resultado.precision.aciertos}/3`);
+  ok(llamadasDe(r.d.id).every((x) => /haiku/.test(x)) && sql(`SELECT DISTINCT modelo FROM llamadas_ia WHERE trabajo_id='${r.d.id}'`).split('\n').every((m) => /haiku/.test(m)) && v.resultado.precision.aciertos === 3, `K2 (solo Haiku, también el informe): ${v.resultado.precision.aciertos}/3`);
   await parar();
 
   // ---- Haiku cita mal R2: K2 lo deja "no_evaluado"; K3 escala a Sonnet ----

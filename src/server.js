@@ -266,6 +266,11 @@ const DESCARGABLES = {
     const x = await Auditoria.excel(id);
     return { nombre: x.nombre, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', datos: x.datos };
   },
+  auditoria_informe: async (id, u) => {
+    if (!u.admin) return null;
+    const x = await Auditoria.informe(id);
+    return { nombre: x.nombre, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', datos: x.datos };
+  },
   documento: async (id) => {
     const d = await C.obtenerDocumento(parseInt(id, 10));
     if (!d) return null;
