@@ -62,6 +62,8 @@ const entregas = (p) => p.textContent('#entregas');
   const t2 = await entregas(p);
   ok(t2.includes(`Trabajo ${trabajoId.slice(0, 8)} (propuesta ${propId.slice(0, 8)}) · K1`) && /de US\$0,1500/.test(t2), `la tarjeta de avance identifica el trabajo ${trabajoId.slice(0, 8)}, su propuesta, K1 y el presupuesto aprobado`);
   ok(!(await p.$('.tarjeta-auditoria[data-propuesta]')), 'la tarjeta de propuesta desaparece al aprobar');
+  const k = await p.evaluate(async (id) => (await fetch(`/api/auditorias/propuestas/${id}/constancia`, { headers: { Authorization: `Bearer ${localStorage.getItem('ada_token')}` } })).json(), propId.slice(0, 8));
+  ok(k.aprobacion && k.aprobacion.origen.via === 'tarjeta_chat' && k.aprobacion.origen.app === 'navegador', `la aprobación quedó registrada como hecha con el botón de la tarjeta del chat (${k.aprobacion && JSON.stringify(k.aprobacion.origen)})`);
   await p.$eval('.tarjeta-auditoria', (e) => e.scrollIntoView());
   await p.screenshot({ path: `${os.tmpdir()}/v-aud-avance.png` });
 

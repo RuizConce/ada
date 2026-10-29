@@ -587,7 +587,7 @@ async function marcarTarjeta(id, { estado } = {}) {
 
 // La aprobación es el botón de la tarjeta: requisitos (posiblemente editados), configuración y presupuesto explícitos.
 // Se "reclama" la propuesta de forma atómica, así dos toques simultáneos no crean dos encargos.
-async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion } = {}) {
+async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, origen } = {}, cliente = {}) {
   const p = await propuesta(id);
   const datos = p.datos;
   const aprobado = { archivo_ids: datos.archivos.map((a) => a.id), requisitos: requisitos && requisitos.length ? requisitos : datos.requisitos,
@@ -603,7 +603,12 @@ async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion } =
     await qPrincipal("UPDATE auditoria_propuestas SET estado = 'pendiente', actualizado_en = ? WHERE id = ? AND estado = 'aprobando'", [new Date(), id]);
     throw x;
   }
-  const constancia = { requisitos: e.requisitos, requisitos_hash: hash(JSON.stringify(e.requisitos)), configuracion: aprobado.configuracion, presupuesto: aprobado.presupuesto, en: new Date().toISOString() };
+  // Origen de la aprobación: siempre una solicitud autenticada de la persona (ninguna herramienta de ADA aprueba).
+  const via = ['tarjeta_chat', 'ajustes_pendientes'].includes(origen) ? origen : 'api';
+  const constancia = { requisitos: e.requisitos, requisitos_hash: hash(JSON.stringify(e.requisitos)), configuracion: aprobado.configuracion, modelos: CONFIGS[aprobado.configuracion].modelos.map(modeloDe),
+    presupuesto: aprobado.presupuesto, en: new Date().toISOString(),
+    origen: { via, usuario_id: usuario().id, app: /; wv\)/.test(cliente.ua || '') ? 'android' : cliente.ua ? 'navegador' : 'desconocida' } };
+  await Trabajos.evento(trabajo.id, 'propuesta_aprobada', `propuesta ${id.slice(0, 8)} aprobada desde ${via}`, aprobado.presupuesto, `u${usuario().id}`).catch(() => {});
   await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', trabajo_id = ?, aprobacion_cifrada = ?, actualizado_en = ? WHERE id = ?", [trabajo.id, Cifrado.cifrarJSON(constancia), new Date(), id]);
   return { ok: true, propuesta_id: id, trabajo_id: trabajo.id, estado: trabajo.estado, configuracion: aprobado.configuracion, presupuesto: aprobado.presupuesto };
 }
@@ -612,6 +617,55 @@ async function descartarPropuesta(id) {
   const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [new Date(), id, usuario().id]);
   if (!r.affectedRows) { const p = await propuesta(id); throw err(`La propuesta ya está "${p.estado}"`, 409); }
   return { ok: true };
+}
+
+// Constancia de aprobación (gobernanza): reconstruye desde los registros guardados que la propuesta se aprobó
+// con un acto de la persona, con qué requisitos, modelo y presupuesto, y que eso ocurrió ANTES del primer paso
+// y de la primera llamada de IA del trabajo. Solo lee; no ejecuta nada.
+async function constancia(idOPrefijo) {
+  const ref = String(idOPrefijo || '').trim().toLowerCase();
+  if (!/^[0-9a-f-]{8,36}$/.test(ref)) throw err('Indica el id de la propuesta (al menos 8 caracteres)');
+  const filas = await qPrincipal('SELECT id FROM auditoria_propuestas WHERE usuario_id = ? AND id LIKE ?', [usuario().id, `${ref}%`]);
+  if (!filas.length) throw err('No encontré esa propuesta', 404);
+  if (filas.length > 1) throw err('Hay más de una propuesta con ese comienzo; usa más caracteres', 409);
+  const p = await propuesta(filas[0].id);
+  const ms = (d) => (d ? new Date(d).getTime() : null);
+  const iso = (d) => (d ? new Date(d).toISOString() : null);
+  const out = {
+    propuesta: { id: p.id, conversacion_id: p.conversacion_id, estado: p.estado, creada_en: iso(p.creado_en), tarjeta: p.tarjeta_estado, tarjeta_en: iso(p.tarjeta_en),
+      propuesto: { configuracion: p.datos.config, requisitos: p.datos.requisitos.map((r) => r.id), archivos: p.datos.archivos.map((a) => a.nombre) } },
+    aprobacion: p.aprobacion ? { en: p.aprobacion.en, origen: p.aprobacion.origen || 'no registrado (aprobada antes de que se guardara el origen)', configuracion: p.aprobacion.configuracion,
+      modelos: p.aprobacion.modelos || CONFIGS[p.aprobacion.configuracion].modelos.map(modeloDe), presupuesto_usd: p.aprobacion.presupuesto,
+      requisitos: p.aprobacion.requisitos.map((r) => `${r.id}: ${r.texto}`), requisitos_hash: p.aprobacion.requisitos_hash } : null,
+    trabajo: null, comprobaciones: [],
+  };
+  const chequeo = (ok, que) => out.comprobaciones.push(`${ok ? '✓' : '✗'} ${que}`);
+  chequeo(!!p.aprobacion, 'la aprobación quedó guardada (cifrada) con fecha, requisitos, configuración y presupuesto');
+  if (!p.trabajo_id) { chequeo(p.estado !== 'aprobada', 'sin trabajo asociado'); out.resultado = out.comprobaciones.every((c) => c.startsWith('✓')) ? 'correcto' : 'revisar'; return out; }
+  const [t] = await qPrincipal('SELECT id, estado, titulo, presupuesto_usd, objetivo_cifrado, creado_en, aprobado_en FROM trabajos WHERE id = ?', [p.trabajo_id]);
+  const eventos = await qPrincipal('SELECT tipo, detalle, actor, creado_en FROM trabajo_eventos WHERE trabajo_id = ? ORDER BY id', [p.trabajo_id]);
+  const [primerPaso] = await qPrincipal('SELECT clave, inicio FROM trabajo_pasos WHERE trabajo_id = ? AND inicio IS NOT NULL ORDER BY inicio LIMIT 1', [p.trabajo_id]);
+  const [primeraIA] = await qPrincipal('SELECT modelo, creado_en FROM llamadas_ia WHERE trabajo_id = ? ORDER BY creado_en LIMIT 1', [p.trabajo_id]);
+  const modelosUsados = (await qPrincipal('SELECT DISTINCT modelo FROM llamadas_ia WHERE trabajo_id = ?', [p.trabajo_id])).map((x) => x.modelo);
+  const obj = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  out.trabajo = { id: t.id, estado: t.estado, configuracion: obj.config, presupuesto_usd: Number(t.presupuesto_usd), creado_en: iso(t.creado_en), aprobado_en: iso(t.aprobado_en),
+    primer_paso: primerPaso ? { paso: primerPaso.clave, inicio: iso(primerPaso.inicio) } : null, primera_llamada_ia: primeraIA ? { modelo: primeraIA.modelo, en: iso(primeraIA.creado_en) } : null,
+    modelos_usados: modelosUsados, eventos: eventos.map((e) => `${iso(e.creado_en)} · ${e.tipo}${e.detalle ? ` (${e.detalle})` : ''} · ${e.actor || '—'}`) };
+  const a = p.aprobacion || {};
+  const tAprob = ms(a.en);
+  chequeo(obj.propuesta && obj.propuesta.id === p.id, 'el trabajo guarda esta propuesta como su origen');
+  chequeo(obj.requisitos_hash === a.requisitos_hash, 'el trabajo usa exactamente los requisitos aprobados');
+  chequeo(obj.config === a.configuracion, `configuración aprobada = ejecutada (${a.configuracion})`);
+  chequeo(Math.abs(Number(t.presupuesto_usd) - Number(a.presupuesto)) < 1e-9, `presupuesto aprobado = del trabajo (US$${a.presupuesto})`);
+  const esperados = (a.modelos || CONFIGS[a.configuracion] && CONFIGS[a.configuracion].modelos.map(modeloDe) || []);
+  chequeo(modelosUsados.every((m) => esperados.includes(m)), `modelos usados dentro de los aprobados (${modelosUsados.join(', ') || 'ninguno'})`);
+  chequeo(eventos.some((e) => e.tipo === 'aprobar' && /^u\d+$/.test(e.actor || '')), 'el registro del trabajo tiene el evento "aprobar" hecho por la persona');
+  chequeo(ms(p.creado_en) <= ms(t.creado_en), 'la propuesta existía antes de crear el trabajo');
+  if (primerPaso) chequeo(ms(t.aprobado_en) <= ms(primerPaso.inicio), `aprobado (${iso(t.aprobado_en)}) antes del primer paso (${iso(primerPaso.inicio)})`);
+  if (primeraIA) chequeo(ms(t.aprobado_en) <= ms(primeraIA.creado_en), 'aprobado antes de la primera llamada de IA del trabajo');
+  if (tAprob && primerPaso) chequeo(Math.abs(tAprob - ms(t.aprobado_en)) < 60000, 'la constancia de la propuesta y la aprobación del trabajo coinciden (mismo acto)');
+  out.resultado = out.comprobaciones.every((c) => c.startsWith('✓')) ? 'correcto' : 'revisar';
+  return out;
 }
 
 // Avance real de un trabajo (desde la base). Siempre dice a qué propuesta y conversación pertenece.
@@ -712,4 +766,4 @@ H.registrar([
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

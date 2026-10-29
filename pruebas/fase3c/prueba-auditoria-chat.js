@@ -117,7 +117,7 @@ async function esperarFin(id, ms = 40000) {
     let r = await post(`/api/auditorias/propuestas/${prop.id}/aprobar`, { presupuesto: 0.001, configuracion: 'K1' });
     ok(r.status === 400 && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${prop.id}'`) === 'pendiente', 'presupuesto bajo el mínimo: no empieza y sigue pendiente');
     const editados = REQ.map((x, i) => (i === 2 ? { ...x, texto: `${x.texto} (editado en la tarjeta)` } : x));
-    const cuerpo = { presupuesto: prop.presupuesto_sugerido, requisitos: editados, configuracion: 'K1' };
+    const cuerpo = { presupuesto: prop.presupuesto_sugerido, requisitos: editados, configuracion: 'K1', origen: 'tarjeta_chat' };
     const [a1, a2] = await Promise.all([post(`/api/auditorias/propuestas/${prop.id}/aprobar`, cuerpo), post(`/api/auditorias/propuestas/${prop.id}/aprobar`, cuerpo)]);
     const okA = [a1, a2].filter((x) => x.status === 200);
     ok(okA.length === 1 && [a1, a2].some((x) => x.status === 409) && nTrabajos() === antes + 1, 'dos toques simultáneos en Aprobar: un solo trabajo');
@@ -163,6 +163,18 @@ async function esperarFin(id, ms = 40000) {
     const libro = new ExcelJS.Workbook(); await libro.xlsx.load(buf);
     let tieneEdicion = false; libro.worksheets[0].eachRow((row) => { if (String(row.getCell(2).value || '').includes('(editado en la tarjeta)')) tieneEdicion = true; });
     ok(tieneEdicion, 'el Excel contiene el requisito tal como se aprobó (editado)');
+
+    // ---- Constancia de aprobación (gobernanza), solo lectura ----
+    const llamadasAntes = Number(sql('SELECT COUNT(*) FROM llamadas_ia'));
+    const k = (await api(`/api/auditorias/propuestas/${prop.id.slice(0, 8)}/constancia`)).d;
+    console.log(k.comprobaciones.map((x) => `     ${x}`).join('\n'));
+    ok(k.resultado === 'correcto' && k.comprobaciones.length >= 10 && k.comprobaciones.every((x) => x.startsWith('✓')), `constancia por id corto: ${k.resultado} (${k.comprobaciones.length} comprobaciones)`);
+    ok(k.aprobacion.origen.via === 'tarjeta_chat' && k.aprobacion.origen.usuario_id === 1 && k.aprobacion.configuracion === 'K1' && k.aprobacion.presupuesto_usd === prop.presupuesto_sugerido && k.aprobacion.requisitos.length === 3 && /editado en la tarjeta/.test(k.aprobacion.requisitos[2]),
+      'la aprobación guarda origen (botón de la tarjeta, usuario 1), fecha, requisitos tal como se aprobaron, K1 y presupuesto');
+    ok(new Date(k.trabajo.aprobado_en) <= new Date(k.trabajo.primer_paso.inicio) && new Date(k.aprobacion.en) <= new Date(k.trabajo.primera_llamada_ia.en), `aprobado ${k.trabajo.aprobado_en} antes del primer paso ${k.trabajo.primer_paso.inicio}`);
+    ok(k.trabajo.eventos.some((e) => /propuesta_aprobada \(propuesta .{8} aprobada desde tarjeta_chat\)/.test(e)), 'el registro del trabajo anota desde dónde se aprobó');
+    ok(Number(sql('SELECT COUNT(*) FROM llamadas_ia')) === llamadasAntes, 'consultar la constancia no ejecuta ni gasta nada');
+    ok((await api('/api/auditorias/propuestas/zz/constancia')).status === 400 && (await api('/api/auditorias/propuestas/ffffffff/constancia')).status === 404, 'id inválido o inexistente: error claro');
 
     // ---- 9. La antigua y la nueva, separadas ----
     c = await chat([{ name: 'ver_auditoria', input: {} }], { conv });

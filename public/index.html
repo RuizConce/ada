@@ -219,6 +219,11 @@
           <h4>Propuestas pendientes (desde el chat)</h4>
           <p class="meta">Propuestas que ADA preparó en la conversación y esperan tu aprobación. Nada empieza ni se cobra hasta tocar "Aprobar".</p>
           <div id="aud-pendientes" class="entregas"></div>
+          <h4>Constancia de aprobación</h4>
+          <p class="meta">Revisa en los registros guardados quién aprobó una propuesta, cuándo, con qué requisitos, modelo y presupuesto, y que fue antes del primer paso. Solo lectura: no ejecuta nada.</p>
+          <label class="campo">Id de la propuesta (al menos 8 caracteres)<input id="aud-constancia-id" type="text" autocomplete="off" placeholder="2ad1ceb6"></label>
+          <div class="ajuste-botones"><button id="aud-constancia-ver" type="button">Ver constancia</button><button id="aud-constancia-copiar" type="button">Copiar</button></div>
+          <pre id="aud-constancia" class="informe-verificacion" hidden></pre>
           <p class="meta">Un documento de la carpeta de prueba y hasta 10 requisitos que tú apruebas. ADA busca la evidencia, clasifica cada requisito con cita verificable y entrega un Excel. Nada se marca "cumple" sin una cita encontrada tal cual en el documento.</p>
           <label class="campo">Id del documento (carpeta de prueba)<input id="aud-archivo" type="text" autocomplete="off" placeholder="1AbC…"></label>
           <label class="campo">Requisitos, uno por línea: <code>R1 | texto | estado esperado (opcional)</code><textarea id="aud-requisitos" rows="5"></textarea></label>

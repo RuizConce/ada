@@ -244,7 +244,7 @@
   const ESTADO_AUD = { cumple: 'Cumple', parcial: 'Parcial', no_cumple: 'No cumple', sin_evidencia: 'Sin evidencia', no_aplica_justificado: 'No aplica (justificado)', no_evaluado: 'No evaluado' };
   const ETAPA_AUD = { ejecutando: 'Trabajando', pausado: 'En pausa', pausado_presupuesto: 'Detenido: se acabó el presupuesto', bloqueado: 'Detenido por un error', completado: 'Terminada', cancelado: 'Cancelada', fallido: 'Falló', esperando_aprobacion: 'Esperando aprobación' };
 
-  function tarjetaPropuestaAuditoria(p) {
+  function tarjetaPropuestaAuditoria(p, origen = 'tarjeta_chat') {
     const t = document.createElement('div');
     t.className = 'tarjeta tarjeta-auditoria';
     t.dataset.propuesta = p.id;
@@ -275,7 +275,7 @@
       });
       botones.forEach((b) => { b.disabled = true; });
       try {
-        const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), requisitos, configuracion: sel.value }) });
+        const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), requisitos, configuracion: sel.value, origen }) });
         propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
         encargosAuditoria.set(r.trabajo_id, { id: r.trabajo_id, propuesta_id: r.propuesta_id, config: r.configuracion, estado: r.estado, pasos_hechos: 0, pasos_total: 0, requisitos_evaluados: 0, requisitos_total: requisitos.length, costo_real_usd: 0, presupuesto_usd: r.presupuesto });
         pintarEntregas();
@@ -379,13 +379,39 @@
     if (vivas) audChatTimer = setTimeout(seguirAuditorias, 2000);
   }
 
+  // Constancia de aprobación: solo lectura, desde los registros guardados.
+  $('#aud-constancia-ver').addEventListener('click', async () => {
+    const out = $('#aud-constancia');
+    out.hidden = false;
+    out.textContent = 'Consultando…';
+    try {
+      const c = await api(`/api/auditorias/propuestas/${encodeURIComponent($('#aud-constancia-id').value.trim())}/constancia`);
+      const a = c.aprobacion;
+      const o = a && typeof a.origen === 'object' ? `${a.origen.via} · usuario ${a.origen.usuario_id} · app ${a.origen.app}` : (a ? a.origen : '—');
+      const t = c.trabajo;
+      out.textContent = [
+        `Resultado: ${c.resultado === 'correcto' ? 'CORRECTO' : 'REVISAR'}`, '',
+        `Propuesta ${c.propuesta.id} · conversación ${c.propuesta.conversacion_id} · creada ${c.propuesta.creada_en} · tarjeta ${c.propuesta.tarjeta || '—'}`,
+        a ? `Aprobación ${a.en} · origen: ${o}` : 'Sin aprobación guardada',
+        a ? `  Configuración ${a.configuracion} (${a.modelos.join(', ')}) · presupuesto US$${a.presupuesto_usd}` : '',
+        ...(a ? a.requisitos.map((r) => `  ${r}`) : []),
+        t ? `Trabajo ${t.id} · ${t.estado} · creado ${t.creado_en} · aprobado ${t.aprobado_en}` : 'Sin trabajo',
+        t && t.primer_paso ? `  Primer paso ${t.primer_paso.paso}: ${t.primer_paso.inicio}` : '',
+        t && t.primera_llamada_ia ? `  Primera llamada IA (${t.primera_llamada_ia.modelo}): ${t.primera_llamada_ia.en}` : '',
+        ...(t ? ['  Registro:', ...t.eventos.map((e) => `   ${e}`)] : []), '',
+        ...c.comprobaciones,
+      ].filter((x) => x !== '').join('\n');
+    } catch (e) { out.textContent = e.message; }
+  });
+  $('#aud-constancia-copiar').addEventListener('click', async (ev) => { const ok = await copiar($('#aud-constancia').textContent); ev.target.textContent = ok ? 'Copiado ✓' : 'No se pudo'; setTimeout(() => { ev.target.textContent = 'Copiar'; }, 1800); });
+
   async function pintarPendientesAjustes() {
     const cont = $('#aud-pendientes');
     cont.innerHTML = '';
     try {
       const lista = await api('/api/auditorias/propuestas');
       if (!lista.length) { cont.innerHTML = '<p class="meta">No hay propuestas pendientes.</p>'; return; }
-      for (const p of lista) cont.appendChild(tarjetaPropuestaAuditoria(p));
+      for (const p of lista) cont.appendChild(tarjetaPropuestaAuditoria(p, 'ajustes_pendientes'));
     } catch (e) { cont.textContent = e.message; }
   }
 

@@ -626,6 +626,7 @@ function iniciar() {
 }
 
 module.exports = {
+  evento,
   crear, aprobar, aprobarPaso, pausar, reanudar, ampliar, cancelar, reintentar, ver, listar,
   iniciar, ciclo, tomar, correr, verificarResultado, ESTADOS_EVIDENCIA, PRESUPUESTO_DEFECTO, extender, despertar,
 };

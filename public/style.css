@@ -573,3 +573,5 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-barra i { display: block; height: 100%; background: currentColor; opacity: .6; transition: width .4s; }
 .aud-matriz { margin: 6px 0; padding-left: 18px; font-size: .88rem; }
 .aud-matriz .aud-cumple { color: #2e7d32; } .aud-matriz .aud-parcial { color: #b26a00; } .aud-matriz .aud-no_cumple { color: #c62828; }
+
+#aud-constancia { white-space: pre-wrap; word-break: break-word; font-size: .78rem; max-height: 60vh; overflow: auto; padding: 10px; border-radius: 8px; background: rgba(127,127,127,.12); }
