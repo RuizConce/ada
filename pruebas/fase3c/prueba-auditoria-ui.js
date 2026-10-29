@@ -35,7 +35,7 @@ const sql = (q) => execSync(`mysql -uada -pada ada -N -B -e ${JSON.stringify(q)}
   await p.click('#aud-empezar');
   await p.waitForFunction(() => /completado/.test(document.querySelector('#aud-lista').textContent), null, { timeout: 30000 });
   const t = await p.textContent('#aud-lista');
-  ok(/precisión 3\/3/.test(t) && /R1: cumple \(cita verificada, página 1\)/.test(t) && /Costo real US\$/.test(t), 'la tarjeta muestra precisión, costo y la matriz con citas verificadas');
+  ok(/precisión 3\/3/.test(t) && /R1: cumple \(cita verificada, página 1\)/.test(t) && /Costo real US\$/.test(t) && /reserva activa ahora US\$0,0000/.test(t), 'la tarjeta muestra precisión, costo y la matriz con citas verificadas');
   await p.$eval('#ajuste-auditoria', (e) => e.scrollIntoView());
   await p.screenshot({ path: `${S}/v-auditoria.png`, fullPage: false });
   const [descarga] = await Promise.all([p.waitForEvent('download'), p.click('#aud-lista >> text=Descargar Excel')]);

@@ -1789,7 +1789,7 @@
       const titulo = document.createElement('strong'); titulo.textContent = `${a.config || ''} · ${a.estado_real || a.estado}`;
       const meta = document.createElement('p'); meta.className = 'meta';
       const prec = a.precision ? ` · precisión ${a.precision.aciertos}/${a.precision.total}` : '';
-      meta.textContent = a.costos ? `Costo real ${usd(a.costos.real_usd)} en ${a.costos.llamadas} llamadas · reservado ${usd(a.costos.reservado_total_usd)} · presupuesto ${usd(a.presupuesto_usd)}${prec}${a.modelos && a.modelos.length ? ` · ${a.modelos.join(' / ')}` : ''}${a.motivo && a.estado !== 'completado' ? ` · ${a.motivo}` : ''}` : (a.motivo || '');
+      meta.textContent = a.costos ? `Costo real ${usd(a.costos.real_usd)} en ${a.costos.llamadas} llamadas · reservas acumuladas ${usd(a.costos.reservado_total_usd)} · reserva activa ahora ${usd(a.reservado_usd)} · presupuesto ${usd(a.presupuesto_usd)}${prec}${a.modelos && a.modelos.length ? ` · ${a.modelos.join(' / ')}` : ''}${a.motivo && a.estado !== 'completado' ? ` · ${a.motivo}` : ''}` : (a.motivo || '');
       c.append(titulo, meta);
       if (!a.matriz && a.pasos_detalle) {
         const ul = document.createElement('ul');
