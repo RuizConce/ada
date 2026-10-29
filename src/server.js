@@ -24,7 +24,12 @@ app.use(express.json({ limit: '200kb' }));
 // Versión del servidor: si cambia (nuevo deploy), la app abierta en el teléfono se recarga sola cuando está libre.
 const VERSION = process.env.RAILWAY_GIT_COMMIT_SHA || String(Date.now());
 app.use('/api', (req, res, next) => { res.set('X-ADA-Version', VERSION); next(); });
-app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
+// La app (html, js, css) se revalida siempre: así una versión nueva llega en la siguiente apertura y no queda
+// una app.js vieja en la caché del teléfono hasta por una hora. Íconos y demás sí se guardan 1 hora.
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  maxAge: '1h',
+  setHeaders: (res, ruta) => { if (/\.(html|js|css|json)$/.test(ruta)) res.set('Cache-Control', 'no-cache'); },
+}));
 
 // ---------- Acceso: cada persona con su nombre y su clave ----------
 
@@ -248,6 +253,57 @@ app.post('/api/conversaciones/:id/cerrar', auth, envolver((req) => C.cerrar(pars
 app.post('/api/conversaciones/:id/proyecto', auth,
   envolver((req) => C.moverConversacion(parseInt(req.params.id, 10), (req.body || {}).proyecto || null)));
 app.get('/api/documentos/:id', auth, envolver((req) => C.obtenerDocumento(parseInt(req.params.id, 10))));
+// ---------- Descargas por enlace temporal (teléfono) ----------
+const Descargas = require('./descargas');
+// Qué se puede descargar y cómo se obtiene (siempre en el contexto de la persona dueña del enlace).
+const DESCARGABLES = {
+  archivo: async (id) => {
+    const a = await A.obtenerArchivo(parseInt(id, 10));
+    return a && { nombre: a.nombre, mime: a.mime, datos: a.datos };
+  },
+  auditoria: async (id, u) => {
+    if (!u.admin) return null;
+    const x = await Auditoria.excel(id);
+    return { nombre: x.nombre, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', datos: x.datos };
+  },
+  documento: async (id) => {
+    const d = await C.obtenerDocumento(parseInt(id, 10));
+    if (!d) return null;
+    const nombre = `${String(d.titulo || 'documento').replace(/[^\p{L}\p{N} _-]/gu, '').trim() || 'documento'}.md`;
+    return { nombre, mime: 'text/markdown; charset=utf-8', datos: Buffer.from(`# ${d.titulo}\n\n${d.contenido}`, 'utf8') };
+  },
+};
+app.post('/api/descargas', auth, async (req, res) => {
+  try {
+    const { tipo, id } = req.body || {};
+    if (!DESCARGABLES[tipo] || !id) return res.status(400).json({ error: 'Descarga inválida' });
+    // Se comprueba ahora que existe y que es de esta persona; si no, no se entrega enlace.
+    const f = await DESCARGABLES[tipo](id, req.usuario);
+    if (!f) return res.status(404).json({ error: 'No encontrado' });
+    res.json({ ...Descargas.crear(req.usuario, tipo, id), nombre: f.nombre });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+app.get('/descargas/:token', (req, res) => {
+  const e = Descargas.leer(req.params.token);
+  if (!e) return res.status(410).type('text/plain; charset=utf-8').send('Este enlace de descarga venció. Vuelve a ADA y toca Descargar otra vez.');
+  comoUsuario(e.usuario, async () => {
+    try {
+      if (e.usuario.id !== 1) await prepararInvitado(e.usuario.id);
+      const f = await DESCARGABLES[e.tipo](e.id, e.usuario);
+      if (!f) return res.status(404).type('text/plain; charset=utf-8').send('No encontrado');
+      const ascii = f.nombre.normalize('NFD').replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '') || 'archivo';
+      res.set({
+        'Content-Type': f.mime,
+        'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(f.nombre)}`,
+        'Content-Length': f.datos.length,
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+      });
+      res.send(f.datos);
+    } catch (x) { res.status(x.status || 500).type('text/plain; charset=utf-8').send(`No se pudo descargar: ${x.message}`); }
+  });
+});
 app.get('/api/archivos/:id', auth, async (req, res) => {
   try {
     const a = await A.obtenerArchivo(parseInt(req.params.id, 10));

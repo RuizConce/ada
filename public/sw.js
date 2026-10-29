@@ -1,6 +1,6 @@
 // Service worker mínimo: permite instalar la app y abrirla aunque la red falle.
-// La API nunca se guarda en caché.
-const CACHE = 'ada-v55';
+// La API y las descargas nunca se guardan en caché.
+const CACHE = 'ada-v56';
 const COMPARTIDO = 'ada-compartido';
 const ARCHIVOS = ['./', 'index.html', 'style.css', 'app.js', 'android.js', 'manifest.json', 'icon.svg'];
 
@@ -48,7 +48,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(recibirCompartido(e.request));
     return;
   }
-  if (e.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || e.request.mode === 'navigate' && url.search) return;
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/descargas/') || e.request.mode === 'navigate' && url.search) return;
   // Red primero; caché solo como respaldo.
   e.respondWith(
     fetch(e.request)

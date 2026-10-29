@@ -168,24 +168,28 @@
     excel: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 9.5h16M4 14.5h16M10 4v16" stroke="currentColor" stroke-width="1.6"/></svg>',
   };
 
-  async function descargarArchivo(a, boton) {
-    const texto = boton.textContent;
-    boton.textContent = '…';
+  // Descargas: se pide al servidor un enlace temporal (5 min) y se abre como descarga normal.
+  // En la app de Android, el WebView entrega ese enlace al sistema (los "blob:" no se pueden guardar ahí);
+  // en el navegador, el enlace descarga con su nombre. Si algo falla, se avisa: nunca queda en silencio.
+  async function descargar(tipo, id, boton) {
+    const texto = boton ? boton.textContent : '';
+    if (boton) { boton.disabled = true; boton.textContent = 'Preparando…'; }
     try {
-      const res = await fetch(`/api/archivos/${a.id}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error(`Error ${res.status}`);
-      const url = URL.createObjectURL(await res.blob());
+      const r = await api('/api/descargas', { method: 'POST', body: JSON.stringify({ tipo, id }) });
       const enl = document.createElement('a');
-      enl.href = url;
-      enl.download = a.nombre;
+      enl.href = r.url;
+      enl.download = r.nombre;
+      enl.rel = 'noopener';
       document.body.appendChild(enl);
       enl.click();
-      setTimeout(() => { URL.revokeObjectURL(url); enl.remove(); }, 1000);
+      setTimeout(() => enl.remove(), 1000);
+      aviso(window.AdaAndroid ? `Descargando «${r.nombre}»: queda en la carpeta Descargas del teléfono.` : `Descargando «${r.nombre}».`);
     } catch (e) {
       aviso(`No se pudo descargar: ${e.message}`, true);
     }
-    boton.textContent = texto;
+    if (boton) { boton.disabled = false; boton.textContent = texto; }
   }
+  const descargarArchivo = (a, boton) => descargar('archivo', a.id, boton);
 
   function tarjetaArchivo(a) {
     const t = document.createElement('div');
@@ -312,17 +316,7 @@
     const boton = (texto, fn, clase) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = texto; if (clase) b.className = clase; b.addEventListener('click', () => fn(b)); botones.appendChild(b); return b; };
     const accion = async (b, ruta, cuerpo) => { b.disabled = true; try { await api(`/api/trabajos/${a.id}/${ruta}`, { method: 'POST', body: JSON.stringify(cuerpo || {}) }); seguirAuditorias(); } catch (e) { b.disabled = false; aviso(e.message, true); } };
     if (terminado && a.excel_listo) {
-      boton('Descargar Excel', async (b) => {
-        b.textContent = '…';
-        try {
-          const r = await fetch(`/api/auditorias/${a.id}/excel`, { headers: { Authorization: `Bearer ${token}` } });
-          if (!r.ok) throw new Error(`Error ${r.status}`);
-          const url = URL.createObjectURL(await r.blob());
-          const l = document.createElement('a'); l.href = url; l.download = `auditoria-${a.config || ''}-${a.id.slice(0, 8)}.xlsx`; document.body.appendChild(l); l.click();
-          setTimeout(() => { URL.revokeObjectURL(url); l.remove(); }, 2000);
-        } catch (e) { aviso(`No se pudo descargar: ${e.message}`, true); }
-        b.textContent = 'Descargar Excel';
-      }, 'principal');
+      boton('Descargar Excel', (b) => descargar('auditoria', a.id, b), 'principal');
       boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
     }
     if (a.estado === 'pausado_presupuesto') {
@@ -613,16 +607,7 @@
   $('#doc-compartir').addEventListener('click', () => {
     if (docAbierto && navigator.share) navigator.share({ title: docAbierto.titulo, text: docAbierto.contenido }).catch(() => {});
   });
-  $('#doc-descargar').addEventListener('click', () => {
-    if (!docAbierto) return;
-    const blob = new Blob([`# ${docAbierto.titulo}\n\n${docAbierto.contenido}`], { type: 'text/markdown;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${docAbierto.titulo.replace(/[^\p{L}\p{N} _-]/gu, '').trim() || 'documento'}.md`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-  });
+  $('#doc-descargar').addEventListener('click', (ev) => { if (docAbierto) descargar('documento', docAbierto.id, ev.currentTarget); });
 
   // ---------- Voz de ADA ----------
   // Prioridad: voz neuronal del servidor (natural). Respaldo: voz del teléfono.
@@ -1994,12 +1979,7 @@
       const botones = document.createElement('div'); botones.className = 'ajuste-botones';
       if (a.estado === 'completado') {
         const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Descargar Excel';
-        b.addEventListener('click', async () => {
-          const r = await fetch(`/api/auditorias/${a.id}/excel`, { headers: { Authorization: `Bearer ${token}` } });
-          if (!r.ok) return aviso('No pude descargar el Excel', true);
-          const url = URL.createObjectURL(await r.blob());
-          const l = document.createElement('a'); l.href = url; l.download = `auditoria-${a.config}-${a.id.slice(0, 8)}.xlsx`; l.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
-        });
+        b.addEventListener('click', () => descargar('auditoria', a.id, b));
         botones.appendChild(b);
       }
       if (['ejecutando', 'pausado', 'pausado_presupuesto', 'bloqueado', 'propuesto'].includes(a.estado)) {

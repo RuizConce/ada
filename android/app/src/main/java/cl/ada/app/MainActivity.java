@@ -129,16 +129,42 @@ public class MainActivity extends Activity {
             }
         });
 
-        web.setDownloadListener((url, ua, cd, mime, largo) -> {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-            } catch (Exception ignorado) { }
-        });
+        // Descargas (Word, Excel, documentos): ADA entrega un enlace temporal; el gestor de descargas de Android
+        // lo guarda en Descargas y muestra la notificación. Si no se puede, se abre con el navegador.
+        web.setDownloadListener((url, ua, cd, mime, largo) -> descargar(url, ua, cd, mime));
 
         pedirPermisosIniciales();
         Intent inicio = getIntent();
         if (inicio != null && ACCION_REUNION.equals(inicio.getAction())) cargar("/reunion.html");
         else cargar(pideEscuchar(inicio));
+    }
+
+    // ---------- Descargas ----------
+
+    void descargar(String url, String ua, String cd, String mime) {
+        if (url == null || url.startsWith("blob:") || url.startsWith("data:")) {
+            Toast.makeText(this, "No pude guardar el archivo. Actualiza ADA (cierra y vuelve a abrir) e inténtalo de nuevo.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            String nombre = android.webkit.URLUtil.guessFileName(url, cd, mime);
+            android.app.DownloadManager.Request pedido = new android.app.DownloadManager.Request(Uri.parse(url));
+            if (mime != null && !mime.isEmpty()) pedido.setMimeType(mime);
+            if (ua != null) pedido.addRequestHeader("User-Agent", ua);
+            pedido.setTitle(nombre);
+            pedido.setDescription("Descargado desde ADA");
+            pedido.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            pedido.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, nombre);
+            android.app.DownloadManager dm = (android.app.DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            dm.enqueue(pedido);
+            Toast.makeText(this, "Descargando " + nombre + " en Descargas…", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (Exception ignorado) {
+                Toast.makeText(this, "No pude descargar el archivo", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     // ---------- Dirección de ADA ----------
