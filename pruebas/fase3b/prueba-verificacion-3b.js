@@ -35,6 +35,11 @@ const texto = (v) => `PDF ficticio de prueba, versión ${v}. ` + 'x'.repeat(3000
   await ctl('/control/cambiar', { id: 'PDF1', cambios: { version: 2, md5Checksum: 'md5-v2', texto: texto(2) } });
   ok(/^extraccion_nueva_guardada/.test(await lee('PDF1')), '4. versión nueva: extracción nueva');
   ok(/^reutilizada/.test(await lee('PDF1')), '5. y luego se reutiliza la nueva');
+  // Papelera (forma de perder acceso a un archivo propio).
+  await ctl('/control/cambiar', { id: 'PDF1', cambios: { trashed: true } });
+  ok((await lee('PDF1')) === 'error' && sql("SELECT CONCAT(estado,'|',motivo) FROM extracciones WHERE archivo_id='PDF1' AND estado='invalidada' ORDER BY id DESC LIMIT 1") === 'invalidada|en_papelera', '5b. en la papelera: bloqueado y lo guardado invalidado');
+  await ctl('/control/cambiar', { id: 'PDF1', cambios: { trashed: false } });
+  ok(/^extraccion_nueva_guardada/.test(await lee('PDF1')), '5c. restaurado: se extrae de nuevo');
   // Pérdida de acceso.
   await ctl('/control/cambiar', { id: 'PDF1', cambios: { acceso: false } });
   ok((await lee('PDF1')) === 'error', '6. sin acceso: bloqueado');
@@ -53,7 +58,7 @@ const texto = (v) => `PDF ficticio de prueba, versión ${v}. ` + 'x'.repeat(3000
   const reu = a.secuencia.find((x) => x.evento === 'reutilizacion');
   ok(v.servidores === 2 && ext1.servidor === 1 && reu.servidor === 2 && ext1.version === reu.version, 'informe: la reutilización ocurrió en otro servidor (después del reinicio) con la misma versión');
   ok(a.conteo['invalidacion:version_nueva'] === 1 && a.conteo['extraccion_nueva:version_nueva'] === 1, 'informe: invalidación y extracción nueva por versión nueva');
-  ok(a.conteo['invalidacion:sin_acceso'] === 1 && a.conteo['sin_acceso:drive_404'] === 1, 'informe: invalidación por pérdida de acceso');
+  ok(a.conteo['invalidacion:en_papelera'] === 1 && a.conteo['invalidacion:sin_acceso'] === 1 && a.conteo['sin_acceso:drive_404'] === 1, 'informe: invalidación por pérdida de acceso');
   ok(a.conteo['borrado:borrado_voluntario'] === 1 && a.estado_actual === 'sin extracción guardada', 'informe: borrado voluntario por archivo y ya no queda extracción');
   ok(v.copias_temporales.borradas === a.conteo.descarga && v.copias_temporales.fallidas === 0 && v.copias_temporales.pendientes_ahora === 0 && st.vivos.length === 0,
     `copias temporales: ${v.copias_temporales.borradas} creadas y borradas (una por descarga), 0 pendientes; Drive simulado sin copias vivas`);
