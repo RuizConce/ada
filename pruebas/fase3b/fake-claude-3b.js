@@ -89,7 +89,11 @@ function extraerRequisitos(req) {
 function recomendaciones(req) {
   global.__h.recomendaciones += 1;
   const ids = [...String(req.messages[0].content).matchAll(/^- (\S+) \(/gm)].map((m) => m[1]);
-  const lista = ids.map((id) => ({ requisito: id, accion: `Acción ficticia para subsanar el hallazgo ${id} y documentarla.`, prioridad: 'alta' }));
+  const modo = process.env.FAKE_H_REC || 'bien';
+  const vez = global.__h.recomendaciones;
+  const cortar = (modo === 'cortada_una_vez' && vez === 1) || modo === 'siempre_cortada';
+  const lista = ids.map((id) => ({ requisito: id, accion: cortar && id === 'R5' ? 'Revisar cómo se l' : `Acción ficticia para subsanar el hallazgo ${id} y documentarla.`, prioridad: 'alta' }));
+  if (modo === 'max_tokens_una_vez' && vez === 1) return { id: `msg_c${++n}`, stop_reason: 'max_tokens', usage: usoDe(req, req.max_tokens), content: [{ type: 'tool_use', id: `c${n}`, name: 'proponer_recomendaciones', input: { recomendaciones: lista.map((r) => ({ ...r, accion: r.accion.slice(0, 17) })) } }] };
   return { id: `msg_c${++n}`, stop_reason: 'tool_use', usage: usoDe(req, 60 * ids.length + 40), content: [{ type: 'tool_use', id: `c${n}`, name: 'proponer_recomendaciones', input: { recomendaciones: lista } }] };
 }
 function auditarH(req) {

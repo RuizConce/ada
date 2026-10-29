@@ -93,6 +93,45 @@ async function crearWord({ titulo, contenido }) {
   return docx.Packer.toBuffer(doc);
 }
 
+// ---------- Comprobación antes de entregar un Word ----------
+// Relee el .docx generado y confirma que trae TODO el contenido pedido, completo: cada línea del contenido
+// (títulos, párrafos, viñetas y celdas) debe aparecer entera en el documento. Con estricto, además, ningún
+// párrafo ni viñeta de texto puede terminar a media frase (sin punto final ni otro cierre).
+const normaTexto = (t) => String(t || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+const planoMd = (l) => normaTexto(String(l).replace(/^\s*#{1,6}\s+/, '').replace(/^\s*[-•*]\s+/, '').replace(/^\s*\d+[.)]\s+/, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*\n]+)\*/g, '$1'));
+const CIERRE = /[.!?…:;)\]»"”'%]$|\d$/;
+
+async function textoDeWord(buf) {
+  const JSZip = require('jszip');
+  const zip = await JSZip.loadAsync(buf);
+  const xml = await zip.file('word/document.xml').async('string');
+  const desc = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  return [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)].map((m) => desc([...m[0].matchAll(/<w:t(?: [^>]*)?>([\s\S]*?)<\/w:t>/g)].map((x) => x[1]).join(''))).filter((x) => x.trim());
+}
+
+async function comprobarWord(buf, { titulo, contenido }, { estricto = false } = {}) {
+  const problemas = []; const advertencias = [];
+  let parrafos;
+  try { parrafos = await textoDeWord(buf); } catch (e) { return { ok: false, problemas: [`el Word no se puede abrir: ${e.message}`], advertencias }; }
+  const todo = normaTexto(parrafos.join('\n'));
+  const corto = (t) => (t.length > 70 ? `${t.slice(0, 70)}…` : t);
+  if (titulo && !todo.includes(normaTexto(titulo))) problemas.push('falta el título');
+  for (const linea of String(contenido || '').split('\n')) {
+    if (!linea.trim() || /^\s*---+\s*$/.test(linea) || /^\s*\|?\s*:?-{2,}/.test(linea)) continue;
+    if (/^\s*\|.*\|\s*$/.test(linea)) {
+      for (const c of filaTabla(linea)) if (c.trim() && !todo.includes(planoMd(c))) problemas.push(`celda incompleta o ausente: «${corto(planoMd(c))}»`);
+      continue;
+    }
+    const t = planoMd(linea);
+    if (!todo.includes(t)) { problemas.push(`texto incompleto o ausente en el Word: «${corto(t)}»`); continue; }
+    const esTitulo = /^\s*#{1,6}\s+/.test(linea);
+    // Estricto (informes de ADA): toda línea de texto cierra la frase. En los Word del chat, donde puede haber
+    // líneas sueltas legítimas (firmas, direcciones), solo se advierte en líneas de más de 20 caracteres.
+    if (!esTitulo && !CIERRE.test(t) && (estricto || t.length > 20)) (estricto ? problemas : advertencias).push(`termina a media frase: «…${t.slice(-50)}»`);
+  }
+  return { ok: !problemas.length, problemas, advertencias, parrafos: parrafos.length };
+}
+
 // ---------- Excel ----------
 
 function valorCelda(v) {
@@ -150,12 +189,19 @@ async function crearArchivo(a, ctx = {}) {
   if (!tipo) throw new Error('tipo debe ser "word" o "excel"');
   if (!a.titulo) throw new Error('titulo es obligatorio');
   const datos = tipo === 'word' ? await crearWord(a) : await crearExcel(a);
+  let advertenciaWord = null;
+  if (tipo === 'word') {
+    // Antes de entregarlo: el Word debe traer todo el contenido, completo. Si no, no se entrega.
+    const c = await comprobarWord(datos, a);
+    if (!c.ok) throw new Error(`No entregué el Word porque salió incompleto (${c.problemas.slice(0, 2).join('; ')}). Vuelve a crearlo.`);
+    if (c.advertencias.length) advertenciaWord = `Revisa estas líneas: parecen terminar a media frase (${c.advertencias.slice(0, 3).join('; ')}). Si quedaron cortadas, vuelve a crear el archivo completo.`;
+  }
   const nombre = nombreArchivo(a.titulo, tipo);
   const r = await q(
     'INSERT INTO archivos (conversacion_id, nombre, tipo, mime, datos, creado_en) VALUES (?, ?, ?, ?, ?, ?)',
     [ctx.conversacionId || null, nombre, tipo, MIME[tipo], datos, new Date()]
   );
-  const resultado = { ok: true, archivo_id: r.insertId, nombre };
+  const resultado = { ok: true, archivo_id: r.insertId, nombre, ...(advertenciaWord ? { advertencia: advertenciaWord } : {}) };
 
   // Si Google Drive está conectado, también lo deja ahí como Google Docs / Sheets.
   if (a.guardar_en_drive !== false) {
@@ -210,4 +256,4 @@ H.registrar([{
   },
 }], { crear_archivo: crearArchivo });
 
-module.exports = { crearWord, crearExcel, crearArchivo, obtenerArchivo };
+module.exports = { crearWord, crearExcel, crearArchivo, obtenerArchivo, comprobarWord, textoDeWord };

@@ -387,9 +387,13 @@ const EJECUTORES = {
       recomendaciones = r.recomendaciones; costo = r.costo; origenRec = r.origen;
     }
     const md = informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada, docs: sel ? sel.resultado.docs : [] });
-    const { crearWord } = require('./archivos');
-    const buf = await crearWord({ titulo: 'Informe ejecutivo de auditoría', contenido: md });
-    return { resultado: { nombre: 'informe.docx', docx_b64: buf.toString('base64'), huella: hash(buf.toString('base64')), hallazgos: pendientes.length, recomendaciones: recomendaciones.length, origen_recomendaciones: origenRec },
+    const { crearWord, comprobarWord } = require('./archivos');
+    const titulo = 'Informe ejecutivo de auditoría';
+    const buf = await crearWord({ titulo, contenido: md });
+    // Comprobación antes de entregar: el Word trae cada línea completa y ningún párrafo termina a media frase.
+    const c = await comprobarWord(buf, { titulo, contenido: md }, { estricto: true });
+    if (!c.ok) throw new Error(`el informe salió incompleto y no se entrega: ${c.problemas.slice(0, 3).join('; ')}`);
+    return { resultado: { nombre: 'informe.docx', docx_b64: buf.toString('base64'), huella: hash(buf.toString('base64')), md_huella: hash(md), md, hallazgos: pendientes.length, recomendaciones: recomendaciones.length, origen_recomendaciones: origenRec, comprobacion: { parrafos: c.parrafos, completo: true } },
       costo, llamadasRegistradas: true };
   },
 };
@@ -408,7 +412,7 @@ const evidenciasPlanas = (filas) => filas.flatMap((f) => (f.evidencias || []).ma
   archivo: x.archivo || '', archivo_version: x.archivo_version || '', ubicacion: x.ubicacion || '', cita: x.cita, verificada: x.verificada ? 'sí' : 'no' })));
 const conteoEstados = (filas) => filas.reduce((a, f) => { a[f.estado] = (a[f.estado] || 0) + 1; return a; }, {});
 
-const SISTEMA_REC = `Eres consultora de cumplimiento. Recibes hallazgos ya verificados de una auditoría documental. Para CADA hallazgo propones una acción concreta y realista para subsanarlo, con prioridad (alta, media o baja). No inventes hechos nuevos ni cambies los hallazgos: si la evidencia es contradictoria o falta, recomienda aclarar o reunir la evidencia. Responde solo con la herramienta proponer_recomendaciones, una recomendación por hallazgo.`;
+const SISTEMA_REC = `Eres consultora de cumplimiento. Recibes hallazgos ya verificados de una auditoría documental. Para CADA hallazgo propones una acción concreta y realista para subsanarlo, con prioridad (alta, media o baja). No inventes hechos nuevos ni cambies los hallazgos: si la evidencia es contradictoria o falta, recomienda aclarar o reunir la evidencia. Cada acción en 1 o 2 frases completas, terminadas en punto (máximo 400 caracteres). Responde solo con la herramienta proponer_recomendaciones, una recomendación por hallazgo.`;
 const HERRAMIENTA_REC = {
   name: 'proponer_recomendaciones',
   description: 'Entrega una recomendación por hallazgo.',
@@ -419,27 +423,52 @@ const HERRAMIENTA_REC = {
 const modeloInforme = (config) => modeloDe((CONFIGS[config] || CONFIGS[CONFIG_PROVISIONAL]).modelos.slice(-1)[0]);
 function pedidoRecomendaciones(pendientes, nota, config) {
   const lista = pendientes.map((f) => `- ${f.requisito} (${ETIQUETA[f.estado]}): ${f.texto_requisito}\n  Hallazgo: ${f.justificacion}`).join('\n');
-  return { model: modeloInforme(config), max_tokens: 400 + pendientes.length * 120, system: SISTEMA_REC, tools: [HERRAMIENTA_REC], tool_choice: { type: 'auto' },
+  return { model: modeloInforme(config), max_tokens: Math.min(16000, 800 + pendientes.length * 300), system: SISTEMA_REC, tools: [HERRAMIENTA_REC], tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content: `Hallazgos (${pendientes.length}):\n${lista}${nota ? `\n\n${nota}` : ''}` }] };
+}
+// Una acción es válida solo si está COMPLETA: largo razonable y termina en cierre de frase. Nunca se recorta:
+// un texto largo o cortado se rechaza y se pide de nuevo (la causa del "Revisar cómo se l" de la prueba H).
+const MAX_ACCION = 700;
+const CIERRE_FRASE = /[.!?…)»"”]$/;
+function accionValida(t) {
+  const a = String(t || '').replace(/\s+/g, ' ').trim();
+  if (a.length < 10) return 'muy corta';
+  if (a.length > MAX_ACCION) return `muy larga (${a.length} caracteres)`;
+  if (!CIERRE_FRASE.test(a)) return 'termina a media frase';
+  return null;
 }
 async function recomendar(pendientes, ctx, config) {
   const ids = new Set(pendientes.map((f) => f.requisito));
-  let costo = 0; let nota = null;
-  for (let intento = 1; intento <= 2; intento++) {
-    const { resp, costo: c } = await llamar(pedidoRecomendaciones(pendientes, nota, config), ctx, intento);
+  let costo = 0; let nota = null; let extra = 0;
+  for (let intento = 1; intento <= 3; intento++) {
+    const params = pedidoRecomendaciones(pendientes, nota, config);
+    params.max_tokens = Math.min(16000, params.max_tokens + extra);
+    const { resp, costo: c } = await llamar(params, ctx, intento);
     costo += c;
+    // Respuesta cortada por largo: no se usa ninguna parte; se pide de nuevo con más espacio y más breve.
+    if (resp.stop_reason === 'max_tokens') { extra += 2000; nota = 'Tu respuesta anterior se cortó por largo. Sé más breve: una o dos frases completas por acción.'; continue; }
     const b = (resp.content || []).find((x) => x.type === 'tool_use' && x.name === 'proponer_recomendaciones');
     const lista = b && Array.isArray(b.input.recomendaciones) ? b.input.recomendaciones : [];
-    const validas = lista.filter((r) => ids.has(String(r.requisito)) && String(r.accion || '').trim().length >= 10)
-      .map((r) => ({ requisito: String(r.requisito), accion: String(r.accion).trim().slice(0, 600), prioridad: ['alta', 'media', 'baja'].includes(r.prioridad) ? r.prioridad : 'media' }));
+    const rechazos = [];
+    const validas = [];
+    for (const r of lista) {
+      if (!ids.has(String(r.requisito))) continue;
+      const motivo = accionValida(r.accion);
+      if (motivo) { rechazos.push(`${r.requisito}: ${motivo}`); continue; }
+      validas.push({ requisito: String(r.requisito), accion: String(r.accion).replace(/\s+/g, ' ').trim(), prioridad: ['alta', 'media', 'baja'].includes(r.prioridad) ? r.prioridad : 'media' });
+    }
     const unicas = [...new Map(validas.map((r) => [r.requisito, r])).values()];
     if (unicas.length === ids.size) return { recomendaciones: pendientes.map((f) => unicas.find((r) => r.requisito === f.requisito)), costo, origen: 'IA' };
-    nota = `Faltó una recomendación válida para: ${[...ids].filter((x) => !unicas.some((r) => r.requisito === x)).join(', ')}. Entrega exactamente una por hallazgo.`;
+    const faltan = [...ids].filter((x) => !unicas.some((r) => r.requisito === x));
+    nota = `Faltó una recomendación completa para: ${faltan.join(', ')}${rechazos.length ? ` (${rechazos.join('; ')})` : ''}. Entrega exactamente una por hallazgo, cada una en 1 o 2 frases completas terminadas en punto.`;
   }
-  // Si la IA no entrega una por hallazgo, no se inventa: queda una acción genérica marcada como tal.
-  return { recomendaciones: pendientes.map((f) => ({ requisito: f.requisito, accion: f.estado === 'contradictorio' ? 'Aclarar la contradicción entre documentos y conservar la evidencia vigente.' : f.estado === 'sin_evidencia' || f.estado === 'no_evaluado' ? 'Reunir y presentar la evidencia documental de este requisito.' : 'Subsanar el incumplimiento y documentar la corrección.', prioridad: 'media', generica: true })), costo, origen: 'plantilla (la IA no entregó una por hallazgo)' };
+  // Si la IA no entrega una acción completa por hallazgo, no se inventa ni se recorta: queda una acción genérica marcada como tal.
+  return { recomendaciones: pendientes.map((f) => ({ requisito: f.requisito, accion: f.estado === 'contradictorio' ? 'Aclarar la contradicción entre documentos y conservar la evidencia vigente.' : f.estado === 'sin_evidencia' || f.estado === 'no_evaluado' ? 'Reunir y presentar la evidencia documental de este requisito.' : 'Subsanar el incumplimiento y documentar la corrección.', prioridad: 'media', generica: true })), costo, origen: 'plantilla (la IA no entregó una acción completa por hallazgo)' };
 }
 
+// Textos que vienen de otros (requisitos escritos a mano, justificaciones) se cierran con punto si no lo traen,
+// para que el informe nunca muestre una frase abierta. Los textos de la IA ya llegan completos (se validan antes).
+const frase = (t) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return !x || /[.!?…:;)\]»"”]$/.test(x) ? x : `${x}.`; };
 function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada, docs }) {
   const conteo = conteoEstados(filas);
   const pendientes = filas.filter((f) => !['cumple', 'no_aplica_justificado'].includes(f.estado));
@@ -459,14 +488,14 @@ function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada
   if (!pendientes.length) l.push('- No hay hallazgos: todos los requisitos se cumplen o no aplican.');
   for (const f of pendientes) {
     l.push(`### ${f.requisito} — ${ETIQUETA[f.estado]}`);
-    l.push(`Requisito: ${f.texto_requisito}`);
-    l.push(`Hallazgo: ${f.justificacion}`);
+    l.push(`Requisito: ${frase(f.texto_requisito)}`);
+    l.push(`Hallazgo: ${frase(f.justificacion)}`);
     for (const x of f.evidencias || []) l.push(`- Evidencia ${x.aporta === 'en_contra' ? 'en contra' : 'a favor'} (${ref(x)}): «${x.cita}»`);
   }
   const cumplen = filas.filter((f) => ['cumple', 'no_aplica_justificado'].includes(f.estado));
   if (cumplen.length) {
     l.push('', '### Requisitos cumplidos o que no aplican');
-    for (const f of cumplen) l.push(`- ${f.requisito} — ${ETIQUETA[f.estado]}: ${f.justificacion}`);
+    for (const f of cumplen) l.push(`- ${f.requisito} — ${ETIQUETA[f.estado]}: ${frase(f.justificacion)}`);
   }
   l.push('', '## 4. Recomendaciones');
   l.push(`Propuestas de ADA para subsanar los hallazgos (origen: ${origenRec}). No son hallazgos ni hechos verificados: son sugerencias para decidir.`);
@@ -559,6 +588,10 @@ async function verificar(t, pasos, esperado, opciones) {
     try {
       const e = Cifrado.descifrarJSON(pasoInforme.resultado_cifrado);
       if (hash(e.docx_b64) !== e.huella) problemas.push('el informe no coincide con su huella');
+      if (e.md) {
+        const c = await require('./archivos').comprobarWord(Buffer.from(e.docx_b64, 'base64'), { titulo: 'Informe ejecutivo de auditoría', contenido: e.md }, { estricto: true });
+        for (const x of c.problemas) problemas.push(`informe: ${x}`);
+      } else problemas.push('el informe no guardó su contenido para comprobarlo');
       const texto = await textoDocx(e.docx_b64);
       const iH = texto.indexOf('3. Hallazgos'); const iR = texto.indexOf('4. Recomendaciones'); const iM = texto.indexOf('5. Método y límites');
       if (!texto.includes(t.id)) problemas.push('el informe no indica este trabajo');
