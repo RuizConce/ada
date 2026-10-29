@@ -1,0 +1,666 @@
+{
+ "_nota": "Prueba I (Fase 3e): pauta ficticia con 20 requisitos (+3 artículos que no son requisitos) y 15 documentos ficticios de un centro ficticio. Todo es inventado. Generado por pruebas/fase3e/generar-prueba-i.py, que comprueba que cada cita existe tal cual. 'simulado' son las respuestas del Claude simulado (prueban el mecanismo, no la precisión real).",
+ "norma": {
+  "nombre": "Pauta ficticia de centros ambulatorios (prueba I).pdf",
+  "texto": "PAUTA FICTICIA DE CENTROS AMBULATORIOS (PRUEBA I)\nDocumento de prueba. No corresponde a ninguna norma real.\nPágina 1\nTítulo I. Objeto\nEsta pauta fija las condiciones mínimas de funcionamiento de los centros ambulatorios ficticios usados en las pruebas de ADA.\nTítulo II. Requisitos\nArtículo 1. La recepción debe exhibir en un lugar visible el horario de atención del centro.\nArtículo 2. La sala de espera debe contar con al menos 8 asientos.\nArtículo 3. Debe existir un baño accesible para personas con movilidad reducida en cada piso del centro.\nArtículo 4. Debe haber un extintor de polvo químico seco con carga vigente en cada piso del centro.\nArtículo 5. El centro debe contar con un plan de emergencia aprobado por la dirección.\nArtículo 6. Debe realizarse un simulacro de evacuación al menos una vez al año.\nArtículo 7. Todos los profesionales de salud deben tener inscripción vigente en el registro nacional de prestadores.\nPágina 2\nArtículo 8. Todo el personal clínico debe completar cada año una capacitación en prevención de infecciones.\nArtículo 9. Si el centro toma muestras de laboratorio, debe tener un contrato vigente con un laboratorio autorizado.\nArtículo 10. Debe llevarse un registro de mantención preventiva de los equipos médicos.\nArtículo 11. Si el centro cuenta con un equipo de rayos X, debe tener autorización vigente de la instalación radiológica.\nArtículo 12. Cada box de atención debe contar con un contenedor rígido para material cortopunzante.\nArtículo 13. La ficha clínica debe ser electrónica y contar con respaldo diario.\nArtículo 14. Debe existir un procedimiento escrito para recibir y responder reclamos de los pacientes.\nPágina 3\nArtículo 15. Las vías de evacuación deben contar con señalización iluminada.\nArtículo 16. Si se atiende a menores de edad, debe existir una sala de espera diferenciada para ellos.\nArtículo 17. Debe realizarse un control de plagas al menos cada seis meses.\nArtículo 18. La dirección técnica debe estar a cargo de un profesional con jornada de al menos 22 horas semanales.\nArtículo 19. Debe mantenerse un inventario actualizado de los medicamentos del centro.\nArtículo 20. El centro debe contar con un generador eléctrico de respaldo con mantención anual.\nTítulo III. Disposiciones finales\nArtículo 21. La autoridad sanitaria ficticia podrá fiscalizar estas condiciones.\nArtículo 22. Las infracciones se sancionarán conforme a la normativa general.\nArtículo 23. Esta pauta rige desde su publicación."
+ },
+ "documentos": [
+  {
+   "id": "ID01",
+   "nombre": "Informe de recepción y sala de espera (ficticio).pdf",
+   "texto": "INFORME DE RECEPCIÓN Y SALA DE ESPERA\nDocumento ficticio para pruebas.\nPágina 1\nRecepción\nLa recepción exhibe en un lugar visible el horario de atención del centro, de lunes a viernes de 8:00 a 20:00 horas.\nEl centro funciona en un edificio de dos pisos ubicado en una calle ficticia de la ciudad.\nPágina 2\nSala de espera\nLa sala de espera dispone de 5 asientos en buen estado.\nLa administración informa que durante el año se renovaron las cortinas y se pintaron los pasillos."
+  },
+  {
+   "id": "ID02",
+   "nombre": "Informe de infraestructura del primer piso (ficticio).pdf",
+   "texto": "INFORME DE INFRAESTRUCTURA DEL PRIMER PISO\nDocumento ficticio para pruebas.\nPágina 1\nAccesibilidad\nEn el primer piso existe un baño accesible para personas con movilidad reducida, con barras de apoyo.\nEn el segundo piso no existe baño accesible para personas con movilidad reducida.\nSe deja constancia de que el estacionamiento es compartido con un local comercial vecino.\nPágina 2\nSeguridad\nEn el primer piso hay un extintor de polvo químico seco con carga vigente hasta abril de 2027.\nLa red de internet fue reemplazada por una de mayor velocidad en el mes de abril."
+  },
+  {
+   "id": "ID03",
+   "nombre": "Certificado de mantención de extintores (ficticio).pdf",
+   "texto": "CERTIFICADO DE MANTENCIÓN DE EXTINTORES\nDocumento ficticio para pruebas.\nPágina 1\nCertificado\nSe certifica la mantención del extintor de polvo químico seco del segundo piso, con carga vigente hasta julio de 2027.\nLa empresa mantenedora es ficticia y está inscrita en un registro ficticio."
+  },
+  {
+   "id": "ID04",
+   "nombre": "Plan de emergencia y simulacros (ficticio).pdf",
+   "texto": "PLAN DE EMERGENCIA Y SIMULACROS\nDocumento ficticio para pruebas.\nPágina 1\nPlan de emergencia\nEl plan de emergencia del centro fue aprobado por la dirección en marzo de 2026.\nEl plan considera la ubicación de extintores y los puntos de encuentro.\nPágina 2\nSimulacros\nSe realizó un simulacro de evacuación en mayo de 2026, con participación de todo el personal.\nEl personal administrativo participa en reuniones de coordinación semanales."
+  },
+  {
+   "id": "ID05",
+   "nombre": "Acta del comité de calidad (ficticia).pdf",
+   "texto": "ACTA DEL COMITÉ DE CALIDAD\nDocumento ficticio para pruebas.\nPágina 1\nAsistentes\nAsisten la directora técnica, la enfermera coordinadora y el encargado de mantención.\nPágina 2\nAcuerdos\nSe informa que el plan de emergencia aún no ha sido aprobado por la dirección y se encuentra en revisión.\nSe informa además que la autorización de la instalación radiológica de rayos X venció en junio de 2026.\nSe acuerda revisar el tema en la próxima sesión."
+  },
+  {
+   "id": "ID06",
+   "nombre": "Nómina del personal y dirección técnica (ficticia).pdf",
+   "texto": "NÓMINA DEL PERSONAL Y DIRECCIÓN TÉCNICA\nDocumento ficticio para pruebas.\nPágina 1\nProfesionales de salud\nLos profesionales de salud del centro son cuatro: la Dra. Paula Vera, el Dr. Tomás Ruiz, la enfermera Inés Lagos y el kinesiólogo Raúl Díaz.\nInscripción en el registro nacional de prestadores: Dra. Paula Vera vigente, Dr. Tomás Ruiz vigente e Inés Lagos vigente.\nPágina 2\nDirección técnica\nLa dirección técnica está a cargo de la Dra. Paula Vera, con una jornada de 44 horas semanales.\nEl centro funciona en un edificio de dos pisos ubicado en una calle ficticia de la ciudad."
+  },
+  {
+   "id": "ID07",
+   "nombre": "Certificado de registro de prestador (ficticio).pdf",
+   "texto": "CERTIFICADO DE REGISTRO DE PRESTADOR\nDocumento ficticio para pruebas.\nPágina 1\nCertificado\nSe certifica que el kinesiólogo Raúl Díaz tiene inscripción vigente en el registro nacional de prestadores.\nEste certificado es ficticio y se emitió para pruebas."
+  },
+  {
+   "id": "ID08",
+   "nombre": "Registro de capacitaciones (ficticio).pdf",
+   "texto": "REGISTRO DE CAPACITACIONES\nDocumento ficticio para pruebas.\nPágina 1\nPrevención de infecciones\nEl personal clínico está compuesto por cinco personas.\nDurante 2026, tres de las cinco personas del personal clínico completaron la capacitación anual en prevención de infecciones; las otras dos aún no la realizan.\nLa administración informa que durante el año se renovaron las cortinas y se pintaron los pasillos.\nPágina 2\nOtras capacitaciones\nTodo el personal asistió a una charla sobre buen trato al paciente."
+  },
+  {
+   "id": "ID09",
+   "nombre": "Informe de farmacia y laboratorio (ficticio).pdf",
+   "texto": "INFORME DE FARMACIA Y LABORATORIO\nDocumento ficticio para pruebas.\nPágina 1\nLaboratorio\nEl centro no toma muestras de laboratorio; los pacientes que las requieren son derivados a un laboratorio externo.\nSe deja constancia de que el estacionamiento es compartido con un local comercial vecino.\nPágina 2\nMedicamentos\nEl inventario de medicamentos se encuentra actualizado al 30 de septiembre de 2026, con firma de la química farmacéutica."
+  },
+  {
+   "id": "ID10",
+   "nombre": "Registro de mantención de equipos (ficticio).pdf",
+   "texto": "REGISTRO DE MANTENCIÓN DE EQUIPOS\nDocumento ficticio para pruebas.\nPágina 1\nEquipos médicos\nSe lleva un registro de mantención preventiva de los equipos médicos, con fecha, responsable y próxima revisión de cada equipo.\nLa red de internet fue reemplazada por una de mayor velocidad en el mes de abril.\nPágina 2\nObservaciones\nLos equipos de climatización recibieron mantención en enero de 2026."
+  },
+  {
+   "id": "ID11",
+   "nombre": "Informe del equipo de rayos X (ficticio).pdf",
+   "texto": "INFORME DEL EQUIPO DE RAYOS X\nDocumento ficticio para pruebas.\nPágina 1\nEquipo\nEl centro cuenta con un equipo de rayos X dental en el box 3.\nPágina 2\nAutorización\nLa instalación radiológica del equipo de rayos X cuenta con autorización vigente hasta agosto de 2028.\nEl personal administrativo participa en reuniones de coordinación semanales."
+  },
+  {
+   "id": "ID12",
+   "nombre": "Informe de inspección de boxes y plagas (ficticio).pdf",
+   "texto": "INFORME DE INSPECCIÓN DE BOXES Y PLAGAS\nDocumento ficticio para pruebas.\nPágina 1\nBoxes de atención\nNinguno de los boxes de atención cuenta con contenedor rígido para material cortopunzante; se usan botellas plásticas.\nEl centro funciona en un edificio de dos pisos ubicado en una calle ficticia de la ciudad.\nPágina 2\nControl de plagas\nEl último control de plagas se realizó en diciembre de 2024."
+  },
+  {
+   "id": "ID13",
+   "nombre": "Informe de sistemas de información (ficticio).pdf",
+   "texto": "INFORME DE SISTEMAS DE INFORMACIÓN\nDocumento ficticio para pruebas.\nPágina 1\nFicha clínica\nLa ficha clínica del centro es electrónica desde 2024.\nEl respaldo de la ficha clínica electrónica se realiza una vez por semana, los días viernes.\nLa red de internet fue reemplazada por una de mayor velocidad en el mes de abril."
+  },
+  {
+   "id": "ID14",
+   "nombre": "Procedimiento de reclamos (ficticio).pdf",
+   "texto": "PROCEDIMIENTO DE RECLAMOS\nDocumento ficticio para pruebas.\nPágina 1\nProcedimiento\nExiste un procedimiento escrito para recibir y responder reclamos de los pacientes, con un plazo de respuesta de diez días hábiles.\nLos reclamos se registran en un libro foliado ficticio."
+  },
+  {
+   "id": "ID15",
+   "nombre": "Reglamento interno de admisión (ficticio).pdf",
+   "texto": "REGLAMENTO INTERNO DE ADMISIÓN\nDocumento ficticio para pruebas.\nPágina 1\nPacientes\nEl centro atiende exclusivamente a pacientes adultos; no se atiende a menores de edad.\nLa administración informa que durante el año se renovaron las cortinas y se pintaron los pasillos.\nPágina 2\nHorario\nEl reglamento repite el horario de atención para conocimiento del personal."
+  }
+ ],
+ "requisitos_esperados": [
+  {
+   "id": "R1",
+   "referencia": "Art. 1",
+   "texto": "La recepción debe exhibir en un lugar visible el horario de atención del centro."
+  },
+  {
+   "id": "R2",
+   "referencia": "Art. 2",
+   "texto": "La sala de espera debe contar con al menos 8 asientos."
+  },
+  {
+   "id": "R3",
+   "referencia": "Art. 3",
+   "texto": "Debe existir un baño accesible para personas con movilidad reducida en cada piso del centro."
+  },
+  {
+   "id": "R4",
+   "referencia": "Art. 4",
+   "texto": "Debe haber un extintor de polvo químico seco con carga vigente en cada piso del centro."
+  },
+  {
+   "id": "R5",
+   "referencia": "Art. 5",
+   "texto": "El centro debe contar con un plan de emergencia aprobado por la dirección."
+  },
+  {
+   "id": "R6",
+   "referencia": "Art. 6",
+   "texto": "Debe realizarse un simulacro de evacuación al menos una vez al año."
+  },
+  {
+   "id": "R7",
+   "referencia": "Art. 7",
+   "texto": "Todos los profesionales de salud deben tener inscripción vigente en el registro nacional de prestadores."
+  },
+  {
+   "id": "R8",
+   "referencia": "Art. 8",
+   "texto": "Todo el personal clínico debe completar cada año una capacitación en prevención de infecciones."
+  },
+  {
+   "id": "R9",
+   "referencia": "Art. 9",
+   "texto": "Si el centro toma muestras de laboratorio, debe tener un contrato vigente con un laboratorio autorizado."
+  },
+  {
+   "id": "R10",
+   "referencia": "Art. 10",
+   "texto": "Debe llevarse un registro de mantención preventiva de los equipos médicos."
+  },
+  {
+   "id": "R11",
+   "referencia": "Art. 11",
+   "texto": "Si el centro cuenta con un equipo de rayos X, debe tener autorización vigente de la instalación radiológica."
+  },
+  {
+   "id": "R12",
+   "referencia": "Art. 12",
+   "texto": "Cada box de atención debe contar con un contenedor rígido para material cortopunzante."
+  },
+  {
+   "id": "R13",
+   "referencia": "Art. 13",
+   "texto": "La ficha clínica debe ser electrónica y contar con respaldo diario."
+  },
+  {
+   "id": "R14",
+   "referencia": "Art. 14",
+   "texto": "Debe existir un procedimiento escrito para recibir y responder reclamos de los pacientes."
+  },
+  {
+   "id": "R15",
+   "referencia": "Art. 15",
+   "texto": "Las vías de evacuación deben contar con señalización iluminada."
+  },
+  {
+   "id": "R16",
+   "referencia": "Art. 16",
+   "texto": "Si se atiende a menores de edad, debe existir una sala de espera diferenciada para ellos."
+  },
+  {
+   "id": "R17",
+   "referencia": "Art. 17",
+   "texto": "Debe realizarse un control de plagas al menos cada seis meses."
+  },
+  {
+   "id": "R18",
+   "referencia": "Art. 18",
+   "texto": "La dirección técnica debe estar a cargo de un profesional con jornada de al menos 22 horas semanales."
+  },
+  {
+   "id": "R19",
+   "referencia": "Art. 19",
+   "texto": "Debe mantenerse un inventario actualizado de los medicamentos del centro."
+  },
+  {
+   "id": "R20",
+   "referencia": "Art. 20",
+   "texto": "El centro debe contar con un generador eléctrico de respaldo con mantención anual."
+  }
+ ],
+ "resultado_correcto": [
+  {
+   "id": "R1",
+   "estado": "cumple",
+   "archivos": [
+    "ID01"
+   ]
+  },
+  {
+   "id": "R2",
+   "estado": "no_cumple",
+   "archivos": [
+    "ID01"
+   ]
+  },
+  {
+   "id": "R3",
+   "estado": "parcial",
+   "archivos": [
+    "ID02"
+   ]
+  },
+  {
+   "id": "R4",
+   "estado": "cumple",
+   "archivos": [
+    "ID02",
+    "ID03"
+   ]
+  },
+  {
+   "id": "R5",
+   "estado": "contradictorio",
+   "archivos": [
+    "ID04",
+    "ID05"
+   ]
+  },
+  {
+   "id": "R6",
+   "estado": "cumple",
+   "archivos": [
+    "ID04"
+   ]
+  },
+  {
+   "id": "R7",
+   "estado": "cumple",
+   "archivos": [
+    "ID06",
+    "ID07"
+   ]
+  },
+  {
+   "id": "R8",
+   "estado": "parcial",
+   "archivos": [
+    "ID08"
+   ]
+  },
+  {
+   "id": "R9",
+   "estado": "no_aplica_justificado",
+   "archivos": [
+    "ID09"
+   ]
+  },
+  {
+   "id": "R10",
+   "estado": "cumple",
+   "archivos": [
+    "ID10"
+   ]
+  },
+  {
+   "id": "R11",
+   "estado": "contradictorio",
+   "archivos": [
+    "ID05",
+    "ID11"
+   ]
+  },
+  {
+   "id": "R12",
+   "estado": "no_cumple",
+   "archivos": [
+    "ID12"
+   ]
+  },
+  {
+   "id": "R13",
+   "estado": "parcial",
+   "archivos": [
+    "ID13"
+   ]
+  },
+  {
+   "id": "R14",
+   "estado": "cumple",
+   "archivos": [
+    "ID14"
+   ]
+  },
+  {
+   "id": "R15",
+   "estado": "sin_evidencia",
+   "archivos": []
+  },
+  {
+   "id": "R16",
+   "estado": "no_aplica_justificado",
+   "archivos": [
+    "ID15"
+   ]
+  },
+  {
+   "id": "R17",
+   "estado": "no_cumple",
+   "archivos": [
+    "ID12"
+   ]
+  },
+  {
+   "id": "R18",
+   "estado": "cumple",
+   "archivos": [
+    "ID06"
+   ]
+  },
+  {
+   "id": "R19",
+   "estado": "cumple",
+   "archivos": [
+    "ID09"
+   ]
+  },
+  {
+   "id": "R20",
+   "estado": "sin_evidencia",
+   "archivos": []
+  }
+ ],
+ "simulado": {
+  "requisitos": [
+   {
+    "referencia": "Art. 1",
+    "texto": "La recepción debe exhibir en un lugar visible el horario de atención del centro.",
+    "cita": "La recepción debe exhibir en un lugar visible el horario de atención del centro."
+   },
+   {
+    "referencia": "Art. 2",
+    "texto": "La sala de espera debe contar con al menos 8 asientos.",
+    "cita": "La sala de espera debe contar con al menos 8 asientos."
+   },
+   {
+    "referencia": "Art. 3",
+    "texto": "Debe existir un baño accesible para personas con movilidad reducida en cada piso del centro.",
+    "cita": "Debe existir un baño accesible para personas con movilidad reducida en cada piso del centro."
+   },
+   {
+    "referencia": "Art. 4",
+    "texto": "Debe haber un extintor de polvo químico seco con carga vigente en cada piso del centro.",
+    "cita": "Debe haber un extintor de polvo químico seco con carga vigente en cada piso del centro."
+   },
+   {
+    "referencia": "Art. 5",
+    "texto": "El centro debe contar con un plan de emergencia aprobado por la dirección.",
+    "cita": "El centro debe contar con un plan de emergencia aprobado por la dirección."
+   },
+   {
+    "referencia": "Art. 6",
+    "texto": "Debe realizarse un simulacro de evacuación al menos una vez al año.",
+    "cita": "Debe realizarse un simulacro de evacuación al menos una vez al año."
+   },
+   {
+    "referencia": "Art. 7",
+    "texto": "Todos los profesionales de salud deben tener inscripción vigente en el registro nacional de prestadores.",
+    "cita": "Todos los profesionales de salud deben tener inscripción vigente en el registro nacional de prestadores."
+   },
+   {
+    "referencia": "Art. 8",
+    "texto": "Todo el personal clínico debe completar cada año una capacitación en prevención de infecciones.",
+    "cita": "Todo el personal clínico debe completar cada año una capacitación en prevención de infecciones."
+   },
+   {
+    "referencia": "Art. 9",
+    "texto": "Si el centro toma muestras de laboratorio, debe tener un contrato vigente con un laboratorio autorizado.",
+    "cita": "Si el centro toma muestras de laboratorio, debe tener un contrato vigente con un laboratorio autorizado."
+   },
+   {
+    "referencia": "Art. 10",
+    "texto": "Debe llevarse un registro de mantención preventiva de los equipos médicos.",
+    "cita": "Debe llevarse un registro de mantención preventiva de los equipos médicos."
+   },
+   {
+    "referencia": "Art. 11",
+    "texto": "Si el centro cuenta con un equipo de rayos X, debe tener autorización vigente de la instalación radiológica.",
+    "cita": "Si el centro cuenta con un equipo de rayos X, debe tener autorización vigente de la instalación radiológica."
+   },
+   {
+    "referencia": "Art. 12",
+    "texto": "Cada box de atención debe contar con un contenedor rígido para material cortopunzante.",
+    "cita": "Cada box de atención debe contar con un contenedor rígido para material cortopunzante."
+   },
+   {
+    "referencia": "Art. 13",
+    "texto": "La ficha clínica debe ser electrónica y contar con respaldo diario.",
+    "cita": "La ficha clínica debe ser electrónica y contar con respaldo diario."
+   },
+   {
+    "referencia": "Art. 14",
+    "texto": "Debe existir un procedimiento escrito para recibir y responder reclamos de los pacientes.",
+    "cita": "Debe existir un procedimiento escrito para recibir y responder reclamos de los pacientes."
+   },
+   {
+    "referencia": "Art. 15",
+    "texto": "Las vías de evacuación deben contar con señalización iluminada.",
+    "cita": "Las vías de evacuación deben contar con señalización iluminada."
+   },
+   {
+    "referencia": "Art. 16",
+    "texto": "Si se atiende a menores de edad, debe existir una sala de espera diferenciada para ellos.",
+    "cita": "Si se atiende a menores de edad, debe existir una sala de espera diferenciada para ellos."
+   },
+   {
+    "referencia": "Art. 17",
+    "texto": "Debe realizarse un control de plagas al menos cada seis meses.",
+    "cita": "Debe realizarse un control de plagas al menos cada seis meses."
+   },
+   {
+    "referencia": "Art. 18",
+    "texto": "La dirección técnica debe estar a cargo de un profesional con jornada de al menos 22 horas semanales.",
+    "cita": "La dirección técnica debe estar a cargo de un profesional con jornada de al menos 22 horas semanales."
+   },
+   {
+    "referencia": "Art. 19",
+    "texto": "Debe mantenerse un inventario actualizado de los medicamentos del centro.",
+    "cita": "Debe mantenerse un inventario actualizado de los medicamentos del centro."
+   },
+   {
+    "referencia": "Art. 20",
+    "texto": "El centro debe contar con un generador eléctrico de respaldo con mantención anual.",
+    "cita": "El centro debe contar con un generador eléctrico de respaldo con mantención anual."
+   },
+   {
+    "referencia": "Art. 4 (repetido)",
+    "texto": "Debe haber un extintor de polvo químico seco con carga vigente en cada piso del centro.",
+    "cita": "Debe haber un extintor de polvo químico seco con carga vigente en cada piso del centro."
+   },
+   {
+    "referencia": "Art. 50",
+    "texto": "El centro debe tener helipuerto.",
+    "cita": "El centro debe contar con un helipuerto en la azotea."
+   }
+  ],
+  "evaluaciones": {
+   "R1": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "La recepción exhibe en un lugar visible el horario de atención del centro",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R1: estado cumple según los documentos citados."
+   },
+   "R2": {
+    "estado": "no_cumple",
+    "evidencias": [
+     {
+      "cita": "La sala de espera dispone de 5 asientos",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R2: estado no_cumple según los documentos citados."
+   },
+   "R3": {
+    "estado": "parcial",
+    "evidencias": [
+     {
+      "cita": "En el primer piso existe un baño accesible para personas con movilidad reducida",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "En el segundo piso no existe baño accesible para personas con movilidad reducida",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R3: estado parcial según los documentos citados."
+   },
+   "R4": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "En el primer piso hay un extintor de polvo químico seco con carga vigente hasta abril de 2027",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "extintor de polvo químico seco del segundo piso, con carga vigente hasta julio de 2027",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R4: estado cumple según los documentos citados."
+   },
+   "R5": {
+    "estado": "contradictorio",
+    "evidencias": [
+     {
+      "cita": "El plan de emergencia del centro fue aprobado por la dirección en marzo de 2026",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "el plan de emergencia aún no ha sido aprobado por la dirección",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R5: estado contradictorio según los documentos citados."
+   },
+   "R6": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "Se realizó un simulacro de evacuación en mayo de 2026",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R6: estado cumple según los documentos citados."
+   },
+   "R7": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "Los profesionales de salud del centro son cuatro",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "Dra. Paula Vera vigente, Dr. Tomás Ruiz vigente e Inés Lagos vigente",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "el kinesiólogo Raúl Díaz tiene inscripción vigente en el registro nacional de prestadores",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R7: estado cumple según los documentos citados."
+   },
+   "R8": {
+    "estado": "parcial",
+    "evidencias": [
+     {
+      "cita": "tres de las cinco personas del personal clínico completaron la capacitación anual en prevención de infecciones",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "las otras dos aún no la realizan",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R8: estado parcial según los documentos citados."
+   },
+   "R9": {
+    "estado": "no_aplica_justificado",
+    "evidencias": [
+     {
+      "cita": "El centro no toma muestras de laboratorio",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R9: estado no_aplica_justificado según los documentos citados."
+   },
+   "R10": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "Se lleva un registro de mantención preventiva de los equipos médicos",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R10: estado cumple según los documentos citados."
+   },
+   "R11": {
+    "estado": "contradictorio",
+    "evidencias": [
+     {
+      "cita": "La instalación radiológica del equipo de rayos X cuenta con autorización vigente hasta agosto de 2028",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "la autorización de la instalación radiológica de rayos X venció en junio de 2026",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R11: estado contradictorio según los documentos citados."
+   },
+   "R12": {
+    "estado": "no_cumple",
+    "evidencias": [
+     {
+      "cita": "Ninguno de los boxes de atención cuenta con contenedor rígido para material cortopunzante",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R12: estado no_cumple según los documentos citados."
+   },
+   "R13": {
+    "estado": "parcial",
+    "evidencias": [
+     {
+      "cita": "La ficha clínica del centro es electrónica desde 2024",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "El respaldo de la ficha clínica electrónica se realiza una vez por semana",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R13: estado parcial según los documentos citados."
+   },
+   "R14": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "Existe un procedimiento escrito para recibir y responder reclamos de los pacientes",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R14: estado cumple según los documentos citados."
+   },
+   "R15": {
+    "estado": "sin_evidencia",
+    "evidencias": [],
+    "justificacion": "Evaluación simulada de R15: estado sin_evidencia según los documentos citados."
+   },
+   "R16": {
+    "estado": "no_aplica_justificado",
+    "evidencias": [
+     {
+      "cita": "El centro atiende exclusivamente a pacientes adultos; no se atiende a menores de edad",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R16: estado no_aplica_justificado según los documentos citados."
+   },
+   "R17": {
+    "estado": "no_cumple",
+    "evidencias": [
+     {
+      "cita": "El último control de plagas se realizó en diciembre de 2024",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R17: estado no_cumple según los documentos citados."
+   },
+   "R18": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "La dirección técnica está a cargo de la Dra. Paula Vera, con una jornada de 44 horas semanales",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R18: estado cumple según los documentos citados."
+   },
+   "R19": {
+    "estado": "cumple",
+    "evidencias": [
+     {
+      "cita": "El inventario de medicamentos se encuentra actualizado al 30 de septiembre de 2026",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada de R19: estado cumple según los documentos citados."
+   },
+   "R20": {
+    "estado": "sin_evidencia",
+    "evidencias": [],
+    "justificacion": "Evaluación simulada de R20: estado sin_evidencia según los documentos citados."
+   }
+  }
+ }
+}

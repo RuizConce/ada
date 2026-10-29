@@ -105,7 +105,9 @@ function auditarH(req) {
   const r = h.simulado.evaluaciones[id] || { estado: 'sin_evidencia', evidencias: [], justificacion: 'Sin información.' };
   const mal = String(process.env.FAKE_H_MAL || '').split(',').includes(id);
   const evidencias = r.evidencias.map((e) => ({ fragmento: (frags.find((f) => f.texto.includes(e.cita)) || {}).id || 'F1', cita: mal ? `${e.cita} y además todo está perfecto` : e.cita, aporta: e.aporta }));
-  return { id: `msg_e${++n}`, stop_reason: 'tool_use', usage: usoDe(req, 150), content: [{ type: 'tool_use', id: `e${n}`, name: 'evaluar_requisito', input: { estado: r.estado, evidencias, justificacion: r.justificacion } }] };
+  // FAKE_H_CARO=R8: esa evaluación informa un consumo enorme (para probar el control de presupuesto).
+  const caro = String(process.env.FAKE_H_CARO || '').split(',').includes(id);
+  return { id: `msg_e${++n}`, stop_reason: 'tool_use', usage: caro ? { input_tokens: 1500000, output_tokens: 150 } : usoDe(req, 150), content: [{ type: 'tool_use', id: `e${n}`, name: 'evaluar_requisito', input: { estado: r.estado, evidencias, justificacion: r.justificacion } }] };
 }
 
 class FakeAnthropic {

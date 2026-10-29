@@ -1032,11 +1032,12 @@ async function marcarTarjeta(id, { estado } = {}) {
 // La aprobación es el botón de la tarjeta: requisitos (posiblemente editados), configuración y presupuesto explícitos.
 // Se "reclama" la propuesta de forma atómica, así dos toques simultáneos no crean dos encargos.
 async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, origen } = {}, cliente = {}) {
+  const enAprobacion = new Date().toISOString(); // el momento del botón, antes de crear el trabajo
   const p = await propuesta(id);
   const datos = p.datos;
   const via = ['tarjeta_chat', 'ajustes_pendientes'].includes(origen) ? origen : 'api';
   const deQuien = { via, usuario_id: usuario().id, app: /; wv\)/.test(cliente.ua || '') ? 'android' : cliente.ua ? 'navegador' : 'desconocida' };
-  if (datos.tipo === 'extraer_requisitos') return aprobarExtraccion(p, Number(presupuesto), deQuien);
+  if (datos.tipo === 'extraer_requisitos') return aprobarExtraccion(p, Number(presupuesto), deQuien, enAprobacion);
   // Los requisitos editados en la tarjeta conservan su fuente en la norma (por id).
   const conFuente = (lista) => lista.map((r) => { const o = (datos.requisitos || []).find((x) => x.id === String(r.id || '').trim()); return o && o.fuente && !r.fuente ? { ...r, fuente: o.fuente } : r; });
   const aprobado = { archivo_ids: datos.archivos.map((a) => a.id), requisitos: requisitos && requisitos.length ? conFuente(requisitos) : datos.requisitos,
@@ -1054,13 +1055,13 @@ async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, or
   }
   // Origen de la aprobación: siempre una solicitud autenticada de la persona (ninguna herramienta de ADA aprueba).
   const constancia = { requisitos: e.requisitos, requisitos_hash: hash(JSON.stringify(e.requisitos)), configuracion: aprobado.configuracion, modelos: CONFIGS[aprobado.configuracion].modelos.map(modeloDe),
-    presupuesto: aprobado.presupuesto, en: new Date().toISOString(), origen: deQuien };
+    presupuesto: aprobado.presupuesto, en: enAprobacion, origen: deQuien };
   await Trabajos.evento(trabajo.id, 'propuesta_aprobada', `propuesta ${id.slice(0, 8)} aprobada desde ${via}`, aprobado.presupuesto, `u${usuario().id}`).catch(() => {});
   await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', trabajo_id = ?, aprobacion_cifrada = ?, actualizado_en = ? WHERE id = ?", [trabajo.id, Cifrado.cifrarJSON(constancia), new Date(), id]);
   return { ok: true, propuesta_id: id, trabajo_id: trabajo.id, estado: trabajo.estado, configuracion: aprobado.configuracion, presupuesto: aprobado.presupuesto };
 }
 
-async function aprobarExtraccion(p, presupuesto, deQuien) {
+async function aprobarExtraccion(p, presupuesto, deQuien, enAprobacion) {
   const datos = p.datos;
   if (!(presupuesto > 0)) throw err('Indica el presupuesto aprobado (US$)');
   if (presupuesto + 1e-9 < datos.estimacion.presupuesto_minimo) throw err(`El presupuesto (US$${presupuesto}) es menor que el mínimo para extraer (US$${datos.estimacion.presupuesto_minimo})`);
@@ -1080,7 +1081,7 @@ async function aprobarExtraccion(p, presupuesto, deQuien) {
     await qPrincipal("UPDATE auditoria_propuestas SET estado = 'pendiente', actualizado_en = ? WHERE id = ? AND estado = 'aprobando'", [new Date(), p.id]);
     throw x;
   }
-  const constancia = { tipo: 'extraer_requisitos', norma: { id: n.id, version: n.version }, bloques_hash: bloquesHash, configuracion: 'extracción', modelos: [modeloDe('profundo')], presupuesto, en: new Date().toISOString(), origen: deQuien, requisitos: [], requisitos_hash: null };
+  const constancia = { tipo: 'extraer_requisitos', norma: { id: n.id, version: n.version }, bloques_hash: bloquesHash, configuracion: 'extracción', modelos: [modeloDe('profundo')], presupuesto, en: enAprobacion, origen: deQuien, requisitos: [], requisitos_hash: null };
   await Trabajos.evento(trabajo.id, 'propuesta_aprobada', `propuesta ${p.id.slice(0, 8)} aprobada desde ${deQuien.via}`, presupuesto, `u${usuario().id}`).catch(() => {});
   await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', trabajo_id = ?, aprobacion_cifrada = ?, actualizado_en = ? WHERE id = ?", [trabajo.id, Cifrado.cifrarJSON(constancia), new Date(), p.id]);
   return { ok: true, propuesta_id: p.id, trabajo_id: trabajo.id, estado: trabajo.estado, tipo: 'extraer_requisitos', configuracion: 'extracción', presupuesto };
