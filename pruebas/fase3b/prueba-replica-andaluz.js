@@ -9,7 +9,7 @@ const R = require(`${S}/replica-andaluz.json`);
 const resultados = [];
 const ok = (c, m) => { const l = (c ? 'ok - ' : 'FALLA: ') + m; console.log(l); resultados.push(l); if (!c) process.exitCode = 1; };
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
-const sql = (q) => execSync(`mysql -uada -pada ada -N -B -e ${JSON.stringify(q)}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+const sql = (q) => execSync(`mysql -uada -pada ada -N -B -e ${JSON.stringify(q)}`, { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 << 20 }).toString().trim();
 const DRIVE = 'http://localhost:9933';
 const procesos = {};
 const ctl = async (ruta, body) => (await fetch(`${DRIVE}${ruta}`, body ? { method: 'POST', body: JSON.stringify(body) } : {})).json();

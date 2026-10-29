@@ -6,7 +6,7 @@ const S = __dirname;
 const resultados = [];
 const ok = (c, m) => { const l = (c ? 'ok - ' : 'FALLA: ') + m; console.log(l); resultados.push(l); if (!c) process.exitCode = 1; };
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
-const sql = (q, base = 'ada') => execSync(`mysql -uada -pada ${base} -N -B -e ${JSON.stringify(q)}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+const sql = (q, base = 'ada') => execSync(`mysql -uada -pada ${base} -N -B -e ${JSON.stringify(q)}`, { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 << 20 }).toString().trim();
 const CLAVE = `prueba3b-${crypto.randomBytes(32).toString('base64')}`;
 const DRIVE = 'http://localhost:9933';
 const procesos = {};
@@ -200,7 +200,7 @@ function doc(id, nombre, mimeType, largo = 3000) {
   // ===== 8. Cifradas y fuera de los logs =====
   const filas = sql("SELECT texto_cifrado FROM extracciones WHERE texto_cifrado IS NOT NULL").split('\n');
   ok(filas.length >= 5 && filas.every((f) => /^v1:[0-9a-f]{8}:/.test(f) && !f.includes(MARCA)), `extracciones cifradas (AES-256-GCM, ${filas.length} filas, sin texto en claro)`);
-  const todoBD = execSync(`mysqldump -uada -pada ada 2>/dev/null`).toString();
+  const todoBD = execSync(`mysqldump -uada -pada ada 2>/dev/null`, { maxBuffer: 1 << 30 }).toString();
   const enClaro = (todoBD.match(new RegExp(`${MARCA}-A\\d`, 'g')) || []).length;
   ok(enClaro === 0, `volcado completo de la base: el texto de los documentos no aparece en claro (${enClaro})`);
 
@@ -360,7 +360,7 @@ function doc(id, nombre, mimeType, largo = 3000) {
     { name: 'crear_carpeta_drive', input: { nombre: 'Nueva en la raíz' } },
     { name: 'editar_hoja_drive', input: { id: 'HX', valores: [['sin confirmar']] } },
   ]);
-  const resW = JSON.parse(r.texto.replace('RES=', ''));
+  const resW = JSON.parse(r.texto.split('\n')[0].replace('RES=', ''));
   let sw = await stats();
   ok(resW.every((x) => x === 'BLOQUEADO'), `escrituras fuera de la carpeta (planilla, documento, renombrar, papelera, mover hacia y desde afuera, carpeta en la raíz, sin confirmar): todas bloqueadas (${resW.join(', ')})`);
   ok(Object.keys(sw.escrituras).length === 0, `el Drive simulado no recibió ninguna escritura (${JSON.stringify(sw.escrituras)})`);
@@ -375,7 +375,7 @@ function doc(id, nombre, mimeType, largo = 3000) {
     { name: 'crear_carpeta_drive', input: { nombre: 'Sub', dentro_de_id: 'carpeta-prueba' } },
   ]);
   sw = await stats();
-  ok(r.texto === 'RES=["OK","OK","OK"]' && sw.escrituras.HI === 1 && sw.escrituras.DI === 1 && sw.escrituras['crear:carpeta-prueba'] === 1, 'dentro de la carpeta de prueba las ediciones confirmadas sí funcionan');
+  ok(r.texto.split('\n')[0] === 'RES=["OK","OK","OK"]' && sw.escrituras.HI === 1 && sw.escrituras.DI === 1 && sw.escrituras['crear:carpeta-prueba'] === 1, 'dentro de la carpeta de prueba las ediciones confirmadas sí funcionan');
   m = (await api(`/api/extracciones/metricas?desde=${encodeURIComponent(new Date(Date.now() - 600e3).toISOString())}`, {}, 3204, tkP)).d;
   ok(m.escrituras_bloqueadas >= 9 && m.escrituras_drive_intentadas >= 12, `métricas: ${m.escrituras_bloqueadas} escrituras bloqueadas de ${m.escrituras_drive_intentadas} intentos`);
   const det = (await api(`/api/extracciones/eventos?desde=${encodeURIComponent(new Date(Date.now() - 600e3).toISOString())}`, {}, 3204, tkP)).d;
@@ -390,7 +390,7 @@ function doc(id, nombre, mimeType, largo = 3000) {
   ok(/0 con error/.test(r.texto), 'sin el modo prueba, el archivo externo se vuelve a leer con normalidad');
   await ctl('/control/reset', {});
   r = await chat(`HERR ${JSON.stringify({ llamadas: [{ name: 'renombrar_drive', input: { id: 'DX', nuevo_nombre: 'Doc externo renombrado', confirmado: true } }] })}`, { puerto: 3204, tk: tkP });
-  ok(r.texto === 'RES=["OK"]' && (await stats()).escrituras.DX === 1, 'y las ediciones fuera de la carpeta vuelven a funcionar (con confirmación)');
+  ok(r.texto.split('\n')[0] === 'RES=["OK"]' && (await stats()).escrituras.DX === 1, 'y las ediciones fuera de la carpeta vuelven a funcionar (con confirmación)');
   await parar('P');
   await arrancar('A', 3200);
 

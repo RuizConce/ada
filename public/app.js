@@ -232,6 +232,7 @@
 
   // ---------- Auditorías desde la conversación (Fase 3d) ----------
   // ADA propone; nada empieza ni se gasta hasta tocar "Aprobar". El avance viene de la base (real, no estimado).
+  const TARJETAS_SOPORTADAS = ['auditoria_propuesta@1']; // el servidor solo promete tarjetas que esta versión sabe dibujar
   let propuestasAuditoria = [];
   const encargosAuditoria = new Map();
   let audChatTimer = null;
@@ -242,10 +243,12 @@
   function tarjetaPropuestaAuditoria(p) {
     const t = document.createElement('div');
     t.className = 'tarjeta tarjeta-auditoria';
-    t.innerHTML = '<div class="tarjeta-cab"><span><strong>Auditoría propuesta</strong></span></div><p class="meta aud-archivos"></p>'
+    t.dataset.propuesta = p.id;
+    t.innerHTML = '<div class="tarjeta-cab"><span><strong>Auditoría propuesta</strong></span><em class="aud-estado"></em></div><p class="meta aud-archivos"></p>'
       + '<label class="aud-campo">Requisitos (uno por línea: R1 | texto)<textarea rows="5" class="aud-req"></textarea></label>'
       + '<div class="aud-fila"><label class="aud-campo">Configuración<select class="aud-conf"></select></label><label class="aud-campo">Presupuesto US$<input type="number" step="0.01" min="0.01" class="aud-pres"></label></div>'
       + '<p class="meta aud-est"></p><div class="tarjeta-botones"><button type="button" class="principal">Aprobar y empezar</button><button type="button" class="descartar">Descartar</button></div>';
+    t.querySelector('.aud-estado').textContent = `Pendiente · ${p.id.slice(0, 8)}`;
     t.querySelector('.aud-archivos').textContent = `${p.archivos.map((a) => a.nombre).join(' · ')}${p.motivo ? ` — ${p.motivo}` : ''}`;
     t.querySelector('.aud-req').value = p.requisitos.map((r) => `${r.id} | ${r.texto}`).join('\n');
     const sel = t.querySelector('.aud-conf');
@@ -270,8 +273,9 @@
       try {
         const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), requisitos, configuracion: sel.value }) });
         propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
-        encargosAuditoria.set(r.trabajo_id, { id: r.trabajo_id, estado: r.estado, pasos_hechos: 0, pasos_total: 0, requisitos_evaluados: 0, requisitos_total: requisitos.length, costo_real_usd: 0, presupuesto_usd: parseFloat(pres.value) });
+        encargosAuditoria.set(r.trabajo_id, { id: r.trabajo_id, propuesta_id: r.propuesta_id, config: r.configuracion, estado: r.estado, pasos_hechos: 0, pasos_total: 0, requisitos_evaluados: 0, requisitos_total: requisitos.length, costo_real_usd: 0, presupuesto_usd: r.presupuesto });
         pintarEntregas();
+        if (!$('#ajuste-auditoria').hidden) pintarPendientesAjustes();
         seguirAuditorias();
       } catch (e) { botones.forEach((b) => { b.disabled = false; }); aviso(e.message, true); }
     });
@@ -280,6 +284,7 @@
       try { await api(`/api/auditorias/propuestas/${p.id}/descartar`, { method: 'POST' }); } catch (_) {}
       propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
       pintarEntregas();
+      if (!$('#ajuste-auditoria').hidden) pintarPendientesAjustes();
     });
     return t;
   }
@@ -295,7 +300,7 @@
     t.querySelector('.aud-estado').textContent = a.estado === 'ejecutando' && a.estado_real === 'esperando ejecutor' ? 'Esperando turno' : (ETAPA_AUD[a.estado] || a.estado);
     const pct = a.pasos_total ? Math.round((100 * a.pasos_hechos) / a.pasos_total) : 0;
     t.querySelector('.aud-barra i').style.width = `${pct}%`;
-    t.querySelector('.aud-avance').textContent = `${a.etapa ? `${a.etapa} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
+    t.querySelector('.aud-avance').textContent = `Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
     const ul = t.querySelector('.aud-matriz');
     for (const f of a.matriz || []) {
       const li = document.createElement('li');
@@ -342,6 +347,20 @@
     return t;
   }
 
+  // La app confirma al servidor si la tarjeta quedó dibujada (evidencia para ver_auditoria y el diagnóstico).
+  function recibirPropuestaAuditoria(d) {
+    propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== d.id).concat([d]);
+    let estado = 'mostrada';
+    try {
+      pintarEntregas();
+      const el = document.querySelector(`#entregas [data-propuesta="${d.id}"] .principal`);
+      if (!el) estado = 'error_al_mostrar';
+      else el.closest('.tarjeta').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } catch (e) { estado = 'error_al_mostrar'; }
+    api(`/api/auditorias/propuestas/${d.id}/tarjeta`, { method: 'POST', body: JSON.stringify({ estado }) }).catch(() => {});
+    if (estado !== 'mostrada') aviso('No pude mostrar la tarjeta de la auditoría. Está guardada en Ajustes → Auditoría → Propuestas pendientes.', true);
+  }
+
   // Una tarjeta cerrada no vuelve a aparecer al recargar (preferencia de este navegador).
   const cerradasAud = () => { try { return JSON.parse(localStorage.getItem('ada_aud_cerradas') || '[]'); } catch (_) { return []; } };
   function cerrarAuditoria(id) {
@@ -366,14 +385,27 @@
     if (vivas) audChatTimer = setTimeout(seguirAuditorias, 2000);
   }
 
+  async function pintarPendientesAjustes() {
+    const cont = $('#aud-pendientes');
+    cont.innerHTML = '';
+    try {
+      const lista = await api('/api/auditorias/propuestas');
+      if (!lista.length) { cont.innerHTML = '<p class="meta">No hay propuestas pendientes.</p>'; return; }
+      for (const p of lista) cont.appendChild(tarjetaPropuestaAuditoria(p));
+    } catch (e) { cont.textContent = e.message; }
+  }
+
   // Al abrir la app: recupera las auditorías en curso (o terminadas hace poco) para que la tarjeta no se pierda.
   async function cargarAuditoriasActivas() {
     // Solo la cuenta principal tiene auditorías; para las demás el servidor responde 403 y no se muestra nada.
     try {
-      const lista = await api('/api/auditorias/activas');
+      const r = await api('/api/auditorias/activas');
       const cerradas = cerradasAud();
-      for (const a of lista) if (!cerradas.includes(a.id)) encargosAuditoria.set(a.id, a);
-      if (lista.length) { pintarEntregas(); seguirAuditorias(); }
+      for (const a of r.trabajos || []) if (!cerradas.includes(a.id)) encargosAuditoria.set(a.id, a);
+      // Propuestas pendientes: vuelven siempre (no se pueden "cerrar", solo aprobar o descartar).
+      for (const p of r.propuestas || []) if (!propuestasAuditoria.some((x) => x.id === p.id)) propuestasAuditoria.push(p);
+      pintarEntregas();
+      if ((r.trabajos || []).length) seguirAuditorias();
     } catch (_) {}
   }
 
@@ -1116,7 +1148,7 @@
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ mensaje: texto, voz: !!opciones.voz, acuse: opciones.acuse || null, conversacion_id: convId }),
+        body: JSON.stringify({ mensaje: texto, voz: !!opciones.voz, acuse: opciones.acuse || null, conversacion_id: convId, tarjetas: TARJETAS_SOPORTADAS }),
       });
       if (res.status === 401) { salir(); throw new Error('Sesión expirada'); }
       if (!res.ok || !res.body) {
@@ -1146,8 +1178,7 @@
           pintarEntregas();
           if (window.AdaAndroid) llamarDirecto(d);
         } else if (tipo === 'auditoria_propuesta') {
-          propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== d.id).concat([d]);
-          pintarEntregas();
+          recibirPropuestaAuditoria(d);
         } else if (tipo === 'consentimiento_extracciones') {
           consentimientoPendiente = d;
           pintarEntregas();
@@ -1192,6 +1223,8 @@
       }
       actualizarEstado();
       if ((resultado.acciones || []).some((x) => x.herramienta === 'proponer_mensaje')) cargarAutorizaciones();
+      // Si ADA propuso una auditoría, se relee desde el servidor: la tarjeta aparece aunque el evento se haya perdido.
+      if ((resultado.acciones || []).some((x) => /auditoria/.test(x.herramienta || ''))) cargarAuditoriasActivas();
       return { respuesta: resultado.respuesta, locutor };
     } catch (e) {
       terminado = true;
@@ -1833,7 +1866,7 @@
       $('#ajuste-lab').hidden = !a.usuario.admin;
       $('#ajuste-cifrado').hidden = !a.usuario.admin;
       $('#ajuste-auditoria').hidden = !a.usuario.admin;
-      if (a.usuario.admin) { pintarCifrado(); pintarDocumentosGuardados(); pintarAuditorias(); }
+      if (a.usuario.admin) { pintarCifrado(); pintarDocumentosGuardados(); pintarAuditorias(); pintarPendientesAjustes(); }
       if (a.usuario.admin) pintarPersonas();
     }
     $('#ia-estado').textContent = `Modelos: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
@@ -1927,7 +1960,7 @@
     try { await api('/api/auditorias', { method: 'POST', body: JSON.stringify(d) }); aviso('Auditoría en marcha.'); pintarAuditorias(); }
     catch (err) { aviso(err.message, true); }
   });
-  $('#aud-actualizar').addEventListener('click', () => pintarAuditorias());
+  $('#aud-actualizar').addEventListener('click', () => { pintarAuditorias(); pintarPendientesAjustes(); });
   let audTimer = null;
   async function pintarAuditorias() {
     const cont = $('#aud-lista');

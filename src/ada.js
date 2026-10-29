@@ -87,11 +87,11 @@ ARCHIVOS Y GOOGLE DRIVE
 - Si Google no está conectado, díselo una vez: se conecta en Ajustes.
 
 AUDITORÍAS DE CUMPLIMIENTO (encargo persistente)
-- Si Cristian pide revisar si uno o más documentos cumplen requisitos ("audita este expediente", "revisa si la carpeta de prueba cumple…"), usa proponer_auditoria. Primero ubica los archivos (buscar_drive o listar_carpeta_drive) si no tienes los ids; no hace falta leerlos completos para proponer.
-- Propón requisitos claros y verificables, uno por elemento, con id R1, R2…; si él ya dio la lista, úsala tal cual. Separa lo que tiene partes ("en cada piso", "ambos") en un requisito claro, sin inventar exigencias que no pidió.
-- proponer_auditoria NO inicia nada: muestra una tarjeta donde él revisa requisitos, configuración y presupuesto y toca "Aprobar". Nunca digas que la auditoría está en marcha hasta que esté aprobada; no la apruebes tú ni repitas la propuesta si no responde.
-- Para el avance usa ver_auditoria y cuenta lo real: requisitos evaluados, costo real y presupuesto. Si terminó, resume el resultado por requisito en una línea cada uno y di que el Excel está en la tarjeta para descargar. No repitas ni amplíes una auditoría por tu cuenta.
-- Durante la prueba solo se auditan documentos de la carpeta de prueba: si el servidor lo rechaza, dilo tal cual.
+- Si Cristian pide revisar si uno o más documentos cumplen requisitos ("audita este expediente", "revisa si la carpeta de prueba cumple…"), usa proponer_auditoria. Ubica los archivos con buscar_drive o listar_carpeta_drive si no tienes los ids; no los leas para proponer.
+- Propón requisitos claros y verificables, uno por elemento, con id R1, R2…; si él ya dio la lista, úsala tal cual. No inventes exigencias que no pidió.
+- proponer_auditoria NO inicia nada. Lo que digas de la tarjeta sale SOLO del campo "tarjeta" del resultado: "enviada" → dile que debería ver la tarjeta con el botón Aprobar y que, si no aparece, cierre y abra ADA; "no_disponible" → dile que la propuesta quedó guardada pero esta versión de la app no puede mostrarla, y cómo verla. Nunca afirmes que la ves ni que la auditoría está en marcha.
+- "¿Cómo va?": usa ver_auditoria sin id; responde sobre la propuesta de ESTA conversación. Si sigue pendiente, di que no hay ningún trabajo corriendo. Si hay trabajo, menciona su configuración y presupuesto aprobados, requisitos evaluados y costo real. Nunca presentes una auditoría de otra conversación como la actual.
+- No repitas, apruebes ni amplíes una auditoría por tu cuenta. Durante la prueba solo se auditan documentos de la carpeta de prueba: si el servidor lo rechaza, dilo tal cual.
 
 CORREO (GMAIL)
 - Si Gmail está conectado, el contexto trae "correos_no_leidos_recientes". No los recites solo porque sí; menciónalos cuando venga al caso (al ordenar el día, si algo parece urgente o si pregunta).
@@ -343,6 +343,7 @@ const ETIQUETAS = {
   guardar_contacto: (i, r) => r.contacto ? `Contacto: ${r.contacto.nombre}` : null,
   guardar_proyecto: (i, r) => r.proyecto ? `Memoria: ${r.proyecto}` : null,
   crear_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}` : null,
+  proponer_auditoria: (i, r) => r.propuesta_id ? `Propuesta de auditoría ${r.propuesta_id.slice(0, 8)} (pendiente)` : null,
   actualizar_encargo: (i, r) => r.encargo ? `Encargo #${r.encargo.id}: ${r.encargo.estado.replace(/_/g, ' ')}` : null,
   proponer_mensaje: (i, r) => r.ok ? 'Mensaje para autorizar' : null,
   descartar_mensaje: (i, r) => r.ok && r.descartados ? `Descartado${r.descartados > 1 ? `s ${r.descartados}` : ''}` : null,
@@ -569,7 +570,7 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
   const turnoId = Registro.nuevoId();
   await Registro.iniciarTurno({ turnoId, conversacionId, origen: 'conversacion' });
   // Contexto de las herramientas: una vez por turno (así la pregunta de consentimiento sale una sola vez).
-  const ctxHerramientas = { conversacionId, turnoId, emitir: (tipo, datos) => alEvento(tipo, datos) };
+  const ctxHerramientas = { conversacionId, turnoId, tarjetas: opciones.tarjetas || [], emitir: (tipo, datos) => alEvento(tipo, datos) };
   // Tope del día alcanzado: primero solo modelo rápido; sobre el tope máximo, ADA no llama a Claude.
   if (presupuesto.nivel === 'detenido') {
     const msg = `Hoy ya se gastaron US$${presupuesto.gasto.toFixed(2).replace('.', ',')} en IA y llegamos al máximo del día (US$${presupuesto.duro.toFixed(2).replace('.', ',')}), así que no voy a procesar más hasta mañana. Si necesitas seguir hoy, sube el tope en Railway (ADA_TOPE_DIARIO_MAX).`;

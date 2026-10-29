@@ -31,7 +31,8 @@ function responder(req) {
     if (pasos === 0) return { id: `msg_${n}`, stop_reason: 'tool_use', usage: uso, content: llamadas.map((x, i) => ({ type: 'tool_use', id: `h${n}_${i}`, name: x.name, input: x.input || {} })) };
     const ultimo = req.messages[req.messages.length - 1];
     const res = ultimo.content.filter((b) => b.type === 'tool_result').map((b) => { const r = JSON.parse(b.content); return r.bloqueado_prueba ? 'BLOQUEADO' : r.error ? `ERROR:${String(r.error).slice(0, 120)}` : r.drive_error ? `LOCAL:${String(r.drive_error).slice(0, 40)}` : 'OK'; });
-    return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `RES=${JSON.stringify(res)}` }] };
+    const datos = ultimo.content.filter((b) => b.type === 'tool_result').map((b) => { try { return JSON.parse(b.content); } catch (_) { return null; } });
+    return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `RES=${JSON.stringify(res)}\nDATOS=${JSON.stringify(datos)}` }] };
   }
   if (/ESTADO GUARDADO/.test(texto)) {
     if (pasos === 0) return { id: `msg_${n}`, stop_reason: 'tool_use', usage: uso, content: [{ type: 'tool_use', id: `e${n}`, name: 'estado_guardado_documentos', input: {} }] };

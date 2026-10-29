@@ -18,7 +18,7 @@ const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
     const c = t.match(/event: conversacion\ndata: (\{.*\})/); return { conv: c && JSON.parse(c[1]).conversacion_id, t }; };
   const r1 = await chat(`actualiza la planilla de prospección HERR ${JSON.stringify({ llamadas: [{ name: 'leer_drive', input: { id: 'PX' } }, { name: 'registrar_item', input: { tipo: 'pendiente', texto: 'Contactar a Persona Ficticia — Colegio Ficticio', proyecto: 'Huayca' } }] })}`);
   const conv = r1.conv;
-  const item = Number(require('child_process').execSync(`mysql -uada -pada ada -N -B -e "SELECT MAX(id) FROM items"`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString());
+  const item = Number(require('child_process').execSync(`mysql -uada -pada ada -N -B -e "SELECT MAX(id) FROM items"`, { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 << 20 }).toString());
   await chat(`HERR ${JSON.stringify({ llamadas: [{ name: 'actualizar_item', input: { id: item, texto: 'Contactar a Claudio Ficticio — Colegio Ficticio' } }] })}`, conv);
   const get = async (q) => (await fetch(`http://localhost:3200/api/diagnostico/conversaciones/${conv}${q}`, { headers: { Authorization: `Bearer ${tk}` } })).json();
   const d = await get('');

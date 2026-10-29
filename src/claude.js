@@ -34,6 +34,7 @@ const ACUSE = /^(si|no|ya|ok|dale|claro|obvio|exacto|bueno|ya po)\b/;
 
 const nivelAnterior = new Map(); // conversación → último nivel usado
 
+const AUDITORIA = /\b(audit[a-z]*|auditoria[s]?)\b|\bcomo va (la|el) (auditoria|encargo|revision)\b/;
 function elegirModelo(texto, { conversacionId, modo = 'auto' } = {}) {
   const forzar = process.env.ADA_MODO_MODELO || modo;
   if (forzar === 'rapido') return { modelo: MODELO_RAPIDO(), nivel: 'rapido', motivo: 'ajuste: siempre rápido' };
@@ -43,7 +44,10 @@ function elegirModelo(texto, { conversacionId, modo = 'auto' } = {}) {
   const antes = conversacionId ? nivelAnterior.get(conversacionId) : null;
   let nivel = 'rapido';
   let motivo = 'tarea o mensaje simple';
-  if (PROFUNDO.test(t)) { nivel = 'profundo'; motivo = 'pide pensar, opinar o analizar'; }
+  // Pedir o seguir una auditoría es operativo: proponer y consultar estado no requiere Sonnet
+  // (la evaluación de cada requisito la hace el encargo con su propia configuración y presupuesto).
+  if (AUDITORIA.test(t) && !/\b(opina|que te parece|recomienda|estrategia)\b/.test(t)) { nivel = 'rapido'; motivo = 'pedir o seguir una auditoría (operativo)'; }
+  else if (PROFUNDO.test(t)) { nivel = 'profundo'; motivo = 'pide pensar, opinar o analizar'; }
   else if (OPERATIVO.test(t) || COMANDO.test(t)) { nivel = 'rapido'; motivo = 'operación concreta (buscar, leer, anotar, actualizar…)'; }
   else if (palabras > 35) { nivel = 'profundo'; motivo = 'mensaje largo (está desarrollando una idea)'; }
   else if (antes === 'profundo' && (ACUSE.test(t) || palabras > 3)) {

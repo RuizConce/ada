@@ -145,6 +145,8 @@ app.post('/api/chat/stream', auth, unTrabajoALaVez, freno, async (req, res) => {
       voz: req.body.voz === true,
       acuse,
       conversacionId: parseInt(req.body.conversacion_id, 10) || null,
+      // Tarjetas que la app abierta sabe dibujar (una versión antigua no las declara).
+      tarjetas: Array.isArray(req.body.tarjetas) ? req.body.tarjetas.map(String).slice(0, 10) : [],
     }, enviarEvento);
     enviarEvento('fin', r);
     // Encargo largo terminado: aviso al teléfono y resultado a su propio correo.
@@ -309,6 +311,8 @@ app.get('/api/auditorias', auth, soloAdmin, envolver(() => Auditoria.listar()));
 app.post('/api/auditorias/propuestas/:id/aprobar', auth, soloAdmin, envolver((req) => Auditoria.aprobarPropuesta(req.params.id, req.body || {})));
 app.post('/api/auditorias/propuestas/:id/descartar', auth, soloAdmin, envolver((req) => Auditoria.descartarPropuesta(req.params.id)));
 app.get('/api/auditorias/activas', auth, soloAdmin, envolver(() => Auditoria.activas()));
+app.get('/api/auditorias/propuestas', auth, soloAdmin, envolver((req) => Auditoria.pendientes({ conversacionId: parseInt(req.query.conversacion_id, 10) || null })));
+app.post('/api/auditorias/propuestas/:id/tarjeta', auth, soloAdmin, envolver((req) => Auditoria.marcarTarjeta(req.params.id, req.body || {})));
 app.get('/api/auditorias/:id/avance', auth, soloAdmin, envolver((req) => Auditoria.avance(req.params.id)));
 app.get('/api/auditorias/:id/excel', auth, soloAdmin, async (req, res) => {
   try {

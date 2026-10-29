@@ -427,8 +427,8 @@ function pasosDe(e, config) {
   return pasos;
 }
 
-async function crearYAprobar(e, config, presupuesto, serie) {
-  const objetivo = { archivo_id: e.archivo_id, archivo_ids: e.archivo_ids, requisitos: e.requisitos, esperado: e.esperado, config, requisitos_hash: hash(JSON.stringify(e.requisitos)), ...(serie ? { serie } : {}) };
+async function crearYAprobar(e, config, presupuesto, serie, propuesta) {
+  const objetivo = { archivo_id: e.archivo_id, archivo_ids: e.archivo_ids, requisitos: e.requisitos, esperado: e.esperado, config, requisitos_hash: hash(JSON.stringify(e.requisitos)), ...(serie ? { serie } : {}), ...(propuesta ? { propuesta } : {}) };
   const t = await Trabajos.crear({ tipo: 'auditoria', titulo: `Auditoría mínima ${config} (${e.requisitos.length} requisitos)`, objetivo, presupuesto, pasos: pasosDe(e, config) });
   return Trabajos.aprobar(t.id);
 }
@@ -449,7 +449,7 @@ async function crear(d) {
   }
   if (!CONFIGS[config]) throw err('Configuración inválida (K1, K2, K3 o comparar)');
   if (presupuesto + 1e-9 < est.presupuesto_minimo[config]) throw err(`El presupuesto (US$${presupuesto}) es menor que el mínimo para ${config} (US$${est.presupuesto_minimo[config]})`);
-  return crearYAprobar(e, config, presupuesto, null);
+  return crearYAprobar(e, config, presupuesto, null, d.propuesta || null);
 }
 
 // Serie de comparación: al completar una configuración, empieza la siguiente (presupuesto ya aprobado).
@@ -535,6 +535,17 @@ async function archivosDeLaPropuesta(d) {
   return archivos;
 }
 
+// Versión de tarjeta que el cliente declara saber mostrar. Si la app abierta no la declara (por ejemplo,
+// quedó abierta con una versión anterior), la propuesta se guarda igual, pero ADA NO dice que hay tarjeta.
+const TARJETA = 'auditoria_propuesta@1';
+
+function tarjetaDe(id, datos, estado = 'pendiente') {
+  const est = datos.estimacion;
+  return { id, estado, archivos: datos.archivos, requisitos: datos.requisitos, configuracion: datos.config, configuraciones: est.configuraciones,
+    estimados: est.por_configuracion, estimado_usd: est.por_configuracion[datos.config],
+    presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[datos.config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo };
+}
+
 async function proponer(d, ctx = {}) {
   if (usuario().id !== 1) throw err('La auditoría está disponible solo para la cuenta principal en esta etapa.', 403);
   const archivos = await archivosDeLaPropuesta(d);
@@ -543,81 +554,140 @@ async function proponer(d, ctx = {}) {
   const est = estimacion({ archivo_ids: e.archivo_ids, requisitos: e.requisitos });
   const id = crypto.randomUUID();
   const datos = { archivos, requisitos: e.requisitos, config, motivo: String(d.motivo || '').slice(0, 300), estimacion: est };
-  await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, usuario().id, ctx.conversacionId || null, 'pendiente', Cifrado.cifrarJSON(datos), new Date(), new Date()]);
-  const tarjeta = { id, archivos, requisitos: e.requisitos, configuracion: config, configuraciones: est.configuraciones, estimados: est.por_configuracion, estimado_usd: est.por_configuracion[config],
-    presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo };
-  if (typeof ctx.emitir === 'function') ctx.emitir('auditoria_propuesta', tarjeta);
-  return {
-    ok: true, propuesta_id: id, archivos: archivos.map((a) => a.nombre), requisitos: e.requisitos.length, configuracion: config,
-    presupuesto_sugerido_usd: tarjeta.presupuesto_sugerido, costo_estimado_peor_caso_usd: tarjeta.estimado_usd,
-    nota: 'Le mostré en pantalla la tarjeta para revisar los requisitos y aprobar el presupuesto. NO ha empezado: empieza solo cuando Cristian toque "Aprobar" en la tarjeta. Díselo en una frase (cuántos requisitos, configuración y presupuesto sugerido) y no digas que ya está en marcha.',
+  const puedeMostrar = Array.isArray(ctx.tarjetas) && ctx.tarjetas.includes(TARJETA);
+  await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, usuario().id, ctx.conversacionId || null, 'pendiente', Cifrado.cifrarJSON(datos), puedeMostrar ? 'enviada' : 'no_soportada', new Date(), new Date()]);
+  const tarjeta = tarjetaDe(id, datos);
+  if (puedeMostrar && typeof ctx.emitir === 'function') ctx.emitir('auditoria_propuesta', tarjeta);
+  const base = {
+    propuesta_id: id, archivos: archivos.map((a) => a.nombre), requisitos: e.requisitos.length, configuracion: config,
+    presupuesto_sugerido_usd: tarjeta.presupuesto_sugerido, estado: 'pendiente_de_aprobacion', trabajo: null,
   };
+  if (!puedeMostrar) {
+    return { ...base, ok: false, tarjeta: 'no_disponible',
+      nota: 'La propuesta quedó guardada como PENDIENTE, pero la app abierta en el teléfono es una versión anterior que no puede mostrar la tarjeta de aprobación. NO digas que hay una tarjeta en pantalla. Dile que cierre ADA por completo y la vuelva a abrir: la propuesta pendiente aparecerá sola en el chat (y también en Ajustes → Auditoría → Propuestas pendientes). Nada empezó ni se cobró.' };
+  }
+  return { ...base, ok: true, tarjeta: 'enviada',
+    nota: 'Envié la tarjeta a la app. Aún no sé si se dibujó: dile que debería ver la tarjeta "Auditoría propuesta" con un botón Aprobar y que, si no la ve, cierre y vuelva a abrir ADA (o la busque en Ajustes → Auditoría → Propuestas pendientes). NO ha empezado ni se ha cobrado nada; empieza solo con el botón. Dilo en una o dos frases.' };
 }
 
 async function propuesta(id) {
   const [p] = await qPrincipal('SELECT * FROM auditoria_propuestas WHERE id = ? AND usuario_id = ?', [id, usuario().id]);
   if (!p) throw err('No existe esa propuesta', 404);
-  return { ...p, datos: Cifrado.descifrarJSON(p.datos_cifrado) };
+  return { ...p, datos: Cifrado.descifrarJSON(p.datos_cifrado), aprobacion: p.aprobacion_cifrada ? Cifrado.descifrarJSON(p.aprobacion_cifrada) : null };
 }
 
-// La aprobación es el botón de la tarjeta (requisitos, posiblemente editados, y presupuesto explícito).
-async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion } = {}) {
-  const p = await propuesta(id);
-  if (p.estado !== 'pendiente') throw err(`La propuesta ya está "${p.estado}"`, 409);
-  const datos = p.datos;
-  const trabajo = await crear({ archivo_ids: datos.archivos.map((a) => a.id), requisitos: requisitos && requisitos.length ? requisitos : datos.requisitos,
-    configuracion: configuracion || datos.config, presupuesto });
-  await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', trabajo_id = ?, actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [trabajo.id, new Date(), id]);
-  return { ok: true, trabajo_id: trabajo.id, estado: trabajo.estado };
-}
-
-async function descartarPropuesta(id) {
-  const p = await propuesta(id);
-  if (p.estado !== 'pendiente') throw err(`La propuesta ya está "${p.estado}"`, 409);
-  await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ?", [new Date(), id]);
+// La app confirma que dibujó la tarjeta (o que falló al dibujarla). Es evidencia, no autoriza nada.
+async function marcarTarjeta(id, { estado } = {}) {
+  const e = ['mostrada', 'error_al_mostrar'].includes(estado) ? estado : 'mostrada';
+  await propuesta(id);
+  await qPrincipal('UPDATE auditoria_propuestas SET tarjeta_estado = ?, tarjeta_en = ? WHERE id = ? AND usuario_id = ?', [e, new Date(), id, usuario().id]);
   return { ok: true };
 }
 
-// Avance real para la conversación y la tarjeta del chat (desde la base, no estimado).
-async function avance(trabajoId) {
-  let id = trabajoId;
-  if (!id) {
-    const [u] = await qPrincipal("SELECT id FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria' ORDER BY creado_en DESC LIMIT 1", [usuario().id]);
-    if (!u) return { hay: false, nota: 'No hay auditorías todavía.' };
-    id = u.id;
+// La aprobación es el botón de la tarjeta: requisitos (posiblemente editados), configuración y presupuesto explícitos.
+// Se "reclama" la propuesta de forma atómica, así dos toques simultáneos no crean dos encargos.
+async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion } = {}) {
+  const p = await propuesta(id);
+  const datos = p.datos;
+  const aprobado = { archivo_ids: datos.archivos.map((a) => a.id), requisitos: requisitos && requisitos.length ? requisitos : datos.requisitos,
+    configuracion: configuracion || datos.config, presupuesto: Number(presupuesto) };
+  const e = validarEntrada(aprobado);
+  if (!CONFIGS[aprobado.configuracion]) throw err('Configuración inválida (K1, K2 o K3)');
+  const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobando', actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [new Date(), id, usuario().id]);
+  if (!r.affectedRows) throw err(`La propuesta ya está "${p.estado}"`, 409);
+  let trabajo;
+  try {
+    trabajo = await crear({ ...aprobado, requisitos: e.requisitos, propuesta: { id, conversacion_id: p.conversacion_id } });
+  } catch (x) {
+    await qPrincipal("UPDATE auditoria_propuestas SET estado = 'pendiente', actualizado_en = ? WHERE id = ? AND estado = 'aprobando'", [new Date(), id]);
+    throw x;
   }
-  const v = await Trabajos.ver(id, { conResultado: true });
+  const constancia = { requisitos: e.requisitos, requisitos_hash: hash(JSON.stringify(e.requisitos)), configuracion: aprobado.configuracion, presupuesto: aprobado.presupuesto, en: new Date().toISOString() };
+  await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', trabajo_id = ?, aprobacion_cifrada = ?, actualizado_en = ? WHERE id = ?", [trabajo.id, Cifrado.cifrarJSON(constancia), new Date(), id]);
+  return { ok: true, propuesta_id: id, trabajo_id: trabajo.id, estado: trabajo.estado, configuracion: aprobado.configuracion, presupuesto: aprobado.presupuesto };
+}
+
+async function descartarPropuesta(id) {
+  const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [new Date(), id, usuario().id]);
+  if (!r.affectedRows) { const p = await propuesta(id); throw err(`La propuesta ya está "${p.estado}"`, 409); }
+  return { ok: true };
+}
+
+// Avance real de un trabajo (desde la base). Siempre dice a qué propuesta y conversación pertenece.
+async function avance(trabajoId) {
+  if (!trabajoId) throw err('Falta el id del trabajo');
+  const v = await Trabajos.ver(trabajoId, { conResultado: true });
   if (v.tipo !== 'auditoria') throw err('No es una auditoría', 404);
+  const [prop] = await qPrincipal('SELECT id, conversacion_id FROM auditoria_propuestas WHERE trabajo_id = ? AND usuario_id = ?', [trabajoId, usuario().id]);
   const pasos = v.detalle_pasos;
   const verif = pasos.filter((p) => p.tipo === 'aud_verificar');
   const r = v.resultado || {};
-  const costos = r.costos || await costosDe(id);
+  const costos = r.costos || await costosDe(trabajoId);
   return {
-    hay: true, id: v.id, estado: v.estado, estado_real: v.estado_real, motivo: v.motivo, etapa: v.etapa,
+    hay: true, id: v.id, propuesta_id: prop ? prop.id : null, conversacion_id: prop ? prop.conversacion_id : null,
+    estado: v.estado, estado_real: v.estado_real, motivo: v.motivo, etapa: v.etapa,
     pasos_hechos: v.pasos.hechos, pasos_total: v.pasos.total,
     requisitos_evaluados: verif.filter((p) => p.estado === 'hecho').length, requisitos_total: verif.length,
     costo_real_usd: Number(costos.real_usd.toFixed(5)), presupuesto_usd: v.presupuesto_usd, reserva_activa_usd: v.reservado_usd,
     excel_listo: v.estado === 'completado',
     matriz: r.matriz ? r.matriz.filas.map((f) => ({ requisito: f.requisito, estado: f.estado, cita_verificada: f.cita_verificada, ubicacion: f.ubicacion, archivo: f.archivo })) : null,
-    config: r.config || (v.titulo.match(/K\d/) || [])[0],
+    config: r.config || (v.titulo.match(/K\d/) || [])[0], creado_en: v.creado_en,
   };
 }
 
+// ver_auditoria: SOLO la propuesta o el trabajo que corresponde. Sin id, la última propuesta de ESTA conversación;
+// nunca "la última auditoría que exista" (así una antigua no se presenta como la actual).
+async function estadoParaConversacion({ propuesta_id, trabajo_id } = {}, ctx = {}) {
+  let p = null;
+  if (propuesta_id) p = await propuesta(propuesta_id);
+  else if (trabajo_id) {
+    const [f] = await qPrincipal('SELECT id FROM auditoria_propuestas WHERE trabajo_id = ? AND usuario_id = ?', [trabajo_id, usuario().id]);
+    if (f) p = await propuesta(f.id);
+    else return { ...(await avance(trabajo_id)), nota: 'Este trabajo no nació de una propuesta del chat (se lanzó desde Ajustes).' };
+  } else {
+    if (!ctx.conversacionId) return { hay: false, nota: 'No sé en qué conversación estamos; pide el id de la propuesta.' };
+    const [f] = await qPrincipal('SELECT id FROM auditoria_propuestas WHERE usuario_id = ? AND conversacion_id = ? ORDER BY creado_en DESC LIMIT 1', [usuario().id, ctx.conversacionId]);
+    if (!f) return { hay: false, nota: 'En esta conversación no hay ninguna propuesta de auditoría. No informes auditorías de otras conversaciones como si fueran esta.' };
+    try { p = await propuesta(f.id); } catch (e) {
+      if (e.sinClave) return { hay: false, propuesta_id: f.id, nota: 'Hay una propuesta en esta conversación, pero está cifrada con una clave anterior y no se puede leer. No hay ningún trabajo asociado en ejecución.' };
+      throw e;
+    }
+  }
+  const base = { propuesta_id: p.id, conversacion_id: p.conversacion_id, es_de_esta_conversacion: !!ctx.conversacionId && p.conversacion_id === ctx.conversacionId,
+    estado_propuesta: p.estado, tarjeta: p.tarjeta_estado, configuracion_propuesta: p.datos.config, archivos: p.datos.archivos.map((a) => a.nombre), requisitos: p.datos.requisitos.length };
+  if (p.estado !== 'aprobada' || !p.trabajo_id) {
+    return { ...base, trabajo: null,
+      nota: p.estado === 'pendiente' ? 'Sigue pendiente de aprobación: no hay ningún trabajo en ejecución ni gasto. Empieza solo con el botón Aprobar de la tarjeta.' : `La propuesta está "${p.estado}"; no hay trabajo asociado.` };
+  }
+  const a = await avance(p.trabajo_id);
+  return { ...base, aprobado: p.aprobacion ? { configuracion: p.aprobacion.configuracion, presupuesto_usd: p.aprobacion.presupuesto, requisitos: p.aprobacion.requisitos.length } : null, trabajo: a };
+}
+
+// Para la app: propuestas pendientes (de una conversación o todas) y trabajos de auditoría vivos o recién terminados.
+async function pendientes({ conversacionId } = {}) {
+  const filas = conversacionId
+    ? await qPrincipal("SELECT id, estado, tarjeta_estado FROM auditoria_propuestas WHERE usuario_id = ? AND conversacion_id = ? AND estado = 'pendiente' ORDER BY creado_en", [usuario().id, conversacionId])
+    : await qPrincipal("SELECT id, estado, tarjeta_estado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente' AND creado_en > ? ORDER BY creado_en", [usuario().id, new Date(Date.now() - 7 * 864e5)]);
+  const out = [];
+  for (const f of filas) { try { const p = await propuesta(f.id); out.push({ ...tarjetaDe(p.id, p.datos), conversacion_id: p.conversacion_id }); } catch (_) {} }
+  return out;
+}
+
 async function activas() {
-  const filas = await qPrincipal(`SELECT id FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria'
-    AND (estado IN ('ejecutando','pausado','pausado_presupuesto','bloqueado','esperando_aprobacion') OR (estado = 'completado' AND terminado_en > ?)) ORDER BY creado_en DESC LIMIT 3`,
+  const filas = await qPrincipal(`SELECT t.id FROM trabajos t JOIN auditoria_propuestas p ON p.trabajo_id = t.id WHERE t.usuario_id = ? AND t.tipo = 'auditoria'
+    AND (t.estado IN ('ejecutando','pausado','pausado_presupuesto','bloqueado','esperando_aprobacion') OR (t.estado = 'completado' AND t.terminado_en > ?)) ORDER BY t.creado_en DESC LIMIT 3`,
   [usuario().id, new Date(Date.now() - 6 * 3600e3)]);
   const out = [];
   for (const f of filas) { try { out.push(await avance(f.id)); } catch (_) {} }
-  return out;
+  return { trabajos: out, propuestas: await pendientes() };
 }
 
 const H = require('./herramientas');
 H.registrar([
   {
     name: 'proponer_auditoria',
-    description: 'Propone una auditoría de cumplimiento sobre uno o más documentos de Drive (o los de una carpeta) contra una lista de requisitos. NO la inicia: muestra a Cristian una tarjeta con los archivos, los requisitos, la configuración y el presupuesto sugerido para que la apruebe con un botón. Durante la prueba solo acepta documentos de la carpeta de prueba. Hasta 10 requisitos y 5 documentos.',
+    description: 'Propone una auditoría de cumplimiento sobre uno o más documentos de Drive (o los de una carpeta) contra una lista de requisitos. NO la inicia: guarda la propuesta y, si la app puede, muestra una tarjeta para que Cristian la apruebe con un botón. Durante la prueba solo acepta documentos de la carpeta de prueba. Hasta 10 requisitos y 5 documentos.',
     input_schema: {
       type: 'object',
       properties: {
@@ -632,14 +702,14 @@ H.registrar([
   },
   {
     name: 'ver_auditoria',
-    description: 'Avance real de una auditoría (la última si no se indica id): estado, requisitos evaluados, costo real, presupuesto y, si terminó, el resultado por requisito y si el Excel está listo.',
-    input_schema: { type: 'object', properties: { id: { type: 'string' } } },
+    description: 'Estado de la auditoría de ESTA conversación (o de la propuesta/trabajo cuyo id se indique): si la propuesta sigue pendiente, si se aprobó y con qué, y el avance real del trabajo asociado (requisitos evaluados, costo, Excel). Nunca devuelve auditorías de otras conversaciones sin id.',
+    input_schema: { type: 'object', properties: { propuesta_id: { type: 'string' }, trabajo_id: { type: 'string' } } },
   },
 ], {
   proponer_auditoria: (a, ctx) => proponer(a, ctx),
-  ver_auditoria: (a) => avance(a.id),
+  ver_auditoria: (a, ctx) => estadoParaConversacion(a, ctx),
 });
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

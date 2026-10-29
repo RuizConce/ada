@@ -352,6 +352,10 @@ async function initDb() {
     actualizado_en DATETIME(3) NOT NULL,
     INDEX idx_usuario (usuario_id, estado)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  for (const [col, def] of [['tarjeta_estado', "VARCHAR(20) NULL"], ['tarjeta_en', 'DATETIME(3) NULL'], ['aprobacion_cifrada', 'LONGTEXT NULL']]) {
+    const [{ n }] = await qPrincipal('SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?', ['auditoria_propuestas', col]);
+    if (!n) await qPrincipal(`ALTER TABLE auditoria_propuestas ADD COLUMN ${col} ${def}`);
+  }
   // Copias temporales propias ("ADA temporal - …") que no se pudieron borrar al primer intento.
   await qPrincipal(`CREATE TABLE IF NOT EXISTS temporales_drive (
     usuario_id INT NOT NULL,
