@@ -30,7 +30,7 @@ function responder(req) {
     const { llamadas } = JSON.parse(h[1]);
     if (pasos === 0) return { id: `msg_${n}`, stop_reason: 'tool_use', usage: uso, content: llamadas.map((x, i) => ({ type: 'tool_use', id: `h${n}_${i}`, name: x.name, input: x.input || {} })) };
     const ultimo = req.messages[req.messages.length - 1];
-    const res = ultimo.content.filter((b) => b.type === 'tool_result').map((b) => { const r = JSON.parse(b.content); return r.bloqueado_prueba ? 'BLOQUEADO' : r.error ? `ERROR:${String(r.error).slice(0, 40)}` : r.drive_error ? `LOCAL:${String(r.drive_error).slice(0, 40)}` : 'OK'; });
+    const res = ultimo.content.filter((b) => b.type === 'tool_result').map((b) => { const r = JSON.parse(b.content); return r.bloqueado_prueba ? 'BLOQUEADO' : r.error ? `ERROR:${String(r.error).slice(0, 120)}` : r.drive_error ? `LOCAL:${String(r.drive_error).slice(0, 40)}` : 'OK'; });
     return { id: `msg_${n}`, stop_reason: 'end_turn', usage: uso, content: [{ type: 'text', text: `RES=${JSON.stringify(res)}` }] };
   }
   if (/ESTADO GUARDADO/.test(texto)) {
@@ -62,9 +62,13 @@ async function auditar(req) {
   const frags = [...texto.matchAll(/\[(F\d+) · [^\]]+\]\n([\s\S]*?)(?=\n\n\[F\d+ · |\n\nTu respuesta|\n\nEl requisito|$)/g)].map((m) => ({ id: m[1], texto: m[2] }));
   if (modo === 'lento') await dormir(parseInt(process.env.FAKE_LENTO_MS || '1500', 10));
   let r = { ...(CORRECTO[id] || { estado: 'sin_evidencia', cita: '', justificacion: 'Sin información.' }) };
+  if (process.env.FAKE_CASOS) {
+    const casos = require(process.env.FAKE_CASOS).simulado;
+    if (casos[id]) r = { ...casos[id][haiku ? 'haiku' : 'sonnet'] };
+  }
   if (modo === 'haiku_falla_cita' && haiku && id === 'R2') r.cita = 'el plano de evacuación está en ambos pisos del recinto';
   if (modo === 'cumple_sin_cita' && id === 'R1') r = { estado: 'cumple', cita: '', justificacion: 'Se cumple.' };
-  const f = frags.find((x) => r.cita && x.texto.includes(r.cita.split('...')[0].trim())) || frags.find((x) => r.cita && x.texto.toLowerCase().includes('plano'));
+  const f = frags.find((x) => r.cita && x.texto.includes(r.cita.split('...')[0].trim())) || (process.env.FAKE_CASOS ? null : frags.find((x) => r.cita && x.texto.toLowerCase().includes('plano')));
   global.__auditor.llamadas.push({ modelo: req.model, id });
   const entrada = Math.ceil((JSON.stringify(req.system) + texto + JSON.stringify(req.tools)).length / 3);
   const usage = modo === 'caro' ? { input_tokens: 400000, output_tokens: 4000 } : { input_tokens: entrada, output_tokens: 120 };
@@ -82,7 +86,8 @@ class FakeAnthropic {
           if (forzado && (!/haiku/.test(req.model) || process.env.FAKE_FORZADO_TODOS === 'si')) {
             throw Object.assign(new Error(`400 {"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: forced tool use is not supported for model ${req.model}"}}`), { status: 400 });
           }
-          if (process.env.FAKE_SONNET_ERROR === 'si' && !/haiku/.test(req.model)) throw Object.assign(new Error('400 invalid_request_error (simulado)'), { status: 400 });
+          const reqId = (String(req.messages[0].content).match(/^Requisito (\S+):/) || [])[1];
+          if (process.env.FAKE_SONNET_ERROR === 'si' && !/haiku/.test(req.model) && (!process.env.FAKE_SONNET_ERROR_REQ || process.env.FAKE_SONNET_ERROR_REQ === reqId)) throw Object.assign(new Error('400 invalid_request_error (simulado)'), { status: 400 });
           return auditar(req);
         }
         // Títulos y resúmenes de conversación, etc.

@@ -306,6 +306,10 @@ const Auditoria = require('./auditoria');
 app.post('/api/auditorias/estimar', auth, soloAdmin, envolver((req) => Auditoria.estimacion(req.body || {})));
 app.post('/api/auditorias', auth, soloAdmin, envolver((req) => Auditoria.crear(req.body || {})));
 app.get('/api/auditorias', auth, soloAdmin, envolver(() => Auditoria.listar()));
+app.post('/api/auditorias/propuestas/:id/aprobar', auth, soloAdmin, envolver((req) => Auditoria.aprobarPropuesta(req.params.id, req.body || {})));
+app.post('/api/auditorias/propuestas/:id/descartar', auth, soloAdmin, envolver((req) => Auditoria.descartarPropuesta(req.params.id)));
+app.get('/api/auditorias/activas', auth, soloAdmin, envolver(() => Auditoria.activas()));
+app.get('/api/auditorias/:id/avance', auth, soloAdmin, envolver((req) => Auditoria.avance(req.params.id)));
 app.get('/api/auditorias/:id/excel', auth, soloAdmin, async (req, res) => {
   try {
     const x = await Auditoria.excel(req.params.id);

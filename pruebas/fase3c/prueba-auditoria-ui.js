@@ -37,9 +37,9 @@ const sql = (q) => execSync(`mysql -uada -pada ada -N -B -e ${JSON.stringify(q)}
   const t = await p.textContent('#aud-lista');
   ok(/precisión 3\/3/.test(t) && /R1: cumple \(cita verificada, página 1\)/.test(t) && /Costo real US\$/.test(t) && /reserva activa ahora US\$0,0000/.test(t), 'la tarjeta muestra precisión, costo y la matriz con citas verificadas');
   await p.$eval('#ajuste-auditoria', (e) => e.scrollIntoView());
-  await p.screenshot({ path: `${S}/v-auditoria.png`, fullPage: false });
+  await p.screenshot({ path: `${require("os").tmpdir()}/v-auditoria.png`, fullPage: false });
   const [descarga] = await Promise.all([p.waitForEvent('download'), p.click('#aud-lista >> text=Descargar Excel')]);
-  const ruta = `${S}/auditoria-ui.xlsx`; await descarga.saveAs(ruta);
+  const ruta = `${require("os").tmpdir()}/auditoria-ui.xlsx`; await descarga.saveAs(ruta);
   ok(require('fs').statSync(ruta).size > 3000, 'descarga el Excel');
   await b.close(); srv.kill(); drive.kill();
   console.log(process.exitCode ? 'HAY FALLAS' : 'TODO OK');

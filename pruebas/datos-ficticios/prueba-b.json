@@ -1,0 +1,33 @@
+{
+  "_nota": "Datos 100% ficticios (prueba B: reglas de escalamiento de K3). Seis requisitos de tipos distintos: varias partes, cantidad mínima, condicional, sin evidencia. 'haiku' y 'sonnet' son respuestas simuladas para probar SOLO las reglas de escalamiento (no la precisión real de los modelos).",
+  "documento": {
+    "nombre": "Informe ficticio Clínica Demo Norte.pdf",
+    "texto": "Página 1. Salas de atención: la sala 1 y la sala 2 cuentan con lavamanos de accionamiento no manual. La sala 3 aún no tiene lavamanos instalado.\nPágina 2. Botiquín: se inventariaron 8 unidades de gasa estéril y 5 vendas elásticas.\nPágina 3. Personal: las tres enfermeras aprobaron el curso de RCP en marzo de 2026, con certificado vigente hasta marzo de 2028.\nPágina 4. Pacientes menores de edad: el centro atiende menores; cada ficha incluye el consentimiento firmado por el apoderado.\nPágina 5. Cadena de frío: existe un registro diario de temperatura del refrigerador de vacunas, pero faltan los registros de los fines de semana de octubre."
+  },
+  "requisitos": [
+    { "id": "C1", "texto": "Cada sala de atención debe contar con lavamanos de accionamiento no manual." },
+    { "id": "C2", "texto": "El botiquín debe contener al menos 10 unidades de gasa estéril." },
+    { "id": "C3", "texto": "El personal clínico debe tener capacitación en RCP vigente." },
+    { "id": "C4", "texto": "Si se atienden menores de edad, la ficha debe incluir el consentimiento del apoderado." },
+    { "id": "C5", "texto": "Debe existir un registro diario de temperatura del refrigerador de vacunas." },
+    { "id": "C6", "texto": "El recinto debe contar con un generador eléctrico de respaldo." }
+  ],
+  "resultado_correcto": [
+    { "id": "C1", "estado": "parcial" }, { "id": "C2", "estado": "no_cumple" }, { "id": "C3", "estado": "cumple" },
+    { "id": "C4", "estado": "cumple" }, { "id": "C5", "estado": "parcial" }, { "id": "C6", "estado": "sin_evidencia" }
+  ],
+  "simulado": {
+    "C1": { "haiku": { "estado": "no_cumple", "cita": "La sala 3 aún no tiene lavamanos instalado", "justificacion": "No todas las salas tienen lavamanos." },
+            "sonnet": { "estado": "parcial", "cita": "la sala 1 y la sala 2 cuentan con lavamanos de accionamiento no manual. La sala 3 aún no tiene lavamanos instalado", "justificacion": "Dos de tres salas cumplen; falta la sala 3." } },
+    "C2": { "haiku": { "estado": "no_cumple", "cita": "se inventariaron 8 unidades de gasa estéril", "justificacion": "Hay 8 unidades y se exigen 10." },
+            "sonnet": { "estado": "no_cumple", "cita": "se inventariaron 8 unidades de gasa estéril", "justificacion": "La cantidad (8) es menor a la exigida (10)." } },
+    "C3": { "haiku": { "estado": "cumple", "cita": "las tres enfermeras aprobaron el curso de RCP en marzo de 2026, con certificado vigente hasta marzo de 2028", "justificacion": "El personal tiene RCP vigente." },
+            "sonnet": { "estado": "cumple", "cita": "las tres enfermeras aprobaron el curso de RCP en marzo de 2026, con certificado vigente hasta marzo de 2028", "justificacion": "El personal tiene RCP vigente." } },
+    "C4": { "haiku": { "estado": "cumple", "cita": "el centro atiende menores; cada ficha incluye el consentimiento firmado por el apoderado", "justificacion": "Atiende menores y las fichas tienen consentimiento." },
+            "sonnet": { "estado": "cumple", "cita": "el centro atiende menores; cada ficha incluye el consentimiento firmado por el apoderado", "justificacion": "La condición se da y se cumple." } },
+    "C5": { "haiku": { "estado": "cumple", "cita": "existe un registro diario de temperatura del refrigerador de vacunas", "justificacion": "Existe el registro diario, pero faltan los fines de semana de octubre." },
+            "sonnet": { "estado": "parcial", "cita": "existe un registro diario de temperatura del refrigerador de vacunas, pero faltan los registros de los fines de semana de octubre", "justificacion": "Hay registro diario, incompleto en fines de semana." } },
+    "C6": { "haiku": { "estado": "sin_evidencia", "cita": "", "justificacion": "El documento no menciona un generador." },
+            "sonnet": { "estado": "sin_evidencia", "cita": "", "justificacion": "El documento no menciona un generador." } }
+  }
+}

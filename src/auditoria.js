@@ -23,7 +23,8 @@ const CONFIGS = {
 };
 const ESTADOS_IA = ['cumple', 'parcial', 'no_cumple', 'sin_evidencia', 'no_aplica_justificado'];
 const CON_CITA = ['cumple', 'parcial', 'no_cumple'];
-const MAX_REQUISITOS = 5;
+const MAX_REQUISITOS = 10;
+const MAX_ARCHIVOS = 5;
 const MAX_CITA = 300;
 const DOC_CORTO = 4000; // documentos más cortos se envían completos (en fragmentos)
 const err = (m, status = 400) => Object.assign(new Error(m), { status });
@@ -84,14 +85,15 @@ function citaVerificada(cita, fragmento) {
 
 // ---------- Llamada a la IA (un requisito) ----------
 
-const SISTEMA = `Eres auditora de cumplimiento. Evalúas UN requisito contra fragmentos de UN documento y respondes solo con la herramienta evaluar_requisito.
+const SISTEMA = `Eres auditora de cumplimiento. Evalúas UN requisito contra fragmentos de uno o más documentos y respondes solo con la herramienta evaluar_requisito.
 Estados:
-- cumple: la evidencia muestra que el requisito se cumple por completo.
-- parcial: se cumple solo en parte.
-- no_cumple: la evidencia muestra que no se cumple.
+- cumple: TODAS las partes del requisito están acreditadas.
+- parcial: una parte de lo exigido está acreditada y otra no (por ejemplo: se cumple en algunos lugares, elementos, personas o plazos y en otros no, o hay un avance incompleto).
+- no_cumple: ninguna parte esencial está acreditada, o la evidencia contradice el requisito (por ejemplo, una cantidad, medida o vigencia menor a la exigida).
 - sin_evidencia: los fragmentos no dicen nada que permita evaluarlo.
 - no_aplica_justificado: el requisito es condicional y la evidencia muestra que la condición no se da (explica por qué en la justificación).
-Reglas: usa solo los fragmentos. La cita se copia textual de UN fragmento (sin cambiar palabras; máximo 300 caracteres; puedes unir trozos del mismo fragmento con "..."). Nunca marques cumple sin una cita que lo pruebe. La justificación es breve (1 o 2 frases).`;
+Cómo evaluar: si el requisito tiene varias partes o exige algo "en cada", "todos", "ambos" o "al menos", revisa parte por parte. Si al menos una parte está acreditada y otra no, el estado es parcial, no no_cumple. Reserva no_cumple para cuando nada de lo esencial se cumple o la evidencia lo contradice.
+Reglas: usa solo los fragmentos. La cita se copia textual de UN fragmento (sin cambiar palabras; máximo 300 caracteres; puedes unir trozos del mismo fragmento con "..."). Nunca marques cumple sin una cita que lo pruebe. La justificación es breve (1 o 2 frases) y dice qué parte está acreditada y qué parte no.`;
 const HERRAMIENTA = {
   name: 'evaluar_requisito',
   description: 'Entrega la evaluación del requisito.',
@@ -117,14 +119,15 @@ const eleccionHerramienta = (modelo) => (forzarPermitido(modelo) ? { type: 'tool
 const rechazaForzado = (e) => e && e.status === 400 && /tool_choice|forced tool|forzad/i.test(String(e.message || ''));
 
 function pedido(nivel, requisito, sel, nota) {
-  const frags = sel.fragmentos.map((f) => `[${f.id} · ${f.ubicacion}]\n${f.texto}`).join('\n\n');
+  const varios = new Set(sel.fragmentos.map((f) => f.nombre).filter(Boolean)).size > 1;
+  const frags = sel.fragmentos.map((f) => `[${f.id} · ${varios ? `${f.nombre} · ` : ''}${f.ubicacion}]\n${f.texto}`).join('\n\n');
   return {
     model: modeloDe(nivel),
     max_tokens: 600,
     system: SISTEMA,
     tools: [HERRAMIENTA],
     tool_choice: eleccionHerramienta(modeloDe(nivel)),
-    messages: [{ role: 'user', content: `Requisito ${requisito.id}: ${requisito.texto}\n\nFragmentos del documento «${sel.nombre}»:\n\n${frags || '(ninguno)'}${nota ? `\n\n${nota}` : ''}` }],
+    messages: [{ role: 'user', content: `Requisito ${requisito.id}: ${requisito.texto}\n\n${varios ? 'Fragmentos de los documentos' : `Fragmentos del documento «${sel.nombre}»`}:\n\n${frags || '(ninguno)'}${nota ? `\n\n${nota}` : ''}` }],
   };
 }
 
@@ -135,7 +138,8 @@ function revisar(resp, sel, requisito, nivel, config) {
   const e = b.input || {};
   if (!ESTADOS_IA.includes(e.estado)) return { valido: false, motivo: `formato: estado "${e.estado}" no permitido` };
   const frag = sel.fragmentos.find((f) => f.id === String(e.fragmento || '').trim());
-  const ev = { estado: e.estado, fragmento: frag ? frag.id : null, ubicacion: frag ? frag.ubicacion : null, cita: String(e.cita || '').trim(), justificacion: String(e.justificacion || '').trim() };
+  const ev = { estado: e.estado, fragmento: frag ? frag.id : null, ubicacion: frag ? frag.ubicacion : null, cita: String(e.cita || '').trim(), justificacion: String(e.justificacion || '').trim(),
+    ...(frag && frag.archivo_id ? { archivo_id: frag.archivo_id, nombre: frag.nombre, version: frag.version } : {}) };
   if (ev.cita.length > MAX_CITA) return { valido: false, motivo: `cita de ${ev.cita.length} caracteres (máximo ${MAX_CITA})`, evaluacion: ev };
   const necesitaCita = CON_CITA.includes(ev.estado);
   if (necesitaCita && !ev.cita) return { valido: false, motivo: `"${ev.estado}" sin cita`, evaluacion: ev };
@@ -145,12 +149,32 @@ function revisar(resp, sel, requisito, nivel, config) {
   }
   if (ev.estado === 'no_aplica_justificado' && ev.justificacion.length < 20) return { valido: false, motivo: '"no aplica" sin justificación suficiente', evaluacion: ev };
   ev.cita_verificada = !!ev.cita;
-  // K3: un requisito condicional resuelto por Haiku como "no aplica" o "cumple" pide segunda opinión de Sonnet.
-  const condicional = /\b(si|cuando|en caso|salvo|excepto|siempre que)\b/.test(norm(requisito.texto));
-  if (config.escalar && nivel === 'rapido' && condicional && ['no_aplica_justificado', 'cumple'].includes(ev.estado)) {
-    return { valido: true, segundaOpinion: 'requisito condicional', evaluacion: ev };
+  // K3: reglas objetivas (código) para pedir segunda opinión a Sonnet cuando Haiku responde algo delicado.
+  if (config.escalar && nivel === 'rapido') {
+    const motivo = motivoEscalar(requisito.texto, ev);
+    if (motivo) return { valido: true, segundaOpinion: motivo, evaluacion: ev };
   }
   return { valido: true, evaluacion: ev };
+}
+
+// Cuándo una respuesta de Haiku necesita segunda opinión (K3). Reglas generales, no de un documento:
+// 1. Requisito condicional ("si", "cuando", "salvo"…) resuelto como "cumple" o "no aplica".
+// 2. Cualquier "no cumple": es el hallazgo con más consecuencias y donde se confunde con "parcial" (caso R2).
+// 3. Requisito con varias partes o cuantificado ("cada", "todos", "ambos", "al menos", cifras) resuelto
+//    como "cumple" o "no cumple": son los que admiten un "parcial".
+// 4. La justificación describe algo incompleto ("solo", "falta", "pendiente", "aún no", "pero"…) y el estado
+//    es "cumple" o "no cumple": la explicación y la clasificación no coinciden.
+const CONDICIONAL = /\b(si|cuando|en caso|salvo|excepto|siempre que)\b/;
+const CUANTIFICADO = /\b(cada|todos|todas|todo el|toda la|ambos|ambas|al menos|como minimo|minimo|maximo|ningun|ninguna)\b|\d/;
+const INCOMPLETO = /\b(solo|solamente|unicamente|falta|faltan|pendiente|pendientes|aun no|todavia no|pero|sin embargo|excepto|salvo|parcial|parcialmente|incompleto|incompleta|en tramite|encargado|encargada)\b/;
+function motivoEscalar(textoRequisito, ev) {
+  const req = norm(textoRequisito);
+  const just = norm(ev.justificacion);
+  if (CONDICIONAL.test(req) && ['no_aplica_justificado', 'cumple'].includes(ev.estado)) return 'requisito condicional';
+  if (ev.estado === 'no_cumple') return 'hallazgo de no cumplimiento';
+  if (CUANTIFICADO.test(req) && ev.estado === 'cumple') return 'requisito con varias partes o cantidades';
+  if (INCOMPLETO.test(just) && ev.estado === 'cumple') return 'la justificación describe algo incompleto';
+  return null;
 }
 
 async function llamar(params, ctx, intento) {
@@ -186,14 +210,25 @@ const EJECUTORES = {
   // Texto del documento (reutilizado de la Fase 3b) → fragmentos pertinentes por requisito. Código, sin IA.
   async aud_seleccionar({ entrada, trabajoId, pasoId }) {
     const Drive = require('./drive');
-    const doc = await Drive.textoParaTrabajo(entrada.archivo_id, { trabajoId, pasoId });
-    if (!doc.texto.trim()) throw new Error('El documento no tiene texto extraíble');
-    const frags = fragmentar(doc.texto);
+    const ids = entrada.archivo_ids || [entrada.archivo_id];
+    const docs = [];
+    let frags = [];
+    let texto = '';
+    for (const id of ids) {
+      const doc = await Drive.textoParaTrabajo(id, { trabajoId, pasoId });
+      if (!doc.texto.trim()) throw new Error(`El documento «${doc.nombre}» no tiene texto extraíble`);
+      docs.push({ archivo_id: doc.archivo_id, nombre: doc.nombre, version: doc.version, fuente: doc.fuente, caracteres: doc.texto.length });
+      const propios = fragmentar(doc.texto).map((f) => ({ ...f, archivo_id: doc.archivo_id, nombre: doc.nombre, version: doc.version }));
+      frags = frags.concat(propios);
+      texto += `${doc.texto}\n`;
+    }
+    frags = frags.map((f, i) => ({ ...f, id: `F${i + 1}` }));
     const porRequisito = entrada.requisitos.map((r) => {
-      const p = pertinentes(r.texto, frags, doc.texto);
+      const p = pertinentes(r.texto, frags, texto);
       return { requisito: r.id, criterio: p.criterio, fragmentos: p.fragmentos };
     });
-    return { resultado: { archivo_id: doc.archivo_id, nombre: doc.nombre, version: doc.version, fuente: doc.fuente, caracteres: doc.texto.length, total_fragmentos: frags.length, por_requisito: porRequisito }, costo: 0 };
+    const unico = docs.length === 1 ? docs[0] : {};
+    return { resultado: { docs, archivo_id: unico.archivo_id, nombre: unico.nombre, version: unico.version, caracteres: texto.length, total_fragmentos: frags.length, por_requisito: porRequisito }, costo: 0 };
   },
 
   // Clasificar UN requisito con la IA según K1/K2/K3, y comprobar la evidencia con código.
@@ -203,11 +238,12 @@ const EJECUTORES = {
     if (!selPaso) throw new Error('falta la selección de fragmentos');
     const s = selPaso.resultado;
     const porReq = s.por_requisito.find((x) => x.requisito === entrada.requisito.id) || { fragmentos: [] };
-    const sel = { nombre: s.nombre, fragmentos: porReq.fragmentos };
-    const base = { requisito: entrada.requisito.id, texto_requisito: entrada.requisito.texto, archivo_id: s.archivo_id, nombre: s.nombre, version: s.version, config: entrada.config };
+    const sel = { nombre: s.nombre || 'documentos', fragmentos: porReq.fragmentos };
+    // Con un documento, la fila lleva ese archivo; con varios, el del fragmento citado (se completa al elegir).
+    const base = { requisito: entrada.requisito.id, texto_requisito: entrada.requisito.texto, archivo_id: s.archivo_id || null, nombre: s.nombre || null, version: s.version || null, config: entrada.config };
     if (!sel.fragmentos.length) {
       // Nada en el documento habla del requisito: lo dice el código, sin gastar en IA.
-      return { resultado: { ...base, estado: 'sin_evidencia', cita: '', cita_verificada: false, ubicacion: null, justificacion: 'Ningún fragmento del documento menciona este requisito.', modelo: 'código', intentos: [], escalado: false }, costo: 0, llamadasRegistradas: true };
+      return { resultado: { ...base, estado: 'sin_evidencia', cita: '', cita_verificada: false, ubicacion: null, justificacion: 'Ningún fragmento de los documentos menciona este requisito.', modelo: 'código', intentos: [], escalado: false }, costo: 0, llamadasRegistradas: true };
     }
     const ctx = { trabajoId, pasoId, senal };
     const intentos = [];
@@ -222,7 +258,7 @@ const EJECUTORES = {
       intentos.push({ modelo: modeloDe(nivel), nivel, valido: r.valido, motivo: r.motivo || (r.segundaOpinion ? `segunda opinión: ${r.segundaOpinion}` : null), estado: r.evaluacion ? r.evaluacion.estado : null, costo_usd: c });
       if (r.valido) {
         elegida = { ...r.evaluacion, modelo: modeloDe(nivel) }; // una respuesta válida posterior (más capaz) reemplaza a la anterior
-        if (r.segundaOpinion && i < config.modelos.length - 1) { nota = 'El requisito es condicional: revisa con cuidado si la condición se da según los fragmentos.'; continue; }
+        if (r.segundaOpinion && i < config.modelos.length - 1) { nota = `Revisión independiente (${r.segundaOpinion}): evalúa desde cero, parte por parte, y distingue con cuidado cumple, parcial, no_cumple y no_aplica_justificado.`; continue; }
         break;
       }
       if (elegida) break; // la segunda opinión no se pudo verificar: queda la respuesta válida anterior
@@ -346,14 +382,16 @@ async function costosDe(trabajoId) {
 
 function validarEntrada(d) {
   if (usuario().id !== 1) throw err('La auditoría está disponible solo para la cuenta principal en esta etapa.', 403);
-  if (!d.archivo_id || !/^[\w-]{3,128}$/.test(String(d.archivo_id))) throw err('Falta el id del documento (de la carpeta de prueba)');
+  const archivo_ids = [...new Set((Array.isArray(d.archivo_ids) && d.archivo_ids.length ? d.archivo_ids : [d.archivo_id]).filter(Boolean).map(String))];
+  if (!archivo_ids.length || archivo_ids.length > MAX_ARCHIVOS) throw err(`Indica entre 1 y ${MAX_ARCHIVOS} documentos (de la carpeta de prueba)`);
+  for (const id of archivo_ids) if (!/^[\w-]{3,128}$/.test(id)) throw err(`Id de documento inválido: ${id}`);
   const requisitos = (d.requisitos || []).map((r, i) => ({ id: String(r.id || `R${i + 1}`).trim().slice(0, 12), texto: String(r.texto || '').trim().slice(0, 600) })).filter((r) => r.texto);
   if (!requisitos.length || requisitos.length > MAX_REQUISITOS) throw err(`Entre 1 y ${MAX_REQUISITOS} requisitos`);
   if (new Set(requisitos.map((r) => r.id)).size !== requisitos.length) throw err('Hay ids de requisito repetidos');
   for (const r of requisitos) if (!/^[\w.-]{1,12}$/.test(r.id)) throw err(`Id de requisito inválido: ${r.id}`);
   const esperado = (d.esperado || []).filter((x) => x && x.id && x.estado).map((x) => ({ id: String(x.id), estado: String(x.estado) }));
   for (const x of esperado) if (!Trabajos.ESTADOS_EVIDENCIA.includes(x.estado)) throw err(`Estado esperado inválido para ${x.id}: ${x.estado}`);
-  return { archivo_id: String(d.archivo_id), requisitos, esperado };
+  return { archivo_ids, archivo_id: archivo_ids[0], requisitos, esperado };
 }
 
 // Estimación previa por configuración (peor caso: segundo intento incluido). Sirve para proponer presupuesto.
@@ -378,10 +416,8 @@ function estimacion(d) {
 }
 
 function pasosDe(e, config) {
-  const pasos = [
-    { clave: `extraer:${e.archivo_id}`, tipo: 'extraer', etapa: 'extracción', entrada: { archivo_id: e.archivo_id } },
-    { clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'fragmentos', entrada: { archivo_id: e.archivo_id, requisitos: e.requisitos } },
-  ];
+  const pasos = e.archivo_ids.map((id) => ({ clave: `extraer:${id}`, tipo: 'extraer', etapa: 'extracción', entrada: { archivo_id: id } }));
+  pasos.push({ clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'fragmentos', entrada: { archivo_ids: e.archivo_ids, requisitos: e.requisitos } });
   for (const r of e.requisitos) {
     const est = estimar({ requisitos: [r], config });
     pasos.push({ clave: `verificar:${r.id}`, tipo: 'aud_verificar', etapa: 'verificación', entrada: { requisito: r, config }, estimado: Number(est.toFixed(6)) });
@@ -392,7 +428,7 @@ function pasosDe(e, config) {
 }
 
 async function crearYAprobar(e, config, presupuesto, serie) {
-  const objetivo = { archivo_id: e.archivo_id, requisitos: e.requisitos, esperado: e.esperado, config, requisitos_hash: hash(JSON.stringify(e.requisitos)), ...(serie ? { serie } : {}) };
+  const objetivo = { archivo_id: e.archivo_id, archivo_ids: e.archivo_ids, requisitos: e.requisitos, esperado: e.esperado, config, requisitos_hash: hash(JSON.stringify(e.requisitos)), ...(serie ? { serie } : {}) };
   const t = await Trabajos.crear({ tipo: 'auditoria', titulo: `Auditoría mínima ${config} (${e.requisitos.length} requisitos)`, objetivo, presupuesto, pasos: pasosDe(e, config) });
   return Trabajos.aprobar(t.id);
 }
@@ -417,8 +453,13 @@ async function crear(d) {
 }
 
 // Serie de comparación: al completar una configuración, empieza la siguiente (presupuesto ya aprobado).
-async function alTerminar(t) {
+async function alTerminar(t, final) {
   const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  // Aviso al teléfono (Fase 3d): la auditoría terminó y el Excel está listo en el chat.
+  if (process.env.ADA_AVISOS !== 'no' && !objetivo.serie) {
+    const resumen = final && final.matriz ? final.matriz.filas.map((f) => `${f.requisito}: ${f.estado}`).join(' · ') : '';
+    require('./avisos').enviar({ titulo: 'Auditoría lista', cuerpo: `${resumen}. El Excel está en el chat.`.slice(0, 200), url: '/', tag: `auditoria-${t.id.slice(0, 8)}` }).catch(() => {});
+  }
   const serie = objetivo.serie;
   if (!serie || !serie.restantes || !serie.restantes.length) return;
   const [siguiente, ...resto] = serie.restantes;
@@ -461,6 +502,144 @@ async function excel(trabajoId) {
   return { nombre: `auditoria-${trabajoId.slice(0, 8)}.xlsx`, datos: Buffer.from(e.xlsx_b64, 'base64') };
 }
 
+// ---------- Fase 3d: desde la conversación ----------
+// ADA propone (archivos, requisitos, configuración y presupuesto sugerido); Cristian aprueba con un botón.
+// Nada se ejecuta ni se gasta hasta esa aprobación.
+
+const CONFIG_PROVISIONAL = 'K1'; // decisión del 29/10: K1 para auditorías de cumplimiento hasta tener más evidencia
+
+async function archivosDeLaPropuesta(d) {
+  const Drive = require('./drive');
+  const Extracciones = require('./extracciones');
+  let ids = Array.isArray(d.archivo_ids) ? d.archivo_ids.filter(Boolean).map(String) : [];
+  if (d.archivo_id) ids.push(String(d.archivo_id));
+  const archivos = [];
+  if (d.carpeta_id) {
+    // Una carpeta: sus documentos con texto (hasta el máximo), en orden.
+    const lista = await Drive.DRIVE_EXTRACCION.metadatos(String(d.carpeta_id));
+    if (lista.mimeType !== 'application/vnd.google-apps.folder') throw err('carpeta_id no es una carpeta');
+    const H = require('./herramientas');
+    const r = await H.ejecutar('listar_carpeta_drive', { carpeta_id: String(d.carpeta_id) }, {});
+    if (r.error) throw err(r.error);
+    ids = ids.concat((r.archivos || []).map((a) => a.id));
+  }
+  ids = [...new Set(ids)];
+  for (const id of ids) {
+    let meta;
+    try { meta = await Drive.metadatos(id); } catch (e) { throw err(`No puedo ver el archivo ${id}: ${e.message}`); }
+    if (Extracciones.modo() === 'prueba' && !Extracciones.enCarpetaDePrueba(meta)) throw err(`«${meta.name}» está fuera de la carpeta autorizada para la prueba: durante la prueba solo se auditan documentos de esa carpeta.`, 403);
+    if (Drive.DRIVE_EXTRACCION.leible(meta)) archivos.push({ id: meta.id, nombre: meta.name });
+  }
+  if (!archivos.length) throw err('No encontré documentos con texto para auditar.');
+  if (archivos.length > MAX_ARCHIVOS) throw err(`Son ${archivos.length} documentos; en esta etapa el máximo es ${MAX_ARCHIVOS}. Elige cuáles.`);
+  return archivos;
+}
+
+async function proponer(d, ctx = {}) {
+  if (usuario().id !== 1) throw err('La auditoría está disponible solo para la cuenta principal en esta etapa.', 403);
+  const archivos = await archivosDeLaPropuesta(d);
+  const config = CONFIGS[d.configuracion] ? d.configuracion : CONFIG_PROVISIONAL;
+  const e = validarEntrada({ archivo_ids: archivos.map((a) => a.id), requisitos: d.requisitos });
+  const est = estimacion({ archivo_ids: e.archivo_ids, requisitos: e.requisitos });
+  const id = crypto.randomUUID();
+  const datos = { archivos, requisitos: e.requisitos, config, motivo: String(d.motivo || '').slice(0, 300), estimacion: est };
+  await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, usuario().id, ctx.conversacionId || null, 'pendiente', Cifrado.cifrarJSON(datos), new Date(), new Date()]);
+  const tarjeta = { id, archivos, requisitos: e.requisitos, configuracion: config, configuraciones: est.configuraciones, estimados: est.por_configuracion, estimado_usd: est.por_configuracion[config],
+    presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo };
+  if (typeof ctx.emitir === 'function') ctx.emitir('auditoria_propuesta', tarjeta);
+  return {
+    ok: true, propuesta_id: id, archivos: archivos.map((a) => a.nombre), requisitos: e.requisitos.length, configuracion: config,
+    presupuesto_sugerido_usd: tarjeta.presupuesto_sugerido, costo_estimado_peor_caso_usd: tarjeta.estimado_usd,
+    nota: 'Le mostré en pantalla la tarjeta para revisar los requisitos y aprobar el presupuesto. NO ha empezado: empieza solo cuando Cristian toque "Aprobar" en la tarjeta. Díselo en una frase (cuántos requisitos, configuración y presupuesto sugerido) y no digas que ya está en marcha.',
+  };
+}
+
+async function propuesta(id) {
+  const [p] = await qPrincipal('SELECT * FROM auditoria_propuestas WHERE id = ? AND usuario_id = ?', [id, usuario().id]);
+  if (!p) throw err('No existe esa propuesta', 404);
+  return { ...p, datos: Cifrado.descifrarJSON(p.datos_cifrado) };
+}
+
+// La aprobación es el botón de la tarjeta (requisitos, posiblemente editados, y presupuesto explícito).
+async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion } = {}) {
+  const p = await propuesta(id);
+  if (p.estado !== 'pendiente') throw err(`La propuesta ya está "${p.estado}"`, 409);
+  const datos = p.datos;
+  const trabajo = await crear({ archivo_ids: datos.archivos.map((a) => a.id), requisitos: requisitos && requisitos.length ? requisitos : datos.requisitos,
+    configuracion: configuracion || datos.config, presupuesto });
+  await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', trabajo_id = ?, actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [trabajo.id, new Date(), id]);
+  return { ok: true, trabajo_id: trabajo.id, estado: trabajo.estado };
+}
+
+async function descartarPropuesta(id) {
+  const p = await propuesta(id);
+  if (p.estado !== 'pendiente') throw err(`La propuesta ya está "${p.estado}"`, 409);
+  await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ?", [new Date(), id]);
+  return { ok: true };
+}
+
+// Avance real para la conversación y la tarjeta del chat (desde la base, no estimado).
+async function avance(trabajoId) {
+  let id = trabajoId;
+  if (!id) {
+    const [u] = await qPrincipal("SELECT id FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria' ORDER BY creado_en DESC LIMIT 1", [usuario().id]);
+    if (!u) return { hay: false, nota: 'No hay auditorías todavía.' };
+    id = u.id;
+  }
+  const v = await Trabajos.ver(id, { conResultado: true });
+  if (v.tipo !== 'auditoria') throw err('No es una auditoría', 404);
+  const pasos = v.detalle_pasos;
+  const verif = pasos.filter((p) => p.tipo === 'aud_verificar');
+  const r = v.resultado || {};
+  const costos = r.costos || await costosDe(id);
+  return {
+    hay: true, id: v.id, estado: v.estado, estado_real: v.estado_real, motivo: v.motivo, etapa: v.etapa,
+    pasos_hechos: v.pasos.hechos, pasos_total: v.pasos.total,
+    requisitos_evaluados: verif.filter((p) => p.estado === 'hecho').length, requisitos_total: verif.length,
+    costo_real_usd: Number(costos.real_usd.toFixed(5)), presupuesto_usd: v.presupuesto_usd, reserva_activa_usd: v.reservado_usd,
+    excel_listo: v.estado === 'completado',
+    matriz: r.matriz ? r.matriz.filas.map((f) => ({ requisito: f.requisito, estado: f.estado, cita_verificada: f.cita_verificada, ubicacion: f.ubicacion, archivo: f.archivo })) : null,
+    config: r.config || (v.titulo.match(/K\d/) || [])[0],
+  };
+}
+
+async function activas() {
+  const filas = await qPrincipal(`SELECT id FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria'
+    AND (estado IN ('ejecutando','pausado','pausado_presupuesto','bloqueado','esperando_aprobacion') OR (estado = 'completado' AND terminado_en > ?)) ORDER BY creado_en DESC LIMIT 3`,
+  [usuario().id, new Date(Date.now() - 6 * 3600e3)]);
+  const out = [];
+  for (const f of filas) { try { out.push(await avance(f.id)); } catch (_) {} }
+  return out;
+}
+
+const H = require('./herramientas');
+H.registrar([
+  {
+    name: 'proponer_auditoria',
+    description: 'Propone una auditoría de cumplimiento sobre uno o más documentos de Drive (o los de una carpeta) contra una lista de requisitos. NO la inicia: muestra a Cristian una tarjeta con los archivos, los requisitos, la configuración y el presupuesto sugerido para que la apruebe con un botón. Durante la prueba solo acepta documentos de la carpeta de prueba. Hasta 10 requisitos y 5 documentos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        archivo_ids: { type: 'array', items: { type: 'string' }, description: 'ids de los documentos a auditar' },
+        carpeta_id: { type: 'string', description: 'o una carpeta: se auditan sus documentos con texto' },
+        requisitos: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', description: 'R1, R2…' }, texto: { type: 'string' } }, required: ['texto'] }, description: 'requisitos claros y verificables, uno por elemento' },
+        configuracion: { type: 'string', enum: ['K1', 'K2', 'K3'], description: 'omítela: por ahora se usa K1 (Sonnet), salvo que Cristian pida otra' },
+        motivo: { type: 'string', description: 'para qué es la auditoría, en una frase' },
+      },
+      required: ['requisitos'],
+    },
+  },
+  {
+    name: 'ver_auditoria',
+    description: 'Avance real de una auditoría (la última si no se indica id): estado, requisitos evaluados, costo real, presupuesto y, si terminó, el resultado por requisito y si el Excel está listo.',
+    input_schema: { type: 'object', properties: { id: { type: 'string' } } },
+  },
+], {
+  proponer_auditoria: (a, ctx) => proponer(a, ctx),
+  ver_auditoria: (a) => avance(a.id),
+});
+
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { crear, estimacion, listar, excel, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

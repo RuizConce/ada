@@ -63,7 +63,10 @@ http.createServer(async (req, res) => {
     }
 
     // ---- Drive ----
-    if (p === '/drive/v3/files' && req.method === 'GET') return json(res, 200, { files: [...archivos.values()].filter((f) => !f.copiaDe).slice(0, 50).map(publico) });
+    if (p === '/drive/v3/files' && req.method === 'GET') {
+      const padre = ((u.searchParams.get('q') || '').match(/'([^']+)' in parents/) || [])[1];
+      return json(res, 200, { files: [...archivos.values()].filter((f) => !f.copiaDe && (!padre || (f.parents || ['carpeta-prueba']).includes(padre))).slice(0, 50).map(publico) });
+    }
     m = p.match(/^\/drive\/v3\/files\/([^/]+)(\/copy|\/export)?$/);
     if (!m) return error(res, 404, 'notFound', 'ruta');
     const id = decodeURIComponent(m[1]);

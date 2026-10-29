@@ -226,6 +226,155 @@
     }
     for (const a of autorizaciones) cont.appendChild(tarjetaAutorizacion(a));
     if (consentimientoPendiente) cont.appendChild(tarjetaConsentimiento(consentimientoPendiente));
+    for (const p of propuestasAuditoria) cont.appendChild(tarjetaPropuestaAuditoria(p));
+    for (const a of encargosAuditoria.values()) cont.appendChild(tarjetaEncargoAuditoria(a));
+  }
+
+  // ---------- Auditorías desde la conversación (Fase 3d) ----------
+  // ADA propone; nada empieza ni se gasta hasta tocar "Aprobar". El avance viene de la base (real, no estimado).
+  let propuestasAuditoria = [];
+  const encargosAuditoria = new Map();
+  let audChatTimer = null;
+  const usdAud = (n) => `US$${Number(n || 0).toFixed(4).replace('.', ',')}`;
+  const ESTADO_AUD = { cumple: 'Cumple', parcial: 'Parcial', no_cumple: 'No cumple', sin_evidencia: 'Sin evidencia', no_aplica_justificado: 'No aplica (justificado)', no_evaluado: 'No evaluado' };
+  const ETAPA_AUD = { ejecutando: 'Trabajando', pausado: 'En pausa', pausado_presupuesto: 'Detenido: se acabó el presupuesto', bloqueado: 'Detenido por un error', completado: 'Terminada', cancelado: 'Cancelada', fallido: 'Falló', esperando_aprobacion: 'Esperando aprobación' };
+
+  function tarjetaPropuestaAuditoria(p) {
+    const t = document.createElement('div');
+    t.className = 'tarjeta tarjeta-auditoria';
+    t.innerHTML = '<div class="tarjeta-cab"><span><strong>Auditoría propuesta</strong></span></div><p class="meta aud-archivos"></p>'
+      + '<label class="aud-campo">Requisitos (uno por línea: R1 | texto)<textarea rows="5" class="aud-req"></textarea></label>'
+      + '<div class="aud-fila"><label class="aud-campo">Configuración<select class="aud-conf"></select></label><label class="aud-campo">Presupuesto US$<input type="number" step="0.01" min="0.01" class="aud-pres"></label></div>'
+      + '<p class="meta aud-est"></p><div class="tarjeta-botones"><button type="button" class="principal">Aprobar y empezar</button><button type="button" class="descartar">Descartar</button></div>';
+    t.querySelector('.aud-archivos').textContent = `${p.archivos.map((a) => a.nombre).join(' · ')}${p.motivo ? ` — ${p.motivo}` : ''}`;
+    t.querySelector('.aud-req').value = p.requisitos.map((r) => `${r.id} | ${r.texto}`).join('\n');
+    const sel = t.querySelector('.aud-conf');
+    for (const k of ['K1', 'K2', 'K3']) { const o = document.createElement('option'); o.value = k; o.textContent = k === 'K1' ? 'K1 · Sonnet (recomendada)' : k === 'K2' ? 'K2 · Haiku (económica)' : 'K3 · Haiku con escalamiento'; sel.appendChild(o); }
+    sel.value = p.configuracion;
+    const pres = t.querySelector('.aud-pres');
+    const est = t.querySelector('.aud-est');
+    const pintarEst = () => {
+      const min = p.presupuesto_minimo[sel.value];
+      est.textContent = `Costo estimado (peor caso) ${usdAud(p.estimados ? p.estimados[sel.value] : p.estimado_usd)} · presupuesto mínimo a reservar ${usdAud(min)}. Solo se cobra lo real, y nada hasta que apruebes.`;
+      if (!pres.dataset.tocado) pres.value = String(Math.ceil(min * 100) / 100);
+    };
+    pres.addEventListener('input', () => { pres.dataset.tocado = '1'; });
+    sel.addEventListener('change', pintarEst);
+    pintarEst();
+    const botones = t.querySelectorAll('.tarjeta-botones button');
+    t.querySelector('.principal').addEventListener('click', async () => {
+      const requisitos = t.querySelector('.aud-req').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l, i) => {
+        const [a, ...b] = l.split('|'); return b.length ? { id: a.trim(), texto: b.join('|').trim() } : { id: `R${i + 1}`, texto: l };
+      });
+      botones.forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), requisitos, configuracion: sel.value }) });
+        propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+        encargosAuditoria.set(r.trabajo_id, { id: r.trabajo_id, estado: r.estado, pasos_hechos: 0, pasos_total: 0, requisitos_evaluados: 0, requisitos_total: requisitos.length, costo_real_usd: 0, presupuesto_usd: parseFloat(pres.value) });
+        pintarEntregas();
+        seguirAuditorias();
+      } catch (e) { botones.forEach((b) => { b.disabled = false; }); aviso(e.message, true); }
+    });
+    t.querySelector('.descartar').addEventListener('click', async () => {
+      botones.forEach((b) => { b.disabled = true; });
+      try { await api(`/api/auditorias/propuestas/${p.id}/descartar`, { method: 'POST' }); } catch (_) {}
+      propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+      pintarEntregas();
+    });
+    return t;
+  }
+
+  function tarjetaEncargoAuditoria(a) {
+    const t = document.createElement('div');
+    t.className = 'tarjeta tarjeta-auditoria';
+    t.dataset.trabajo = a.id;
+    t.innerHTML = '<div class="tarjeta-cab"><span><strong>Auditoría en curso</strong></span><em class="aud-estado"></em></div>'
+      + '<div class="aud-barra"><i></i></div><p class="meta aud-avance"></p><ul class="aud-matriz"></ul><div class="tarjeta-botones"></div>';
+    const terminado = a.estado === 'completado';
+    t.querySelector('strong').textContent = terminado ? 'Auditoría terminada' : 'Auditoría en curso';
+    t.querySelector('.aud-estado').textContent = a.estado === 'ejecutando' && a.estado_real === 'esperando ejecutor' ? 'Esperando turno' : (ETAPA_AUD[a.estado] || a.estado);
+    const pct = a.pasos_total ? Math.round((100 * a.pasos_hechos) / a.pasos_total) : 0;
+    t.querySelector('.aud-barra i').style.width = `${pct}%`;
+    t.querySelector('.aud-avance').textContent = `${a.etapa ? `${a.etapa} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
+    const ul = t.querySelector('.aud-matriz');
+    for (const f of a.matriz || []) {
+      const li = document.createElement('li');
+      li.textContent = `${f.requisito}: ${ESTADO_AUD[f.estado] || f.estado}${f.cita_verificada ? ` · cita verificada (${f.ubicacion})` : ''}`;
+      li.className = `aud-${f.estado}`;
+      ul.appendChild(li);
+    }
+    const botones = t.querySelector('.tarjeta-botones');
+    const boton = (texto, fn, clase) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = texto; if (clase) b.className = clase; b.addEventListener('click', () => fn(b)); botones.appendChild(b); return b; };
+    const accion = async (b, ruta, cuerpo) => { b.disabled = true; try { await api(`/api/trabajos/${a.id}/${ruta}`, { method: 'POST', body: JSON.stringify(cuerpo || {}) }); seguirAuditorias(); } catch (e) { b.disabled = false; aviso(e.message, true); } };
+    if (terminado && a.excel_listo) {
+      boton('Descargar Excel', async (b) => {
+        b.textContent = '…';
+        try {
+          const r = await fetch(`/api/auditorias/${a.id}/excel`, { headers: { Authorization: `Bearer ${token}` } });
+          if (!r.ok) throw new Error(`Error ${r.status}`);
+          const url = URL.createObjectURL(await r.blob());
+          const l = document.createElement('a'); l.href = url; l.download = `auditoria-${a.config || ''}-${a.id.slice(0, 8)}.xlsx`; document.body.appendChild(l); l.click();
+          setTimeout(() => { URL.revokeObjectURL(url); l.remove(); }, 2000);
+        } catch (e) { aviso(`No se pudo descargar: ${e.message}`, true); }
+        b.textContent = 'Descargar Excel';
+      }, 'principal');
+      boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
+    }
+    if (a.estado === 'pausado_presupuesto') {
+      boton('Ampliar presupuesto…', (b) => {
+        if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar: +US$1 (solo se gasta lo real)'; return; }
+        accion(b, 'ampliar', { monto: 1 });
+      }, 'principal');
+    }
+    if (a.estado === 'bloqueado') {
+      boton('Reintentar desde el paso que falló', (b) => {
+        if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar reintento (lo hecho no se vuelve a pagar)'; return; }
+        accion(b, 'reintentar');
+      }, 'principal');
+    }
+    if (['ejecutando', 'pausado', 'pausado_presupuesto', 'bloqueado'].includes(a.estado)) {
+      boton('Cancelar', (b) => {
+        if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar cancelación'; return; }
+        accion(b, 'cancelar');
+      }, 'descartar');
+    }
+    if (['cancelado', 'fallido'].includes(a.estado)) boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
+    return t;
+  }
+
+  // Una tarjeta cerrada no vuelve a aparecer al recargar (preferencia de este navegador).
+  const cerradasAud = () => { try { return JSON.parse(localStorage.getItem('ada_aud_cerradas') || '[]'); } catch (_) { return []; } };
+  function cerrarAuditoria(id) {
+    encargosAuditoria.delete(id);
+    try { localStorage.setItem('ada_aud_cerradas', JSON.stringify(cerradasAud().concat([id]).slice(-20))); } catch (_) {}
+    pintarEntregas();
+  }
+
+  async function seguirAuditorias() {
+    clearTimeout(audChatTimer);
+    let vivas = false;
+    for (const id of [...encargosAuditoria.keys()]) {
+      try {
+        const a = await api(`/api/auditorias/${id}/avance`);
+        const antes = encargosAuditoria.get(id);
+        encargosAuditoria.set(id, a);
+        if (antes && antes.estado !== 'completado' && a.estado === 'completado') aviso('La auditoría terminó: el Excel está listo para descargar.');
+        if (a.estado === 'ejecutando') vivas = true;
+      } catch (_) {}
+    }
+    pintarEntregas();
+    if (vivas) audChatTimer = setTimeout(seguirAuditorias, 2000);
+  }
+
+  // Al abrir la app: recupera las auditorías en curso (o terminadas hace poco) para que la tarjeta no se pierda.
+  async function cargarAuditoriasActivas() {
+    // Solo la cuenta principal tiene auditorías; para las demás el servidor responde 403 y no se muestra nada.
+    try {
+      const lista = await api('/api/auditorias/activas');
+      const cerradas = cerradasAud();
+      for (const a of lista) if (!cerradas.includes(a.id)) encargosAuditoria.set(a.id, a);
+      if (lista.length) { pintarEntregas(); seguirAuditorias(); }
+    } catch (_) {}
   }
 
   // Consentimiento explícito para guardar (cifrado, máx. 30 días) lo que ADA extrae de los documentos.
@@ -996,6 +1145,9 @@
           llamadasActuales.push(d);
           pintarEntregas();
           if (window.AdaAndroid) llamarDirecto(d);
+        } else if (tipo === 'auditoria_propuesta') {
+          propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== d.id).concat([d]);
+          pintarEntregas();
         } else if (tipo === 'consentimiento_extracciones') {
           consentimientoPendiente = d;
           pintarEntregas();
@@ -2587,6 +2739,7 @@
     await retomarConversacion();
     actualizarEstado();
     cargarAutorizaciones();
+    cargarAuditoriasActivas();
     revisarCompartido();
     if (new URLSearchParams(location.search).has('aviso')) mostrarLlamado(location.href);
     // Abierta con el botón del asistente, el mosaico o el acceso directo "Hablar con ADA": escucha de inmediato.

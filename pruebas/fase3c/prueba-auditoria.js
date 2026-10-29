@@ -69,7 +69,7 @@ const llamadasDe = (id) => sql(`SELECT CONCAT(modelo,'|',IFNULL(error,'')) FROM 
   ok(filas.every((f) => f.cita_verificada && f.cita && f.ubicacion && f.archivo_id === 'AUD1' && f.archivo_version), 'cada requisito con cita verificada textualmente, ubicación, archivo y versión');
   ok(filas.map((f) => f.ubicacion).join(',') === 'página 1,página 2,página 3', `ubicaciones: ${filas.map((f) => f.ubicacion).join(', ')}`);
   const llK3 = llamadasDe(r.d.id);
-  ok(llK3.length === 4 && llK3.filter((x) => /haiku/.test(x)).length === 3 && llK3.filter((x) => /sonnet/.test(x)).length === 1, `K3: 3 llamadas a Haiku y 1 a Sonnet (segunda opinión en R3, condicional): ${llK3.length} llamadas`);
+  ok(llK3.length === 5 && llK3.filter((x) => /haiku/.test(x)).length === 3 && llK3.filter((x) => /sonnet/.test(x)).length === 2, `K3: 3 llamadas a Haiku y 2 a Sonnet (segunda opinión en R1, con cantidad mínima, y en R3, condicional): ${llK3.length} llamadas`);
   ok(res.costos.real_usd > 0 && res.costos.reservas >= 3 && res.costos.reservado_total_usd > res.costos.real_usd && res.costos.estimado_previo_usd > 0,
     `costos: real US$${res.costos.real_usd.toFixed(5)} · estimado previo US$${res.costos.estimado_previo_usd.toFixed(5)} · reservado US$${res.costos.reservado_total_usd.toFixed(5)} (${res.costos.reservas} reservas)`);
   ok(v.gastado_usd <= v.presupuesto_usd, `respetó el presupuesto (US$${v.gastado_usd.toFixed(5)} de US$${v.presupuesto_usd})`);
@@ -78,7 +78,7 @@ const llamadasDe = (id) => sql(`SELECT CONCAT(modelo,'|',IFNULL(error,'')) FROM 
   // Excel real
   const xr = await fetch(`http://localhost:3200/api/auditorias/${r.d.id}/excel`, { headers: { Authorization: `Bearer ${tk}` } });
   const buf = Buffer.from(await xr.arrayBuffer());
-  fs.writeFileSync(`${S}/auditoria-K3.xlsx`, buf);
+  fs.writeFileSync(`${require("os").tmpdir()}/auditoria-K3.xlsx`, buf);
   const ExcelJS = require(require.resolve('exceljs', { paths: ['/home/claude/ada'] }));
   const libro = new ExcelJS.Workbook(); await libro.xlsx.load(buf);
   const hoja = libro.getWorksheet('Matriz');
@@ -158,7 +158,7 @@ const llamadasDe = (id) => sql(`SELECT CONCAT(modelo,'|',IFNULL(error,'')) FROM 
   await parar();
 
   // ---- Incidente del 29/10: la llamada a Sonnet falla con 400 en K3 (R3) ----
-  await arrancar({ FAKE_SONNET_ERROR: 'si' });
+  await arrancar({ FAKE_SONNET_ERROR: 'si', FAKE_SONNET_ERROR_REQ: 'R3' });
   r = await auditoria('K3', est.d.presupuesto_minimo.K3);
   const idInc = r.d.id;
   v = await esperar(idInc, ['bloqueado', 'completado']);

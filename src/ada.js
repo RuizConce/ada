@@ -7,6 +7,7 @@ const C = require('./conversaciones'); // registra entregar_documento
 const G = require('./google'); // registra las herramientas de agenda
 require('./archivos'); // registra crear_archivo
 require('./drive'); // registra las herramientas de Drive
+require('./auditoria'); // registra proponer_auditoria y ver_auditoria (Fase 3d)
 const M = require('./gmail'); // registra las herramientas de correo
 const { claude, elegirModelo, costoUSD, estimarCosto } = require('./claude');
 const Consumo = require('./consumo');
@@ -84,6 +85,13 @@ ARCHIVOS Y GOOGLE DRIVE
 - Ordenar el Drive: primero explora y propone un plan concreto (qué carpetas crear, qué mover, qué renombrar). Con su sí, ejecútalo completo y al final resume lo hecho.
 - Para modificar (mover, renombrar, editar, papelera) necesitas su confirmación explícita; luego llama con confirmado: true. Nunca envíes a la papelera sin que él lo haya pedido.
 - Si Google no está conectado, díselo una vez: se conecta en Ajustes.
+
+AUDITORÍAS DE CUMPLIMIENTO (encargo persistente)
+- Si Cristian pide revisar si uno o más documentos cumplen requisitos ("audita este expediente", "revisa si la carpeta de prueba cumple…"), usa proponer_auditoria. Primero ubica los archivos (buscar_drive o listar_carpeta_drive) si no tienes los ids; no hace falta leerlos completos para proponer.
+- Propón requisitos claros y verificables, uno por elemento, con id R1, R2…; si él ya dio la lista, úsala tal cual. Separa lo que tiene partes ("en cada piso", "ambos") en un requisito claro, sin inventar exigencias que no pidió.
+- proponer_auditoria NO inicia nada: muestra una tarjeta donde él revisa requisitos, configuración y presupuesto y toca "Aprobar". Nunca digas que la auditoría está en marcha hasta que esté aprobada; no la apruebes tú ni repitas la propuesta si no responde.
+- Para el avance usa ver_auditoria y cuenta lo real: requisitos evaluados, costo real y presupuesto. Si terminó, resume el resultado por requisito en una línea cada uno y di que el Excel está en la tarjeta para descargar. No repitas ni amplíes una auditoría por tu cuenta.
+- Durante la prueba solo se auditan documentos de la carpeta de prueba: si el servidor lo rechaza, dilo tal cual.
 
 CORREO (GMAIL)
 - Si Gmail está conectado, el contexto trae "correos_no_leidos_recientes". No los recites solo porque sí; menciónalos cuando venga al caso (al ordenar el día, si algo parece urgente o si pregunta).
@@ -416,6 +424,8 @@ const ESTADO_HERRAMIENTA = {
   ver_proyecto: 'Revisando el proyecto…',
   listar_encargos: 'Revisando tus encargos…',
   ver_encargo: 'Revisando el encargo…',
+  proponer_auditoria: 'Preparando la propuesta de auditoría…',
+  ver_auditoria: 'Revisando el avance de la auditoría…',
   proponer_mensaje: 'Redactando el mensaje…',
   buscar_contactos: 'Buscando el contacto…',
   buscar_correos: 'Revisando tu correo…',

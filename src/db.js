@@ -340,6 +340,18 @@ async function initDb() {
     const [{ n }] = await qPrincipal("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'extraccion_eventos' AND COLUMN_NAME = 'instancia'");
     if (!n) await qPrincipal('ALTER TABLE extraccion_eventos ADD COLUMN instancia VARCHAR(80) NULL');
   }
+  // Fase 3d: propuestas de auditoría hechas desde la conversación, a la espera del botón de aprobación.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS auditoria_propuestas (
+    id CHAR(36) PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    conversacion_id INT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+    datos_cifrado LONGTEXT NOT NULL,
+    trabajo_id CHAR(36) NULL,
+    creado_en DATETIME(3) NOT NULL,
+    actualizado_en DATETIME(3) NOT NULL,
+    INDEX idx_usuario (usuario_id, estado)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   // Copias temporales propias ("ADA temporal - …") que no se pudieron borrar al primer intento.
   await qPrincipal(`CREATE TABLE IF NOT EXISTS temporales_drive (
     usuario_id INT NOT NULL,
