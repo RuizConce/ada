@@ -80,6 +80,13 @@ async function iniciarTurno({ turnoId, conversacionId, origen = 'conversacion' }
   } catch (e) { console.error('Registro turno:', e.message); }
 }
 
+// Qué modelo eligió ADA para el turno y por qué (para revisar costos; sin contenido).
+async function seleccionModelo(turnoId, eleccion) {
+  try {
+    await qPrincipal('UPDATE turnos_ia SET seleccion = ? WHERE turno_id = ?', [corto(`${eleccion.nivel}: ${eleccion.modelo} · ${eleccion.motivo}`, 160), turnoId]);
+  } catch (e) { console.error('Registro turno:', e.message); }
+}
+
 // estado: completado | detenido_presupuesto | detenido_presupuesto_diario | cancelado | error
 async function cerrarTurno(turnoId, estado, motivo) {
   try {
@@ -157,4 +164,4 @@ async function porEncargo() {
   );
 }
 
-module.exports = { nuevoId, llamada, operacion, porTurno, detalleTurno, porEncargo, objetivo, encargoDe, iniciarTurno, cerrarTurno, marcarInterrumpidos, llamadaUnica, INSTANCIA };
+module.exports = { seleccionModelo, nuevoId, llamada, operacion, porTurno, detalleTurno, porEncargo, objetivo, encargoDe, iniciarTurno, cerrarTurno, marcarInterrumpidos, llamadaUnica, INSTANCIA };

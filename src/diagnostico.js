@@ -59,7 +59,7 @@ async function conversacionesDelDia(dia) {
   );
 }
 
-async function exportar(conversacionId, { conTexto = false, usuarioId = 1 } = {}) {
+async function exportar(conversacionId, { conTexto = false, conRegistros = false, usuarioId = 1 } = {}) {
   const [conv] = await q('SELECT id, titulo, inicio, fin FROM conversaciones WHERE id = ?', [conversacionId]);
   if (!conv) throw Object.assign(new Error('No existe esa conversación'), { status: 404 });
   const mensajes = await q('SELECT id, rol, contenido, revisado, creado_en FROM mensajes WHERE conversacion_id = ? ORDER BY id', [conversacionId]);
@@ -108,11 +108,61 @@ async function exportar(conversacionId, { conTexto = false, usuarioId = 1 } = {}
     qPrincipal(`SELECT turno_id, paso, origen, modelo, input_tokens, output_tokens, cache_creacion, cache_lectura, busquedas, costo_usd,
         costo_estimado, duracion_ms, stop_reason, herramientas, error, creado_en FROM llamadas_ia
       WHERE usuario_id = ? AND conversacion_id = ? ORDER BY creado_en, paso`, [usuarioId, conversacionId]).catch(() => []),
-    qPrincipal('SELECT turno_id, origen, estado, motivo, llamadas, costo_usd, inicio, fin FROM turnos_ia WHERE usuario_id = ? AND conversacion_id = ? ORDER BY inicio', [usuarioId, conversacionId]).catch(() => []),
+    qPrincipal('SELECT turno_id, origen, estado, motivo, seleccion, llamadas, costo_usd, inicio, fin FROM turnos_ia WHERE usuario_id = ? AND conversacion_id = ? ORDER BY inicio', [usuarioId, conversacionId]).catch(() => []),
   ]);
   const [{ antes_del_dia: llamadasDia }] = await qPrincipal('SELECT COUNT(*) AS antes_del_dia FROM llamadas_ia WHERE usuario_id = ? AND creado_en >= ? AND creado_en < ?', [usuarioId, inicioDia, finDia]).catch(() => [{ antes_del_dia: 0 }]);
 
+  // Drive y extracciones (Fase 3b): por archivo, qué pasó en esta conversación. Sin contenido.
+  const ev = await qPrincipal(`SELECT archivo_id, MAX(nombre) AS nombre, tipo, COUNT(*) AS n FROM extraccion_eventos
+    WHERE usuario_id = ? AND conversacion_id = ? GROUP BY archivo_id, tipo`, [usuarioId, conversacionId]).catch(() => []);
+  const porArchivo = new Map();
+  for (const e of ev) {
+    const k = e.archivo_id || '(sin id)';
+    if (!porArchivo.has(k)) porArchivo.set(k, { archivo: e.nombre ? anonimizar(e.nombre) : `…${String(k).slice(-6)}`, consultas_permisos: 0, lecturas_bloqueadas: 0, escrituras_bloqueadas: 0, descargas: 0, extracciones_nuevas: 0, lecturas_sin_guardar: 0, reutilizaciones: 0, copias_temporales: 0, redundantes: 0 });
+    const a = porArchivo.get(k);
+    if (e.nombre && a.archivo.startsWith('…')) a.archivo = anonimizar(e.nombre);
+    const mapa = { consulta_metadatos: 'consultas_permisos', bloqueado_prueba: 'lecturas_bloqueadas', escritura_bloqueada: 'escrituras_bloqueadas', descarga: 'descargas', extraccion_nueva: 'extracciones_nuevas',
+      extraccion_sin_guardar: 'lecturas_sin_guardar', reutilizacion: 'reutilizaciones', temporal_borrado: 'copias_temporales', temporal_fallido: 'copias_temporales', redundante: 'redundantes' };
+    if (mapa[e.tipo]) a[mapa[e.tipo]] += e.n;
+  }
+  const ESCRITURAS = ['editar_hoja_drive', 'editar_documento_drive', 'mover_drive', 'renombrar_drive', 'papelera_drive', 'crear_carpeta_drive', 'crear_archivo'];
+  const escrituras = cronologia.flatMap((f) => (f.herramientas || []).filter((h) => ESCRITURAS.includes(h.herramienta)).map((h) => ({ herramienta: h.herramienta, objetivo: h.objetivo, error: h.error })));
+
+  // Registros internos de ADA (items) creados o actualizados en esta conversación. Su texto completo solo
+  // con la opción explícita (son notas de la persona); sin ella, solo id, tipo, estado y cuántas veces se tocó.
+  const tocados = new Map();
+  for (const m of mensajes) {
+    for (const h of leerJSON(m.revisado) || []) {
+      if (!['registrar_item', 'actualizar_item'].includes(h.herramienta)) continue;
+      const r = leerJSON(h.resultado) || {};
+      const entrada = leerJSON(h.entrada) || {};
+      const id = (r.item && r.item.id) || entrada.id;
+      if (!id) continue;
+      const t = tocados.get(id) || { id, creado: 0, actualizado: 0, errores: 0 };
+      if (h.herramienta === 'registrar_item') t.creado += 1; else t.actualizado += 1;
+      if (r.error) t.errores += 1;
+      tocados.set(id, t);
+    }
+  }
+  let registros = [...tocados.values()];
+  if (registros.length) {
+    const filas = await q(`SELECT i.id, i.tipo, i.texto, i.persona, i.estado, i.fecha_limite, i.creado_en, p.nombre AS proyecto FROM items i LEFT JOIN proyectos p ON p.id = i.proyecto_id WHERE i.id IN (${registros.map(() => '?').join(',')})`, registros.map((x) => x.id)).catch(() => []);
+    registros = registros.map((x) => {
+      const f = filas.find((y) => y.id === x.id);
+      if (!f) return { ...x, existe: false };
+      return { ...x, existe: true, tipo: f.tipo, estado: f.estado, proyecto: f.proyecto || null, fecha_limite: f.fecha_limite,
+        ...(conRegistros ? { texto: f.texto, persona: f.persona || null } : { largo_texto: String(f.texto || '').length }) };
+    });
+    // Posibles duplicados: mismo texto (sin mayúsculas ni espacios) entre los tocados.
+    const norm = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const vistos = new Map();
+    for (const f of filas) { const k = norm(f.texto); vistos.set(k, (vistos.get(k) || []).concat(f.id)); }
+    registros.duplicados = [...vistos.values()].filter((ids) => ids.length > 1);
+  }
+
   return {
+    drive_y_extracciones: { por_archivo: [...porArchivo.values()], escrituras_en_drive: escrituras },
+    registros_internos: { incluye_texto: conRegistros, items: registros, posibles_duplicados: registros.duplicados || [] },
     generado_en: new Date(),
     conversacion: { id: conv.id, titulo: anonimizar(conv.titulo || ''), inicio: conv.inicio, fin: conv.fin },
     advertencias: [

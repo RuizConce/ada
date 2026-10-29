@@ -1833,7 +1833,8 @@
           $('#diag-json').textContent = 'Preparando…';
           $('#diag-salida').hidden = false;
           try {
-            const d = await api(`/api/diagnostico/conversaciones/${c.id}${$('#diag-texto').checked ? '?texto=1' : ''}`);
+            const opciones = [$('#diag-texto').checked ? 'texto=1' : '', $('#diag-registros').checked ? 'registros=1' : ''].filter(Boolean).join('&');
+            const d = await api(`/api/diagnostico/conversaciones/${c.id}${opciones ? `?${opciones}` : ''}`);
             $('#diag-json').textContent = JSON.stringify(d, null, 2);
           } catch (e) { $('#diag-json').textContent = e.message; }
         });

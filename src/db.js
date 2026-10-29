@@ -397,6 +397,10 @@ async function initDb() {
     fin DATETIME(3) NULL,
     INDEX idx_estado (estado), INDEX idx_usuario (usuario_id, inicio)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  {
+    const [{ n }] = await qPrincipal("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'turnos_ia' AND COLUMN_NAME = 'seleccion'");
+    if (!n) await qPrincipal('ALTER TABLE turnos_ia ADD COLUMN seleccion VARCHAR(160) NULL');
+  }
   // ---------- Etapa 3: encargos complejos persistentes (trabajos) ----------
   // Un solo trabajo activo por persona: columna generada + índice único (vale con solicitudes simultáneas).
   await qPrincipal(`CREATE TABLE IF NOT EXISTS trabajos (

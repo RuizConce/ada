@@ -573,6 +573,7 @@ async function conversarTurno(textoUsuario, opciones, alEvento, control) {
   const eleccion = presupuesto.nivel === 'rapido'
     ? { ...elegirModelo(textoUsuario, { conversacionId, modo: 'rapido' }), motivo: 'tope diario alcanzado: solo modelo rápido' }
     : elegirModelo(textoUsuario, { conversacionId, modo: prefs.modelo_modo });
+  Registro.seleccionModelo(turnoId, eleccion);
   let busquedas = 0;
   const uso = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   tiempos.contexto_ms = Date.now() - t0;

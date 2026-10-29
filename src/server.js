@@ -298,7 +298,7 @@ app.get('/api/diagnostico/conversaciones', auth, soloAdmin, envolver((req) => {
   return Diagnostico.conversacionesDelDia(dia);
 }));
 app.get('/api/diagnostico/conversaciones/:id', auth, soloAdmin, envolver((req) =>
-  Diagnostico.exportar(parseInt(req.params.id, 10), { conTexto: req.query.texto === '1', usuarioId: req.usuario.id })));
+  Diagnostico.exportar(parseInt(req.params.id, 10), { conTexto: req.query.texto === '1', conRegistros: req.query.registros === '1', usuarioId: req.usuario.id })));
 // ---------- Encargos complejos (Etapa 3; fase 3a: solo trabajos simulados, solo Cristian) ----------
 const Trabajos = require('./trabajos');
 app.get('/api/trabajos', auth, soloAdmin, envolver(() => Trabajos.listar()));
