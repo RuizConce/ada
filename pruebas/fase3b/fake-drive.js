@@ -64,6 +64,7 @@ http.createServer(async (req, res) => {
 
     // ---- Drive ----
     if (p === '/drive/v3/files' && req.method === 'GET') {
+      if (/appProperties has/.test(u.searchParams.get('q') || '')) return json(res, 200, { files: [...archivos.values()].filter((f) => f.appProperties && f.appProperties.ada_temporal === '1' && !f.trashed).map(publico) });
       const padre = ((u.searchParams.get('q') || '').match(/'([^']+)' in parents/) || [])[1];
       return json(res, 200, { files: [...archivos.values()].filter((f) => !f.copiaDe && (!padre || (f.parents || ['carpeta-prueba']).includes(padre))).slice(0, 50).map(publico) });
     }

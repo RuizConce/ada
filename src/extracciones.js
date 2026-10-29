@@ -197,6 +197,7 @@ async function obtener(archivoId, drive, ctx = {}) {
     throw e;
   }
   if (meta.trashed) {
+    await evento('sin_acceso', ctx, { archivoId, nombre: meta.name, motivo: 'en_papelera' });
     await invalidarArchivo(archivoId, 'en_papelera', ctx);
     throw err('Este archivo está en la papelera de Drive. Si tenía algo guardado de él, lo descarté.', { sinAcceso: true });
   }
@@ -444,6 +445,75 @@ async function verificacion({ desde } = {}) {
   };
 }
 
+// ---------- Cierre de la Fase 3b: las 5 verificaciones con un archivo de prueba ----------
+// Se evalúan con los eventos registrados (sin contenido) y el estado actual de lo guardado. No ejecuta nada.
+async function cierre({ archivoId, desde, copiasVivas = null }) {
+  const u = usuario().id;
+  if (!archivoId) throw Object.assign(new Error('Indica el id del archivo de prueba'), { status: 400 });
+  const ini = desde ? new Date(desde) : new Date(Date.now() - 7 * 864e5);
+  const ev = await qPrincipal(`SELECT id, creado_en, tipo, motivo, version, instancia, nombre FROM extraccion_eventos WHERE usuario_id = ? AND archivo_id = ? AND creado_en >= ? AND tipo <> 'lectura_tramo' ORDER BY id`, [u, String(archivoId), ini]);
+  const filas = await q('SELECT version, estado, motivo, (texto_cifrado IS NOT NULL) AS con_texto, (texto_cifrado LIKE \'v1:%\') AS cifrado, extraido_en, vence_en FROM extracciones WHERE usuario_id = ? AND archivo_id = ? ORDER BY id', [u, String(archivoId)]);
+  const temporales = await qPrincipal("SELECT COUNT(*) AS n FROM temporales_drive WHERE usuario_id = ? AND original_id = ? AND estado = 'pendiente'", [u, String(archivoId)]).catch(() => [{ n: 0 }]);
+  const corta = (v) => (v ? crypto.createHash('sha256').update(String(v)).digest('hex').slice(0, 8) : null);
+  const inst = [...new Set(ev.map((e) => e.instancia).filter(Boolean))];
+  const nInst = (i) => (i ? inst.indexOf(i) + 1 : null);
+  const linea = (e) => `${new Date(e.creado_en).toISOString().slice(0, 19)} · ${e.tipo}${e.motivo ? `:${e.motivo}` : ''}${e.version ? ` · v${corta(e.version)}` : ''} · servidor ${nInst(e.instancia)}`;
+  const res = [];
+  const v = (n, nombre, ok, evidencia, falta) => res.push({ n, verificacion: nombre, estado: ok ? 'aprobada' : 'pendiente', evidencia, ...(ok ? {} : { como_completarla: falta }) });
+
+  // 1. Persistencia tras un reinicio real: guardada en un servidor y reutilizada (sin descargar) en otro.
+  const guardadas = ev.filter((e) => e.tipo === 'extraccion_nueva');
+  let r1 = null;
+  for (const g of guardadas) {
+    const reuso = ev.find((e) => e.id > g.id && e.tipo === 'reutilizacion' && e.version === g.version && e.instancia && e.instancia !== g.instancia);
+    if (reuso && !ev.some((e) => e.id > g.id && e.id < reuso.id && e.tipo === 'descarga' && e.instancia === reuso.instancia)) { r1 = [g, reuso]; break; }
+  }
+  v(1, 'Persistencia y reutilización después de un reinicio real de Railway', !!r1, r1 ? r1.map(linea) : [`servidores vistos: ${inst.length}`],
+    'Lee el archivo (botón "Leer ahora"), reinicia el servicio en Railway (Restart) y vuelve a leerlo: debe reutilizarse en el servidor nuevo sin descargarse.');
+
+  // 2. Versión nueva del mismo archivo (mismo id): se invalida lo guardado y se extrae de nuevo.
+  const inv = ev.find((e) => e.tipo === 'invalidacion' && e.motivo === 'version_nueva');
+  const nueva = inv && ev.find((e) => e.id > inv.id && e.tipo === 'extraccion_nueva' && e.motivo === 'version_nueva');
+  const anterior = inv && [...ev].reverse().find((e) => e.id < inv.id && e.version);
+  const ok2 = !!(inv && nueva && anterior && nueva.version !== anterior.version);
+  v(2, 'Invalidación y nueva extracción con una versión nueva del mismo archivo', ok2, ok2 ? [linea(anterior), linea(inv), linea(nueva)] : [],
+    'En Drive, sobre el mismo archivo: Administrar versiones → Subir una versión nueva (con algún cambio). Luego "Leer ahora": debe invalidar lo guardado y extraer la versión nueva.');
+
+  // 3. Pérdida de acceso: en la papelera (o sin permiso) se descarta lo guardado y no se muestra nada.
+  const perdida = ev.find((e) => e.tipo === 'sin_acceso');
+  const invAcceso = perdida && ev.find((e) => e.tipo === 'invalidacion' && ['en_papelera', 'sin_acceso'].includes(e.motivo) && Math.abs(new Date(e.creado_en) - new Date(perdida.creado_en)) < 60000);
+  const reusoDespues = perdida && ev.find((e) => e.id > perdida.id && e.tipo === 'reutilizacion' && !ev.some((x) => x.id > perdida.id && x.id < e.id && x.tipo === 'extraccion_nueva'));
+  const sinTexto = !filas.some((f) => f.estado === 'valida' && f.con_texto) || ev.some((e) => perdida && e.id > perdida.id && e.tipo === 'extraccion_nueva');
+  const ok3 = !!(perdida && (invAcceso || !filas.some((f) => f.estado === 'valida')) && !reusoDespues && sinTexto);
+  v(3, 'Bloqueo de lo guardado al perder el acceso (papelera)', ok3, perdida ? [linea(perdida), ...(invAcceso ? [linea(invAcceso)] : []), `guardado con texto ahora: ${filas.some((f) => f.estado === 'valida' && f.con_texto) ? 'sí' : 'no'}`] : [],
+    'Al final: envía el archivo a la papelera de Drive y toca "Leer ahora". Debe responder que no hay acceso y descartar lo guardado.');
+
+  // 4. Copias temporales: cada conversión (PDF/Word) borra su copia; ninguna pendiente ni viva en Drive.
+  const borradas = ev.filter((e) => e.tipo === 'temporal_borrado').length;
+  const fallidas = ev.filter((e) => e.tipo === 'temporal_fallido').length;
+  const pendientes = Number(temporales[0].n);
+  const ok4 = borradas > 0 && pendientes === 0 && (copiasVivas === null || copiasVivas === 0);
+  v(4, 'Confirmación de que se borran las copias temporales', ok4, [`copias borradas: ${borradas}`, `fallidas: ${fallidas}`, `pendientes de borrar: ${pendientes}`, `copias "ADA temporal" vivas en tu Drive: ${copiasVivas === null ? 'no consultado' : copiasVivas}`],
+    'Usa un PDF o Word (se convierte con una copia temporal) y léelo al menos una vez; la copia debe borrarse y no quedar ninguna viva en Drive.');
+
+  // 5. Borrado voluntario: se borra lo guardado y la siguiente lectura vuelve a descargar.
+  const borr = ev.find((e) => e.tipo === 'borrado' && e.motivo === 'borrado_voluntario');
+  const desc = borr && ev.find((e) => e.id > borr.id && e.tipo === 'descarga');
+  const reuso5 = borr && ev.find((e) => e.id > borr.id && (!desc || e.id < desc.id) && e.tipo === 'reutilizacion');
+  const ok5 = !!(borr && desc && !reuso5);
+  v(5, 'Borrado voluntario de la extracción cifrada', ok5, ok5 ? [linea(borr), linea(desc)] : (borr ? [linea(borr), 'falta una lectura posterior'] : []),
+    'En Ajustes → Documentos guardados, borra lo guardado de este archivo y luego "Leer ahora": debe descargarlo de nuevo (no reutilizar).');
+
+  return {
+    generado_en: new Date(), archivo: (ev.find((e) => e.nombre) || {}).nombre || `…${String(archivoId).slice(-6)}`, archivo_id_termina_en: String(archivoId).slice(-6), desde: ini,
+    modo: modo(), resultado: res.every((x) => x.estado === 'aprobada') ? 'LAS 5 APROBADAS' : `${res.filter((x) => x.estado === 'aprobada').length} de 5 aprobadas`,
+    verificaciones: res, servidores_vistos: inst.length,
+    guardado_ahora: filas.map((f) => ({ version: corta(f.version), estado: f.estado, motivo: f.motivo || undefined, con_texto: !!f.con_texto, cifrado: !!f.cifrado, vence_en: f.vence_en })),
+    secuencia: ev.map(linea),
+    nota: 'Solo metadatos y eventos: ningún contenido del documento. Las versiones se muestran como huella de 8 caracteres.',
+  };
+}
+
 // Para la conversación: documentos ya leídos en una conversación (solo metadatos: id, versión y hasta dónde).
 async function leidosEnConversacion(conversacionId) {
   if (!conversacionId) return [];
@@ -453,6 +523,6 @@ async function leidosEnConversacion(conversacionId) {
 }
 
 module.exports = {
-  obtener, eventos, verificacion, estadoPublico, enCarpetaDePrueba, modo, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
+  obtener, eventos, verificacion, cierre, estadoPublico, enCarpetaDePrueba, modo, consentimiento, responderConsentimiento, puedeGuardar, resumen, listar, metricas, borrarTodo, borrarArchivo, limpiarVencidas,
   invalidarArchivo, evento, claveVersion, leidosEnConversacion, habilitado, TEXTO_CONSENTIMIENTO, esTemporal, esSinAcceso,
 };

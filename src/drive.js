@@ -581,4 +581,24 @@ H.registrar([
   editar_documento_drive: editarDocumento,
 });
 
-module.exports = { conectado, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };
+// Cierre 3b: lectura de verificación sin IA (mismo camino que leer_drive; devuelve solo metadatos, nunca el texto).
+async function lecturaVerificacion(archivoId) {
+  const t0 = Date.now();
+  try {
+    const r = await Extracciones.obtener(String(archivoId), DRIVE_EXTRACCION, { origen: 'verificacion' });
+    if (r.noLeible) return { ok: false, resultado: 'no es un documento con texto' };
+    const caracteres = r.contenido.tipo === 'texto' ? r.contenido.texto.length : JSON.stringify(r.contenido).length;
+    return { ok: true, resultado: r.fuente === 'guardado' || r.fuente === 'simultanea' ? 'reutilizada (sin descargar)' : r.sinGuardar ? 'leída sin guardar' : 'descargada y guardada cifrada', archivo: r.meta.name, caracteres, ms: Date.now() - t0 };
+  } catch (e) {
+    return { ok: false, resultado: e.sinAcceso ? 'sin acceso: lo guardado se descartó' : e.bloqueado ? 'fuera de la carpeta de prueba' : `error: ${e.message}`, ms: Date.now() - t0 };
+  }
+}
+
+// Copias temporales de ADA que sigan vivas en Drive (solo nombres e ids; nunca contenido).
+async function copiasTemporalesVivas() {
+  const params = new URLSearchParams({ q: "appProperties has { key='ada_temporal' and value='1' } and trashed = false", fields: 'files(id,name,createdTime)', pageSize: '50' });
+  const r = await gfetch(`${DRIVE}/files?${params}`);
+  return (r.files || []).map((f) => ({ id_termina_en: f.id.slice(-6), nombre: f.name, creado: f.createdTime }));
+}
+
+module.exports = { conectado, lecturaVerificacion, copiasTemporalesVivas, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };

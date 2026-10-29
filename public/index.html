@@ -271,6 +271,21 @@
               <div class="diag-fila"><input id="dg-verif-desde" type="date"><button id="dg-verif-generar" type="button">Generar</button></div>
               <div id="dg-verif-salida" hidden><button id="dg-verif-copiar" type="button">Copiar informe</button><pre id="dg-verif-json"></pre></div>
             </details>
+            <details id="cierre-3b" class="gasto-turnos"><summary>Cierre de la Fase 3b: las 5 verificaciones</summary>
+              <p class="meta">Con UN archivo ficticio (PDF o Word) de la carpeta de prueba. "Leer ahora" lo lee como lo haría ADA, sin IA y sin mostrar su contenido. "Comprobar" revisa los registros y dice qué verificación está aprobada y cómo completar las que faltan.</p>
+              <ol class="cierre-pasos meta">
+                <li>Leer ahora (se guarda cifrado; la conversión borra su copia temporal).</li>
+                <li>Railway → Restart del servicio. Esperar 1 minuto y Leer ahora (debe reutilizarse sin descargar).</li>
+                <li>Drive → Administrar versiones → Subir una versión nueva del mismo archivo. Leer ahora (debe extraer de nuevo).</li>
+                <li>Más abajo, "Borrar" lo guardado de ese archivo. Leer ahora (debe descargar otra vez).</li>
+                <li>Enviar el archivo a la papelera de Drive. Leer ahora (debe decir que no hay acceso y descartar lo guardado).</li>
+                <li>Comprobar y copiar el resultado.</li>
+              </ol>
+              <label class="campo">Id del archivo de prueba<input id="cierre-archivo" type="text" autocomplete="off" placeholder="1AbC…"></label>
+              <div class="ajuste-botones"><button id="cierre-leer" type="button">Leer ahora</button><button id="cierre-comprobar" type="button">Comprobar</button><button id="cierre-copiar" type="button">Copiar resultado</button></div>
+              <p id="cierre-lectura" class="meta"></p>
+              <pre id="cierre-salida" hidden></pre>
+            </details>
             <div class="ajuste-botones">
               <button id="dg-aceptar" type="button" hidden>Aceptar guardar cifrado</button>
               <button id="dg-retirar" type="button" hidden>Dejar de guardar</button>

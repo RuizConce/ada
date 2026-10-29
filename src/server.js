@@ -402,6 +402,13 @@ app.post('/api/cifrado/recifrar', auth, soloAdmin, envolver(() => Cifrado.recifr
 // Fase 3b: extracciones de documentos (solo la cuenta principal). Nunca devuelven texto de documentos.
 const Extracciones = require('./extracciones');
 app.get('/api/extracciones', auth, soloAdmin, envolver(async () => ({ ...(await Extracciones.resumen()), archivos: await Extracciones.listar() })));
+// Cierre de la Fase 3b (solo lectura de metadatos y eventos; la lectura de verificación no usa IA).
+app.post('/api/extracciones/cierre/leer', auth, soloAdmin, envolver((req) => require('./drive').lecturaVerificacion((req.body || {}).archivo_id)));
+app.get('/api/extracciones/cierre', auth, soloAdmin, envolver(async (req) => {
+  let vivas = null;
+  try { vivas = (await require('./drive').copiasTemporalesVivas()).length; } catch (_) {}
+  return Extracciones.cierre({ archivoId: req.query.archivo, desde: req.query.desde, copiasVivas: vivas });
+}));
 app.post('/api/extracciones/consentimiento', auth, soloAdmin, envolver((req) => Extracciones.responderConsentimiento(!!(req.body || {}).acepto)));
 app.delete('/api/extracciones', auth, soloAdmin, envolver(() => Extracciones.borrarTodo()));
 app.delete('/api/extracciones/:archivo', auth, soloAdmin, envolver((req) => Extracciones.borrarArchivo(req.params.archivo)));

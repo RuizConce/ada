@@ -464,6 +464,32 @@
   });
   $('#aud-constancia-copiar').addEventListener('click', async (ev) => { const ok = await copiar($('#aud-constancia').textContent); ev.target.textContent = ok ? 'Copiado ✓' : 'No se pudo'; setTimeout(() => { ev.target.textContent = 'Copiar'; }, 1800); });
 
+  // Cierre de la Fase 3b: lectura de verificación (sin IA) y evaluación de las 5 verificaciones.
+  $('#cierre-leer').addEventListener('click', async (ev) => {
+    const id = $('#cierre-archivo').value.trim();
+    if (!id) return aviso('Pega el id del archivo de prueba', true);
+    ev.target.disabled = true;
+    try {
+      const r = await api('/api/extracciones/cierre/leer', { method: 'POST', body: JSON.stringify({ archivo_id: id }) });
+      $('#cierre-lectura').textContent = `${new Date().toLocaleTimeString('es-CL')} · ${r.resultado}${r.archivo ? ` · ${r.archivo}` : ''}${r.caracteres ? ` · ${r.caracteres} caracteres` : ''}`;
+    } catch (e) { $('#cierre-lectura').textContent = e.message; }
+    ev.target.disabled = false;
+  });
+  $('#cierre-comprobar').addEventListener('click', async () => {
+    const id = $('#cierre-archivo').value.trim();
+    if (!id) return aviso('Pega el id del archivo de prueba', true);
+    const out = $('#cierre-salida');
+    out.hidden = false; out.textContent = 'Comprobando…';
+    try {
+      const c = await api(`/api/extracciones/cierre?archivo=${encodeURIComponent(id)}`);
+      out.textContent = [`${c.resultado} · ${c.archivo} (…${c.archivo_id_termina_en}) · modo ${c.modo} · servidores vistos ${c.servidores_vistos}`, '',
+        ...c.verificaciones.flatMap((x) => [`${x.estado === 'aprobada' ? '✓' : '✗'} ${x.n}. ${x.verificacion}`, ...x.evidencia.map((e) => `     ${e}`), ...(x.como_completarla ? [`     → ${x.como_completarla}`] : [])]),
+        '', 'Guardado ahora:', ...(c.guardado_ahora.length ? c.guardado_ahora.map((g) => `   v${g.version} · ${g.estado}${g.motivo ? ` (${g.motivo})` : ''} · con texto: ${g.con_texto ? 'sí' : 'no'} · cifrado: ${g.cifrado ? 'sí' : 'no'}`) : ['   nada']),
+        '', 'Secuencia:', ...c.secuencia.map((l) => `   ${l}`), '', c.nota].join('\n');
+    } catch (e) { out.textContent = e.message; }
+  });
+  $('#cierre-copiar').addEventListener('click', async (ev) => { const ok = await copiar($('#cierre-salida').textContent); ev.target.textContent = ok ? 'Copiado ✓' : 'No se pudo'; setTimeout(() => { ev.target.textContent = 'Copiar resultado'; }, 1800); });
+
   async function pintarPendientesAjustes() {
     const cont = $('#aud-pendientes');
     cont.innerHTML = '';
