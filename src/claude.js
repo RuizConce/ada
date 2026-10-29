@@ -20,8 +20,13 @@ function claude() {
 
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-// Pensar, opinar, analizar, decidir, explorar ideas.
-const PROFUNDO = /\b(piensalo|pensemos|ayudame a pensar|que opinas|que piensas|tu opinion|que harias|analiza|analisis|analicemos|estrategi|conviene|convendria|deberia|decidir|decision|compara|comparar|evalua|evaluar|propuesta|plan de|planifi|ideas?|lluvia de ideas|por que|como podria|como puedo|que hago|recomienda|recomendarias|riesgo|pros y contras|alternativa|negocio|vender|ventas|precio|cobrar|crecer|clientes|informe|revisa como va|diagnostic|prioriza|priorizar|en que me enfoco|cuestiona|excel|planilla|listado|resume|resumeme|resumen de)\b/;
+// Pensar, opinar, analizar, decidir, explorar ideas: aquí sí vale Sonnet.
+// (Antes también activaban Sonnet palabras de objetos o temas como "planilla", "excel", "listado", "resume",
+// "precio" o "clientes": una búsqueda o una actualización de una planilla terminaba pagando Sonnet. Caso conv. 58.)
+const PROFUNDO = /\b(piensalo|pensemos|ayudame a pensar|que opinas|que piensas|tu opinion|que harias|analiza|analizame|analisis|analicemos|estrategi\w*|conviene|convendria|deberia|decidir|que decido|compara|comparar|comparame|evalua|evaluar|evaluame|propuesta|plan de|planifi\w*|lluvia de ideas|ideas para|tengo (varias |unas |algunas |un par de )?ideas|se me ocurrio|que te parece|por que|como podria|como puedo|como hago para|que hago|recomienda|recomiendame|recomendarias|riesgos?|pros y contras|alternativas?|cuanto (deberia |debo |podria )?cobrar|diagnostic\w*|prioriza|priorizar|en que me enfoco|cuestiona|informe|redacta (un|una) (propuesta|carta|informe))\b/;
+// Operaciones concretas (buscar, abrir, leer, anotar, agendar, actualizar, mover…): modelo rápido aunque
+// mencionen una planilla, un Excel o un documento. Si además piden pensar o analizar, gana PROFUNDO.
+const OPERATIVO = /^(oye ada,?\s*|ada,?\s*|por favor,?\s*|porfa,?\s*|(si|ok|dale|ya|bueno|listo|perfecto),?\s*|ahora,?\s*)?(busca|buscame|encuentra|encuentrame|abre|abreme|lee|leeme|muestra|muestrame|mira|revisa|revisame|actualiza|actualizame|agrega|agregale|anade|anota|anotame|apunta|registra|guarda|agenda|agendame|recuerdame|mueve|renombra|borra|elimina|marca|cambia|corrige|copia|manda|envia|enviale|llama|llamame|crea|sube|descarga|lista|listame|resume|resumeme|dame|pasame|cual es|donde esta|que tengo|que dice|cuantos|cuantas|confirma|sigue|continua)\b/;
 // Órdenes simples y rápidas.
 const COMANDO = /^(anota|anotame|apunta|registra|recuerdame|agenda|agendame|marca|marcalo|listo|ya lo hice|hecho|lo hice|borra|elimina|que hora|que dia|que tengo|chao|gracias|hola|buenos dias|buenas)\b/;
 // Respuestas cortas que siguen el hilo anterior ("sí", "dale").
@@ -39,8 +44,9 @@ function elegirModelo(texto, { conversacionId, modo = 'auto' } = {}) {
   let nivel = 'rapido';
   let motivo = 'tarea o mensaje simple';
   if (PROFUNDO.test(t)) { nivel = 'profundo'; motivo = 'pide pensar, opinar o analizar'; }
+  else if (OPERATIVO.test(t) || COMANDO.test(t)) { nivel = 'rapido'; motivo = 'operación concreta (buscar, leer, anotar, actualizar…)'; }
   else if (palabras > 35) { nivel = 'profundo'; motivo = 'mensaje largo (está desarrollando una idea)'; }
-  else if (antes === 'profundo' && !COMANDO.test(t) && (ACUSE.test(t) || palabras > 3)) {
+  else if (antes === 'profundo' && (ACUSE.test(t) || palabras > 3)) {
     // Sigue la conversación de fondo (incluido "sí", "no", "dale" como respuesta a una pregunta).
     nivel = 'profundo'; motivo = 'continúa una conversación de fondo';
   }

@@ -268,12 +268,12 @@ async function leer(a = {}, ctx = {}) {
 
 // Para los encargos (motor de trabajos): extrae o reutiliza sin devolver texto al resultado del paso.
 // Hasta aprobar la prueba con Drive real, solo funciona con Drive simulado o en la carpeta de prueba aprobada.
-async function extraerParaTrabajo(archivoId, ctx) {
+async function obtenerParaTrabajo(archivoId, ctx) {
   const carpetaPrueba = process.env.ADA_DRIVE_CARPETA_PRUEBA || '';
   if (!SIMULADO && !carpetaPrueba) {
     throw Object.assign(new Error('Los encargos todavía no pueden leer documentos reales: solo Drive simulado o la carpeta de prueba aprobada.'), { status: 409, config: true });
   }
-  const r = await Extracciones.obtener(archivoId, {
+  return Extracciones.obtener(archivoId, {
     metadatos: async (id) => {
       const meta = await metadatos(id);
       if (!SIMULADO && !(carpetaPrueba && (meta.parents || []).includes(carpetaPrueba))) {
@@ -284,9 +284,22 @@ async function extraerParaTrabajo(archivoId, ctx) {
     extraer: extraerContenido,
     leible: (m) => LEIBLE(m.mimeType || ''),
   }, { ...ctx, origen: 'trabajo' });
+}
+
+async function extraerParaTrabajo(archivoId, ctx) {
+  const r = await obtenerParaTrabajo(archivoId, ctx);
   if (r.noLeible) return { archivo_id: r.meta.id, nombre: r.meta.name, version: r.version, caracteres: 0, fuente: 'sin_texto', guardado: false };
   const total = r.contenido.tipo === 'texto' ? r.contenido.texto.length : JSON.stringify(r.contenido).length;
   return { archivo_id: r.meta.id, nombre: r.meta.name, version: r.version, caracteres: total, fuente: r.fuente === 'guardado' || r.fuente === 'simultanea' ? 'guardado' : 'drive', guardado: !r.sinGuardar };
+}
+
+// Texto de un documento para un paso de encargo (Fase 3c): misma capa de extracciones (reutiliza si no
+// cambió). Solo vive en memoria del paso; lo que se guarda del paso son fragmentos cifrados.
+async function textoParaTrabajo(archivoId, ctx) {
+  const r = await obtenerParaTrabajo(archivoId, ctx);
+  if (r.noLeible) throw new Error('El archivo no es un documento con texto');
+  const texto = r.contenido.tipo === 'texto' ? r.contenido.texto : (r.contenido.hojas || []).map((h) => `${h.nombre}\n${(h.valores || []).map((f) => f.join(' | ')).join('\n')}`).join('\n\n');
+  return { texto, version: r.version, archivo_id: r.meta.id, nombre: r.meta.name, fuente: r.fuente === 'guardado' || r.fuente === 'simultanea' ? 'guardado' : 'drive' };
 }
 
 // Reintenta borrar las copias temporales propias que quedaron anotadas. Antes de borrar, comprueba que la
@@ -568,4 +581,4 @@ H.registrar([
   editar_documento_drive: editarDocumento,
 });
 
-module.exports = { conectado, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };
+module.exports = { conectado, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };

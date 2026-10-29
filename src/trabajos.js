@@ -24,7 +24,7 @@ const LEASE_MS = () => parseInt(process.env.ADA_TRABAJO_LEASE_MS, 10) || 30000;
 const PRESUPUESTO_DEFECTO = () => { const n = parseFloat(process.env.ADA_TRABAJO_PRESUPUESTO); return Number.isFinite(n) && n > 0 ? n : 2; };
 const AMPLIACIONES = [1, 2];
 // Fase 3a: solo trabajos simulados. Los tipos reales se habilitan en fases siguientes, tras sus pruebas.
-const TIPOS_PERMITIDOS = () => String(process.env.ADA_TRABAJOS_TIPOS || 'simulacion').split(',').map((t) => t.trim()).filter(Boolean);
+const TIPOS_PERMITIDOS = () => String(process.env.ADA_TRABAJOS_TIPOS || 'simulacion,auditoria').split(',').map((t) => t.trim()).filter(Boolean);
 const INSTANCIA = Registro.INSTANCIA;
 
 const nuevoId = () => crypto.randomUUID();
@@ -298,17 +298,33 @@ const EJECUTORES = {
 
 // Verificación final por tipo de trabajo: "completado" solo si el resultado es íntegro y corresponde.
 const ESTADOS_EVIDENCIA = ['cumple', 'parcial', 'no_cumple', 'sin_evidencia', 'no_evaluado', 'no_aplica_justificado'];
-async function verificarResultado(t, pasos, esperado) {
+// Integridad común a todos los tipos: cada paso hecho y su resultado (descifrado) igual a su huella.
+function integridad(pasos) {
   const problemas = [];
   for (const p of pasos) {
     if (p.estado !== 'hecho') problemas.push(`paso ${p.clave} quedó "${p.estado}"`);
     else if (p.resultado_cifrado) {
-      // Integridad: el resultado guardado (descifrado) debe coincidir con su huella.
       let ok = false;
       try { ok = hash(JSON.stringify(Cifrado.descifrarJSON(p.resultado_cifrado))) === p.resultado_hash; } catch (_) { ok = false; }
       if (!ok) problemas.push(`resultado del paso ${p.clave} alterado o ilegible`);
     }
   }
+  return problemas;
+}
+
+// Extensiones por tipo de trabajo (Fase 3c: auditoría): ejecutores de pasos, verificación final y
+// qué hacer al terminar. Se registran desde su propio módulo; el motor es el mismo.
+const VERIFICADORES = {};
+const AL_TERMINAR = {};
+function extender({ tipo, ejecutores = {}, verificar, alTerminar }) {
+  Object.assign(EJECUTORES, ejecutores);
+  if (verificar) VERIFICADORES[tipo] = verificar;
+  if (alTerminar) AL_TERMINAR[tipo] = alTerminar;
+}
+
+async function verificarResultado(t, pasos, esperado) {
+  if (VERIFICADORES[t.tipo]) return VERIFICADORES[t.tipo](t, pasos, esperado, { integridad, hash });
+  const problemas = integridad(pasos);
   const consol = pasos.filter((p) => p.tipo === 'sim_consolidar').pop();
   let matriz = null;
   // Requisitos que la persona aprobó (punto de control); si no hubo, los del resultado esperado.
@@ -474,10 +490,12 @@ async function ejecutarPaso(t, p, senal) {
       const [v] = await qPrincipal('SELECT lease_epoch, lease_de FROM trabajos WHERE id = ?', [t.id]);
       if (!v || v.lease_epoch !== t.lease_epoch || v.lease_de !== INSTANCIA || senal.aborted) throw Object.assign(new Error('perdió el turno de ejecución'), { cancelado: true, perdido: true });
     };
-    salida = await EJECUTORES[p.tipo]({ entrada, intento, senal, previos, efectoClave, trabajoId: t.id, pasoId: p.id, confirmarLease });
+    salida = await EJECUTORES[p.tipo]({ entrada, intento, senal, previos, efectoClave, trabajoId: t.id, pasoId: p.id, trabajo: t, estimado: requerido, confirmarLease });
   } catch (e) {
     const costoParcial = e.cancelado ? num(entrada.estimado) * 0.5 : 0;
-    await Registro.llamada({ origen: 'simulacion', turnoId: t.id, trabajoId: t.id, pasoId: p.id, paso: intento, modelo: 'simulado', usage: {}, costoForzado: costoParcial, duracionMs: Date.now() - t0, error: e.cancelado ? 'cancelado' : e.message, estimado: requerido });
+    // Solo los pasos de IA simulada anotan una "llamada" al fallar; los de código no llaman a ninguna IA
+    // y los de IA real (auditoría) registran sus propias llamadas.
+    if (p.tipo === 'sim_ia') await Registro.llamada({ origen: 'simulacion', turnoId: t.id, trabajoId: t.id, pasoId: p.id, paso: intento, modelo: 'simulado', usage: {}, costoForzado: costoParcial, duracionMs: Date.now() - t0, error: e.cancelado ? 'cancelado' : e.message, estimado: requerido });
     await reserva.liberar(costoParcial);
     await qPrincipal('UPDATE trabajos SET gastado_usd = gastado_usd + ? WHERE id = ? AND lease_epoch = ?', [costoParcial, t.id, t.lease_epoch]);
     if (e.perdido) return { perdido: true }; // el nuevo dueño del trabajo recupera el paso
@@ -499,7 +517,7 @@ async function ejecutarPaso(t, p, senal) {
     return { esperando: true };
   }
   const costo = num(salida.costo);
-  if (costo > 0 || p.tipo === 'sim_ia') {
+  if (!salida.llamadasRegistradas && (costo > 0 || p.tipo === 'sim_ia')) {
     await Registro.llamada({ origen: 'simulacion', turnoId: t.id, trabajoId: t.id, pasoId: p.id, paso: intento, modelo: 'simulado', usage: {}, costoForzado: costo, duracionMs: Date.now() - t0, stopReason: 'end_turn', estimado: requerido });
   }
   const res = Cifrado.cifrarJSON(salida.resultado);
@@ -558,8 +576,9 @@ async function correr(t, { maxPasos = Infinity } = {}) {
         const esperado = Cifrado.descifrarJSON(t.esperado_cifrado);
         const v = await verificarResultado(t, pasos, esperado);
         if (!v.ok) { await estadoEjecutor(t, 'bloqueado', `verificación final: ${v.problemas.slice(0, 3).join('; ')}`); return 'bloqueado'; }
-        const final = { matriz: v.matriz, verificado: true };
+        const final = { matriz: v.matriz, verificado: true, ...(v.extra || {}) };
         await estadoEjecutor(t, 'completado', 'verificación final aprobada', { terminado_en: new Date(), resultado_cifrado: Cifrado.cifrarJSON(final), resultado_hash: hash(JSON.stringify(final)) });
+        if (AL_TERMINAR[t.tipo]) Promise.resolve().then(() => AL_TERMINAR[t.tipo](t, final)).catch((e) => console.error(`Al terminar ${t.tipo}:`, e.message));
         return 'completado';
       }
       const r = await ejecutarPaso(t, siguiente, control.signal);
@@ -608,5 +627,5 @@ function iniciar() {
 
 module.exports = {
   crear, aprobar, aprobarPaso, pausar, reanudar, ampliar, cancelar, reintentar, ver, listar,
-  iniciar, ciclo, tomar, correr, verificarResultado, ESTADOS_EVIDENCIA, PRESUPUESTO_DEFECTO,
+  iniciar, ciclo, tomar, correr, verificarResultado, ESTADOS_EVIDENCIA, PRESUPUESTO_DEFECTO, extender, despertar,
 };

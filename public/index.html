@@ -214,6 +214,27 @@
           <div id="ia-tiempos" class="ia-tiempos"></div>
           <div id="ajuste-lab" class="ajuste-botones" hidden><a class="boton-enlace" href="/lab.html">🧪 Laboratorio de voz (comparar prototipos)</a></div>
         </section>
+        <section id="ajuste-auditoria" class="ajuste" hidden>
+          <h3>Auditoría mínima (Fase 3c)</h3>
+          <p class="meta">Un documento de la carpeta de prueba y hasta 5 requisitos que tú apruebas. ADA busca la evidencia, clasifica cada requisito con cita verificable y entrega un Excel. Nada se marca "cumple" sin una cita encontrada tal cual en el documento.</p>
+          <label class="campo">Id del documento (carpeta de prueba)<input id="aud-archivo" type="text" autocomplete="off" placeholder="1AbC…"></label>
+          <label class="campo">Requisitos, uno por línea: <code>R1 | texto | estado esperado (opcional)</code><textarea id="aud-requisitos" rows="5"></textarea></label>
+          <div class="ajuste-botones"><button id="aud-ficticios" type="button">Usar los requisitos ficticios de prueba</button></div>
+          <label class="campo">Configuración
+            <select id="aud-config">
+              <option value="K3">K3 · Haiku y Sonnet solo cuando una regla lo exige</option>
+              <option value="K1">K1 · Solo Sonnet</option>
+              <option value="K2">K2 · Solo Haiku</option>
+              <option value="comparar">Comparar K1, K2 y K3 (una tras otra)</option>
+            </select>
+          </label>
+          <div class="ajuste-botones"><button id="aud-estimar" type="button">Calcular estimación</button></div>
+          <p id="aud-estimacion" class="meta" hidden></p>
+          <label class="campo">Presupuesto que apruebas (US$)<input id="aud-presupuesto" type="number" min="0" step="0.01"></label>
+          <div class="ajuste-botones"><button id="aud-empezar" type="button" class="principal">Aprobar requisitos y presupuesto, y empezar</button></div>
+          <div class="ajuste-botones"><button id="aud-actualizar" type="button">Actualizar lista</button></div>
+          <div id="aud-lista" class="aud-lista"></div>
+        </section>
         <section id="ajuste-cifrado" class="ajuste" hidden>
           <h3>Protección de datos</h3>
           <p class="meta">Comprueba que ADA_CLAVE_DATOS quedó cargada en Railway. Nunca se muestra la clave.</p>

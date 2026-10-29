@@ -301,6 +301,18 @@ app.get('/api/diagnostico/conversaciones/:id', auth, soloAdmin, envolver((req) =
   Diagnostico.exportar(parseInt(req.params.id, 10), { conTexto: req.query.texto === '1', conRegistros: req.query.registros === '1', usuarioId: req.usuario.id })));
 // ---------- Encargos complejos (Etapa 3; fase 3a: solo trabajos simulados, solo Cristian) ----------
 const Trabajos = require('./trabajos');
+// Fase 3c: auditoría mínima (1 documento de la carpeta de prueba, pocos requisitos aprobados, Excel verificado).
+const Auditoria = require('./auditoria');
+app.post('/api/auditorias/estimar', auth, soloAdmin, envolver((req) => Auditoria.estimacion(req.body || {})));
+app.post('/api/auditorias', auth, soloAdmin, envolver((req) => Auditoria.crear(req.body || {})));
+app.get('/api/auditorias', auth, soloAdmin, envolver(() => Auditoria.listar()));
+app.get('/api/auditorias/:id/excel', auth, soloAdmin, async (req, res) => {
+  try {
+    const x = await Auditoria.excel(req.params.id);
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${x.nombre}"` });
+    res.send(x.datos);
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
 app.get('/api/trabajos', auth, soloAdmin, envolver(() => Trabajos.listar()));
 app.post('/api/trabajos', auth, soloAdmin, envolver((req) => Trabajos.crear(req.body || {})));
 app.get('/api/trabajos/:id', auth, soloAdmin, envolver((req) => Trabajos.ver(req.params.id, { conResultado: req.query.resultado === '1' })));

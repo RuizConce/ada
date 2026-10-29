@@ -557,3 +557,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .tarjeta-consentimiento p { margin: 6px 0 10px; line-height: 1.4; }
 
 .dg-detalle { font-size: .85rem; line-height: 1.5; opacity: .9; overflow-wrap: anywhere; }
+
+.campo { display: block; margin: 10px 0; font-size: .92rem; }
+.campo input, .campo textarea, .campo select { display: block; width: 100%; margin-top: 4px; box-sizing: border-box; }
+.aud-tarjeta { border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px 12px; margin: 10px 0; }
+.aud-tarjeta ul { margin: 6px 0 0 18px; padding: 0; font-size: .88rem; }

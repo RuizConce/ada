@@ -1680,7 +1680,8 @@
       $('#ajuste-personas').hidden = !a.usuario.admin;
       $('#ajuste-lab').hidden = !a.usuario.admin;
       $('#ajuste-cifrado').hidden = !a.usuario.admin;
-      if (a.usuario.admin) { pintarCifrado(); pintarDocumentosGuardados(); }
+      $('#ajuste-auditoria').hidden = !a.usuario.admin;
+      if (a.usuario.admin) { pintarCifrado(); pintarDocumentosGuardados(); pintarAuditorias(); }
       if (a.usuario.admin) pintarPersonas();
     }
     $('#ia-estado').textContent = `Modelos: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
@@ -1737,6 +1738,87 @@
   // ---------- Personas de la prueba (solo Cristian) ----------
 
   // Estado de la clave de cifrado (solo lectura, solo administrador). Nunca recibe ni muestra la clave.
+  // ---------- Auditoría mínima (Fase 3c) ----------
+  const FICTICIOS = [
+    'R1 | La sala debe contar con un extintor PQS de al menos 6 kg con carga vigente. | cumple',
+    'R2 | Debe existir un plano de evacuación visible en cada piso del recinto (el recinto tiene 2 pisos). | parcial',
+    'R3 | Si se esterilizan materiales en el recinto, el autoclave debe tener validación anual vigente. | no_aplica_justificado',
+  ];
+  function datosAuditoria() {
+    const lineas = $('#aud-requisitos').value.split('\n').map((l) => l.trim()).filter(Boolean);
+    const requisitos = []; const esperado = [];
+    lineas.forEach((l, i) => {
+      const [id, texto, est] = l.split('|').map((x) => (x || '').trim());
+      const rid = texto ? id : `R${i + 1}`;
+      requisitos.push({ id: rid, texto: texto || id });
+      if (est) esperado.push({ id: rid, estado: est });
+    });
+    return { archivo_id: $('#aud-archivo').value.trim(), requisitos, esperado, configuracion: $('#aud-config').value };
+  }
+  const usd = (n) => `US$${Number(n || 0).toFixed(4).replace('.', ',')}`;
+  $('#aud-ficticios').addEventListener('click', () => { $('#aud-requisitos').value = FICTICIOS.join('\n'); });
+  $('#aud-estimar').addEventListener('click', async () => {
+    const out = $('#aud-estimacion');
+    try {
+      const d = datosAuditoria();
+      const e = await api('/api/auditorias/estimar', { method: 'POST', body: JSON.stringify(d) });
+      const k = d.configuracion;
+      const minimo = k === 'comparar' ? e.presupuesto_minimo_comparar : e.presupuesto_minimo[k];
+      out.textContent = `Peor caso estimado: K1 ${usd(e.por_configuracion.K1)} · K2 ${usd(e.por_configuracion.K2)} · K3 ${usd(e.por_configuracion.K3)}. Presupuesto mínimo para ${k === 'comparar' ? 'las tres' : k}: ${usd(minimo)}. ${e.nota}`;
+      if (!$('#aud-presupuesto').value) $('#aud-presupuesto').value = String(Math.ceil(minimo * 100) / 100);
+    } catch (err) { out.textContent = err.message; }
+    out.hidden = false;
+  });
+  $('#aud-empezar').addEventListener('click', async () => {
+    const d = { ...datosAuditoria(), presupuesto: parseFloat($('#aud-presupuesto').value) };
+    if (!confirm(`¿Apruebas estos ${d.requisitos.length} requisitos y un presupuesto de US$${d.presupuesto} para ${d.configuracion === 'comparar' ? 'K1, K2 y K3' : d.configuracion}?`)) return;
+    try { await api('/api/auditorias', { method: 'POST', body: JSON.stringify(d) }); aviso('Auditoría en marcha.'); pintarAuditorias(); }
+    catch (err) { aviso(err.message, true); }
+  });
+  $('#aud-actualizar').addEventListener('click', () => pintarAuditorias());
+  let audTimer = null;
+  async function pintarAuditorias() {
+    const cont = $('#aud-lista');
+    let lista = [];
+    try { lista = await api('/api/auditorias'); } catch (err) { cont.textContent = err.message; return; }
+    cont.innerHTML = '';
+    if (!lista.length) cont.textContent = 'Aún no hay auditorías.';
+    for (const a of lista) {
+      const c = document.createElement('div');
+      c.className = 'aud-tarjeta';
+      const titulo = document.createElement('strong'); titulo.textContent = `${a.config || ''} · ${a.estado_real || a.estado}`;
+      const meta = document.createElement('p'); meta.className = 'meta';
+      const prec = a.precision ? ` · precisión ${a.precision.aciertos}/${a.precision.total}` : '';
+      meta.textContent = a.costos ? `Costo real ${usd(a.costos.real_usd)} en ${a.costos.llamadas} llamadas · reservado ${usd(a.costos.reservado_total_usd)} · presupuesto ${usd(a.presupuesto_usd)}${prec}${a.modelos && a.modelos.length ? ` · ${a.modelos.join(' / ')}` : ''}${a.motivo && a.estado !== 'completado' ? ` · ${a.motivo}` : ''}` : (a.motivo || '');
+      c.append(titulo, meta);
+      if (a.matriz) {
+        const ul = document.createElement('ul');
+        for (const f of a.matriz) { const li = document.createElement('li'); li.textContent = `${f.requisito}: ${f.estado}${f.cita_verificada ? ` (cita verificada, ${f.ubicacion})` : ''}`; ul.appendChild(li); }
+        c.appendChild(ul);
+      }
+      const botones = document.createElement('div'); botones.className = 'ajuste-botones';
+      if (a.estado === 'completado') {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Descargar Excel';
+        b.addEventListener('click', async () => {
+          const r = await fetch(`/api/auditorias/${a.id}/excel`, { headers: { Authorization: `Bearer ${token}` } });
+          if (!r.ok) return aviso('No pude descargar el Excel', true);
+          const url = URL.createObjectURL(await r.blob());
+          const l = document.createElement('a'); l.href = url; l.download = `auditoria-${a.config}-${a.id.slice(0, 8)}.xlsx`; l.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+        });
+        botones.appendChild(b);
+      }
+      if (['ejecutando', 'pausado', 'pausado_presupuesto', 'bloqueado', 'propuesto'].includes(a.estado)) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Cancelar';
+        b.addEventListener('click', async () => { try { await api(`/api/trabajos/${a.id}/cancelar`, { method: 'POST' }); pintarAuditorias(); } catch (err) { aviso(err.message, true); } });
+        botones.appendChild(b);
+      }
+      if (botones.children.length) c.appendChild(botones);
+      cont.appendChild(c);
+    }
+    clearTimeout(audTimer);
+    if (lista.some((a) => a.estado === 'ejecutando') && !$('#vista-ajustes').hidden) audTimer = setTimeout(pintarAuditorias, 3000);
+  }
+
   async function pintarCifrado() {
     const pon = (id, t, clase) => { const e = $(id); e.textContent = t; e.className = clase || ''; };
     pon('#cif-configurada', 'Consultando…');
