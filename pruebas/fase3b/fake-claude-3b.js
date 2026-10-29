@@ -75,8 +75,14 @@ class FakeAnthropic {
   constructor() {
     this.messages = {
       create: async (req, opciones) => {
-        if (req.tool_choice && req.tool_choice.name === 'evaluar_requisito') {
+        if (req.tools && req.tools.some((t) => t.name === 'evaluar_requisito')) {
           if (opciones && opciones.signal && opciones.signal.aborted) throw Object.assign(new Error('Request was aborted.'), { name: 'APIUserAbortError' });
+          // Igual que la API real: Sonnet/Opus 5.5 rechazan la herramienta forzada con 400.
+          const forzado = req.tool_choice && ['tool', 'any'].includes(req.tool_choice.type);
+          if (forzado && (!/haiku/.test(req.model) || process.env.FAKE_FORZADO_TODOS === 'si')) {
+            throw Object.assign(new Error(`400 {"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: forced tool use is not supported for model ${req.model}"}}`), { status: 400 });
+          }
+          if (process.env.FAKE_SONNET_ERROR === 'si' && !/haiku/.test(req.model)) throw Object.assign(new Error('400 invalid_request_error (simulado)'), { status: 400 });
           return auditar(req);
         }
         // Títulos y resúmenes de conversación, etc.

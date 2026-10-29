@@ -107,6 +107,15 @@ const HERRAMIENTA = {
   },
 };
 
+// Forzar la herramienta (tool_choice "tool") no está permitido en todos los modelos: Claude Sonnet 5.5 y
+// Opus 5.5 lo rechazan con un error 400 (documentación de Anthropic, "Define tools"). Para esos se usa "auto"
+// con la instrucción de responder solo con la herramienta; el código igual revisa que la respuesta la use.
+// Si otro modelo también lo rechaza, se recuerda y se repite la llamada con "auto".
+const SIN_FORZAR = new Set();
+const forzarPermitido = (modelo) => /haiku/i.test(modelo) && !SIN_FORZAR.has(modelo);
+const eleccionHerramienta = (modelo) => (forzarPermitido(modelo) ? { type: 'tool', name: 'evaluar_requisito' } : { type: 'auto' });
+const rechazaForzado = (e) => e && e.status === 400 && /tool_choice|forced tool|forzad/i.test(String(e.message || ''));
+
 function pedido(nivel, requisito, sel, nota) {
   const frags = sel.fragmentos.map((f) => `[${f.id} · ${f.ubicacion}]\n${f.texto}`).join('\n\n');
   return {
@@ -114,7 +123,7 @@ function pedido(nivel, requisito, sel, nota) {
     max_tokens: 600,
     system: SISTEMA,
     tools: [HERRAMIENTA],
-    tool_choice: { type: 'tool', name: 'evaluar_requisito' },
+    tool_choice: eleccionHerramienta(modeloDe(nivel)),
     messages: [{ role: 'user', content: `Requisito ${requisito.id}: ${requisito.texto}\n\nFragmentos del documento «${sel.nombre}»:\n\n${frags || '(ninguno)'}${nota ? `\n\n${nota}` : ''}` }],
   };
 }
@@ -122,7 +131,7 @@ function pedido(nivel, requisito, sel, nota) {
 // Revisa la respuesta con reglas objetivas (código). Devuelve { valido, motivo, evaluacion }.
 function revisar(resp, sel, requisito, nivel, config) {
   const b = (resp.content || []).find((x) => x.type === 'tool_use' && x.name === 'evaluar_requisito');
-  if (!b || resp.stop_reason === 'max_tokens') return { valido: false, motivo: 'formato: no respondió con la herramienta completa' };
+  if (!b || resp.stop_reason === 'max_tokens') return { valido: false, motivo: b ? 'formato: respuesta cortada' : 'formato: respondió sin usar la herramienta' };
   const e = b.input || {};
   if (!ESTADOS_IA.includes(e.estado)) return { valido: false, motivo: `formato: estado "${e.estado}" no permitido` };
   const frag = sel.fragmentos.find((f) => f.id === String(e.fragmento || '').trim());
@@ -145,6 +154,17 @@ function revisar(resp, sel, requisito, nivel, config) {
 }
 
 async function llamar(params, ctx, intento) {
+  try {
+    return await llamarUna(params, ctx, intento);
+  } catch (e) {
+    if (!rechazaForzado(e) || !params.tool_choice || params.tool_choice.type === 'auto') throw e;
+    SIN_FORZAR.add(params.model);
+    console.warn(`Auditoría: ${params.model} no acepta herramienta forzada; se repite con tool_choice auto.`);
+    return llamarUna({ ...params, tool_choice: { type: 'auto' } }, ctx, intento);
+  }
+}
+
+async function llamarUna(params, ctx, intento) {
   const t0 = Date.now();
   const estimado = C.estimarCosto(params);
   try {
@@ -415,7 +435,16 @@ async function listar() {
       throw e;
     }
     const r = v.resultado || {};
-    out.push({ id: v.id, titulo: v.titulo, estado: v.estado, estado_real: v.estado_real, motivo: v.motivo, pasos: v.pasos, presupuesto_usd: v.presupuesto_usd, gastado_usd: v.gastado_usd,
+    // Avance paso a paso (también en encargos cancelados o bloqueados): qué quedó hecho y qué resultado se conservó.
+    const pasosFilas = await qPrincipal('SELECT clave, tipo, estado, intentos, error, costo_usd, resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? ORDER BY orden', [f.id]);
+    const pasos_detalle = pasosFilas.map((p) => {
+      const d = { paso: p.clave, estado: p.estado, intentos: p.intentos, costo_usd: Number(p.costo_usd || 0), ...(p.error ? { error: String(p.error).slice(0, 160) } : {}) };
+      if (p.tipo === 'aud_verificar' && p.estado === 'hecho' && p.resultado_cifrado) {
+        try { const x = Cifrado.descifrarJSON(p.resultado_cifrado); Object.assign(d, { resultado: x.estado, cita_verificada: !!x.cita_verificada, modelo: x.modelo }); } catch (_) {}
+      }
+      return d;
+    });
+    out.push({ pasos_detalle, id: v.id, titulo: v.titulo, estado: v.estado, estado_real: v.estado_real, motivo: v.motivo, pasos: v.pasos, presupuesto_usd: v.presupuesto_usd, gastado_usd: v.gastado_usd,
       reservado_usd: v.reservado_usd, config: r.config || (v.titulo.match(/K\d/) || [])[0], precision: r.precision || null, costos: r.costos || (await costosDe(v.id)), escalados: r.escalados, modelos: r.modelos,
       matriz: r.matriz ? r.matriz.filas.map((x) => ({ requisito: x.requisito, estado: x.estado, cita_verificada: x.cita_verificada, modelo: x.modelo, ubicacion: x.ubicacion })) : null,
       creado_en: v.creado_en, terminado_en: v.terminado_en });

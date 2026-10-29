@@ -1791,6 +1791,16 @@
       const prec = a.precision ? ` · precisión ${a.precision.aciertos}/${a.precision.total}` : '';
       meta.textContent = a.costos ? `Costo real ${usd(a.costos.real_usd)} en ${a.costos.llamadas} llamadas · reservado ${usd(a.costos.reservado_total_usd)} · presupuesto ${usd(a.presupuesto_usd)}${prec}${a.modelos && a.modelos.length ? ` · ${a.modelos.join(' / ')}` : ''}${a.motivo && a.estado !== 'completado' ? ` · ${a.motivo}` : ''}` : (a.motivo || '');
       c.append(titulo, meta);
+      if (!a.matriz && a.pasos_detalle) {
+        const ul = document.createElement('ul');
+        for (const x of a.pasos_detalle) { const li = document.createElement('li'); li.textContent = `${x.paso}: ${x.estado}${x.resultado ? ` → ${x.resultado}${x.cita_verificada ? ' (cita verificada)' : ''}` : ''}${x.error ? ` · ${x.error}` : ''}`; ul.appendChild(li); }
+        c.appendChild(ul);
+      }
+      if (a.estado === 'bloqueado') {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Reintentar desde el paso que falló';
+        b.addEventListener('click', async () => { if (!confirm('¿Reintentar desde el paso que falló? Lo ya hecho se conserva y no se vuelve a pagar.')) return; try { await api(`/api/trabajos/${a.id}/reintentar`, { method: 'POST' }); pintarAuditorias(); } catch (err) { aviso(err.message, true); } });
+        c.appendChild(b);
+      }
       if (a.matriz) {
         const ul = document.createElement('ul');
         for (const f of a.matriz) { const li = document.createElement('li'); li.textContent = `${f.requisito}: ${f.estado}${f.cita_verificada ? ` (cita verificada, ${f.ubicacion})` : ''}`; ul.appendChild(li); }

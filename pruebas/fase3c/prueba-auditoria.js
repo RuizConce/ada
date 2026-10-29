@@ -155,6 +155,43 @@ const llamadasDe = (id) => sql(`SELECT CONCAT(modelo,'|',IFNULL(error,'')) FROM 
   ok(serie.map((x) => x.config).join(',') === 'K1,K2,K3' && serie.every((x) => x.estado === 'completado'), 'la serie corrió K1, K2 y K3 en orden, una a la vez');
   fs.writeFileSync(`${S}/resultado-auditoria-serie.json`, JSON.stringify(serie, null, 2));
 
+  await parar();
+
+  // ---- Incidente del 29/10: la llamada a Sonnet falla con 400 en K3 (R3) ----
+  await arrancar({ FAKE_SONNET_ERROR: 'si' });
+  r = await auditoria('K3', est.d.presupuesto_minimo.K3);
+  const idInc = r.d.id;
+  v = await esperar(idInc, ['bloqueado', 'completado']);
+  const pasosInc = sql(`SELECT CONCAT(clave,'=',estado) FROM trabajo_pasos WHERE trabajo_id='${idInc}' ORDER BY orden`).split('\n');
+  ok(v.estado === 'bloqueado' && pasosInc.includes('verificar:R1=hecho') && pasosInc.includes('verificar:R2=hecho') && pasosInc.includes('verificar:R3=fallido'), `incidente reproducido: bloqueado en verificar:R3 con R1 y R2 hechos (${pasosInc.join(', ')})`);
+  ok(sql(`SELECT COUNT(*) FROM reservas_ia WHERE trabajo_id='${idInc}' AND estado='activa'`) === '0', 'al bloquearse no queda ninguna reserva activa');
+  const lst = (await api('/api/auditorias')).d.find((x) => x.id === idInc);
+  ok(lst && lst.pasos_detalle.find((x) => x.paso === 'verificar:R1').resultado === 'cumple' && lst.pasos_detalle.find((x) => x.paso === 'verificar:R2').resultado === 'parcial', 'Ajustes muestra los resultados conservados de R1 y R2');
+  await parar();
+  // Con la corrección (Sonnet sin herramienta forzada), "Reintentar" sigue desde R3 sin repetir R1 ni R2.
+  await arrancar();
+  const antesR = sql(`SELECT COUNT(*) FROM llamadas_ia l JOIN trabajo_pasos p ON p.id = l.paso_id WHERE l.trabajo_id='${idInc}' AND p.clave IN ('verificar:R1','verificar:R2') AND l.error IS NULL`);
+  await post(`/api/trabajos/${idInc}/reintentar`);
+  v = await esperar(idInc, ['completado', 'bloqueado']);
+  const despuesR = sql(`SELECT COUNT(*) FROM llamadas_ia l JOIN trabajo_pasos p ON p.id = l.paso_id WHERE l.trabajo_id='${idInc}' AND p.clave IN ('verificar:R1','verificar:R2') AND l.error IS NULL`);
+  ok(v.estado === 'completado' && v.resultado.precision.aciertos === 3 && antesR === despuesR, `reintentar desde R3: ${v.estado}, ${v.resultado && v.resultado.precision.aciertos}/3, sin volver a llamar por R1 ni R2`);
+  // Cancelar un encargo bloqueado libera todo.
+  await parar();
+  await arrancar({ FAKE_SONNET_ERROR: 'si' });
+  r = await auditoria('K3', est.d.presupuesto_minimo.K3);
+  v = await esperar(r.d.id, ['bloqueado']);
+  await post(`/api/trabajos/${r.d.id}/cancelar`);
+  const vc = (await api(`/api/trabajos/${r.d.id}`)).d;
+  ok(vc.estado === 'cancelado' && vc.reservado_usd === 0 && sql(`SELECT COUNT(*) FROM reservas_ia WHERE trabajo_id='${r.d.id}' AND estado='activa'`) === '0', 'cancelar tras el error: cancelado y reservas liberadas (US$0 reservado)');
+  await parar();
+  // Si también Haiku rechazara la herramienta forzada: se recuerda y se repite con "auto".
+  await arrancar({ FAKE_FORZADO_TODOS: 'si' });
+  r = await auditoria('K2', est.d.presupuesto_minimo.K2);
+  v = await esperar(r.d.id);
+  ok(v.estado === 'completado' && v.resultado.precision.aciertos === 3, `modelo que rechaza la herramienta forzada: se repite con tool_choice auto y completa (${v.estado})`);
+  await parar();
+  await arrancar();
+
   // ---- Documento fuera de la carpeta de prueba: el encargo no lo lee ----
   r = await auditoria('K2', est.d.presupuesto_minimo.K2, 'AUDX');
   v = await esperar(r.d.id, ['bloqueado', 'completado']);
