@@ -88,6 +88,22 @@ function pertinentes(requisito, frags, textoTotal) {
   return { fragmentos: elegidos, criterio: elegidos.length ? `palabras del requisito: ${elegidos.length} de ${frags.length} fragmentos, de ${archivos} archivo(s)` : 'ningún fragmento menciona el requisito' };
 }
 
+// Minimización de datos personales (piloto con documentos reales): antes de fragmentar, el código reemplaza
+// RUT/RUN, correos, teléfonos y fechas de nacimiento por marcas. Así nunca llegan a la IA, ni al Excel, ni al
+// informe; las citas se verifican contra el texto ya enmascarado. Solo se cuentan (nunca se guardan los valores).
+const MASCARAS = [
+  ['rut', /\b\d{1,2}(?:\.\d{3}){2}\s?-\s?[\dkK]\b|\b\d{7,8}\s?-\s?[\dkK]\b/g, '[RUT]'],
+  ['correo', /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, '[correo]'],
+  ['telefono', /(?:\+?56[\s-]?)?(?:\(?0?\d{1,2}\)?[\s-]?)?\b9[\s-]?\d{4}[\s-]?\d{4}\b|\+56[\s-]?\d{1,2}[\s-]?\d{3}[\s-]?\d{4}\b/g, '[teléfono]'],
+  ['nacimiento', /(fecha\s+de\s+nacimiento\s*:?\s*)\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}/gi, '$1[fecha]'],
+];
+function minimizar(texto) {
+  let t = String(texto);
+  const conteo = {};
+  for (const [nombre, re, marca] of MASCARAS) t = t.replace(re, (...m) => { conteo[nombre] = (conteo[nombre] || 0) + 1; return marca.replace('$1', m[1] || ''); });
+  return { texto: t, conteo };
+}
+
 // La cita debe existir tal cual en el fragmento (se toleran espacios, comillas y "…" entre trozos).
 const limpia = (t) => norm(t).replace(/[“”«»"']/g, '').replace(/\s+/g, ' ').trim();
 function citaVerificada(cita, fragmento) {
@@ -273,7 +289,9 @@ const EJECUTORES = {
     for (const id of ids) {
       const doc = await Drive.textoParaTrabajo(id, { trabajoId, pasoId });
       if (!doc.texto.trim()) throw new Error(`El documento «${doc.nombre}» no tiene texto extraíble`);
-      docs.push({ archivo_id: doc.archivo_id, nombre: doc.nombre, version: doc.version, fuente: doc.fuente, caracteres: doc.texto.length });
+      let enmascarados = null;
+      if (entrada.minimizar !== false) { const m = minimizar(doc.texto); doc.texto = m.texto; enmascarados = m.conteo; }
+      docs.push({ archivo_id: doc.archivo_id, nombre: doc.nombre, version: doc.version, fuente: doc.fuente, caracteres: doc.texto.length, enmascarados });
       const propios = fragmentar(doc.texto).map((f) => ({ ...f, archivo_id: doc.archivo_id, nombre: doc.nombre, version: doc.version }));
       frags = frags.concat(propios);
       texto += `${doc.texto}\n`;
@@ -367,6 +385,8 @@ const EJECUTORES = {
     for (const e of ORDEN_ESTADOS) res.addRow([`  ${ETIQUETA[e]}`, conteo[e] || 0]);
     res.addRow(['Documentos auditados', sel ? sel.resultado.docs.length : '']);
     for (const d of (sel ? sel.resultado.docs : [])) res.addRow([`  ${d.nombre}`, `versión ${d.version}`]);
+    const totalMasc = (sel ? sel.resultado.docs : []).reduce((a, d) => { for (const [k, n] of Object.entries(d.enmascarados || {})) a[k] = (a[k] || 0) + n; return a; }, {});
+    res.addRow(['Datos personales enmascarados antes del análisis', Object.keys(totalMasc).length ? Object.entries(totalMasc).map(([k, n]) => `${n} ${k === 'telefono' ? 'teléfonos' : k === 'correo' ? 'correos' : k === 'nacimiento' ? 'fechas de nacimiento' : 'RUT'}`).join(', ') : 'ninguno encontrado']);
     res.addRow(['Generado', new Date().toISOString()]);
     const buf = Buffer.from(await libro.xlsx.writeBuffer());
     return { resultado: { nombre: 'auditoria.xlsx', xlsx_b64: buf.toString('base64'), huella: hash(buf.toString('base64')), filas: filas.length, evidencias: evidenciasPlanas(filas).length }, costo: 0 };
@@ -505,6 +525,8 @@ function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada
   l.push('- La evaluación usa solo los documentos indicados; lo que no está en ellos figura como sin evidencia.');
   l.push('- Cada cita fue comprobada por código contra el texto del documento; el detalle completo está en el Excel (hojas Matriz y Evidencias).');
   l.push('- Las recomendaciones son propuestas y requieren revisión profesional.');
+  const masc = docs.reduce((a, d) => a + Object.values(d.enmascarados || {}).reduce((x, y) => x + y, 0), 0);
+  if (masc) l.push(`- Antes del análisis se enmascararon ${masc} datos personales (RUT, correos, teléfonos o fechas de nacimiento); las citas los muestran como [RUT], [correo], [teléfono] o [fecha].`);
   return l.join('\n');
 }
 
@@ -1258,4 +1280,4 @@ H.registrar([
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
