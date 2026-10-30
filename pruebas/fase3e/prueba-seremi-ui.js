@@ -55,7 +55,14 @@ const foto = (p, n) => p.screenshot({ path: `${os.tmpdir()}/v-seremi-${n}.png` }
     await p.waitForFunction(() => /Auditoría terminada/.test(document.querySelector('#entregas').textContent), null, { timeout: 120000 });
     t = await p.textContent('#entregas');
     ok(/18: LISTO PARA SUBIR/.test(t) && /21: HAY QUE MODIFICAR/.test(t) && /23: NO ENCONTRADO/.test(t) && /30: REQUIERE REVISIÓN/.test(t) && /→ Agregar al programa/.test(t) && /Descargar Excel/.test(t) && /Descargar informe/.test(t), 'tarjeta final: clasificación SEREMI, acción en los no listos y las dos descargas');
+    ok(/Puedes subir \(12\): 18, 19, 20, 22, 25, 27, 38, 39, 40, 42, 43, 47/.test(t) && /Hay que modificar \(4\): 21, 28, 41, 45/.test(t) && /No se encuentran \(4\): 23, 33, 36, 44/.test(t) && /No aplican \(justificado\) \(2\): 24, 29/.test(t) && /Revisar a mano \(8\)/.test(t),
+      'tarjeta final: la respuesta sencilla primero (subir, modificar, no se encuentran, no aplican, revisar)');
     await p.$$eval('.tarjeta-auditoria', (l) => l[l.length - 1].scrollIntoView()); await foto(p, '4-final');
+    await p.click('#entregas >> text=Borrar textos extraídos de esta auditoría');
+    await p.waitForSelector('#entregas >> text=/Confirmar: borrar \\d+ textos guardados/');
+    await p.click('#entregas >> text=/Confirmar: borrar/');
+    await p.waitForFunction(() => /Textos extraídos de esta auditoría: borrados/.test(document.querySelector('#entregas').textContent), null, { timeout: 10000 });
+    ok(sql("SELECT COUNT(*) FROM extracciones") === '0' && /Descargar Excel/.test(await p.textContent('#entregas')), 'borrar textos (dos toques): extracciones de esta auditoría eliminadas; Excel e informe siguen disponibles');
     const k = await p.evaluate(async (id) => (await fetch(`/api/auditorias/propuestas/${id}/constancia`, { headers: { Authorization: `Bearer ${localStorage.getItem('ada_token')}` } })).json(), propId.slice(0, 8));
     ok(k.aprobacion && JSON.stringify(k.aprobacion).includes('Certificados_SIS_personal.pdf') && k.aprobacion.origen.via === 'tarjeta_chat', `la constancia registra el archivo sensible incluido por la casilla (${JSON.stringify(k.aprobacion && k.aprobacion.sensibles_incluidos)})`);
   } catch (e) { ok(false, `excepción: ${e.message}`); }

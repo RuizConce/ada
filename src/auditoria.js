@@ -174,14 +174,16 @@ const PRESENTACION = ['listo', 'modificar', 'no_encontrado', 'no_aplica', 'revis
 const ETIQUETA_SEREMI = { listo: 'LISTO PARA SUBIR', modificar: 'HAY QUE MODIFICAR', no_encontrado: 'NO ENCONTRADO', no_aplica: 'NO APLICA', revisar: 'REQUIERE REVISIÓN' };
 const SISTEMA_SEREMI = `
 Perfil de esta auditoría: preparar la presentación ante la SEREMI de Salud. Además del estado, entrega "presentacion":
-- listo: hay un documento pertinente y su CONTENIDO cumple todo lo exigido (datos completos, vigente, del establecimiento correcto, y firmado o timbrado cuando se exige y eso consta en el texto). Nunca "listo" solo porque existe un archivo con un nombre parecido.
+- listo: hay un documento pertinente y su CONTENIDO permite comprobar todo lo exigido (datos completos, vigente, del establecimiento correcto, y firmado o timbrado cuando se exige y eso consta en el texto). Nunca "listo" solo porque existe un archivo con un nombre parecido.
 - modificar: hay un documento pertinente, pero le falta algo o tiene errores (datos incompletos, vencido, sin firma consignada, de otro establecimiento, desactualizado).
 - no_encontrado: ningún fragmento contiene un documento pertinente.
 - no_aplica: el requisito no aplica al establecimiento y la evidencia lo muestra (por ejemplo, un documento "NO APLICA" con su justificación).
-- revisar: con el texto no se puede concluir (documentos que se contradicen, o algo que solo se vería en imágenes: firmas, timbres, fotos, planos; o texto ilegible).
+- revisar: con el texto no se puede concluir (documentos que se contradicen, o algo que solo se vería en imágenes: firmas, timbres, fotos, planos; vigencia sin fecha; documento incompleto o cortado; o texto ilegible).
+Si algo de lo exigido no se puede comprobar con el texto, descríbelo en "pendiente_verificar" y no uses "listo".
 "justificacion" es la observación: qué está bien y qué falta. "accion" es una instrucción concreta para Cristian (qué corregir y en qué archivo, o qué documento conseguir), en 1 o 2 frases terminadas en punto.`;
 const HERRAMIENTA_SEREMI = { ...HERRAMIENTA, input_schema: { ...HERRAMIENTA.input_schema, properties: { ...HERRAMIENTA.input_schema.properties,
-  presentacion: { type: 'string', enum: PRESENTACION }, accion: { type: 'string', description: 'acción concreta para presentar el requisito, 1 o 2 frases' } }, required: ['estado', 'presentacion', 'justificacion', 'accion'] } };
+  presentacion: { type: 'string', enum: PRESENTACION }, accion: { type: 'string', description: 'acción concreta para presentar el requisito, 1 o 2 frases' },
+  pendiente_verificar: { type: 'string', description: 'lo que el texto no permite comprobar (firma, timbre, imagen, vigencia, integridad o versión del documento); vacío si nada' } }, required: ['estado', 'presentacion', 'justificacion', 'accion'] } };
 // Coherencia entre estado técnico y clasificación (la impone el código, no la IA).
 function presentacionValida(ev) {
   const p = ev.presentacion; const e = ev.estado;
@@ -237,6 +239,7 @@ function revisar(resp, sel, requisito, nivel, config, perfil) {
   if (perfil === 'seremi') {
     ev.presentacion = String(e.presentacion || '').trim();
     ev.accion = String(e.accion || '').replace(/\s+/g, ' ').trim();
+    if (e.pendiente_verificar && String(e.pendiente_verificar).trim()) ev.pendiente_verificar = String(e.pendiente_verificar).replace(/\s+/g, ' ').trim().slice(0, 300);
     const mp = presentacionValida(ev);
     if (mp) return { valido: false, motivo: mp, evaluacion: ev };
     const ma = accionValida(ev.accion);
@@ -348,22 +351,63 @@ function consolidarLotes(entrada, previos) {
     return { requisito: r.id, criterio: elegidos.length ? `${elegidos.length} fragmentos de ${new Set(elegidos.map((f) => f.archivo_id)).size} archivo(s) en ${lotesUsados} lote(s)` : 'ningún fragmento menciona el requisito', ids: elegidos.map(idGlobal) };
   });
   return { docs, lotes: lotes.length, caracteres: docs.reduce((a, d) => a + d.caracteres, 0), total_fragmentos: lotes.reduce((a, l) => a + l.resultado.total_fragmentos, 0),
-    fragmentos: fragmentos.map(({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote }) => ({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote })), por_requisito: porRequisito, sin_texto: sinTexto };
+    fragmentos: fragmentos.map(({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote }) => ({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote })), por_requisito: porRequisito, sin_texto: sinTexto, versiones: entrada.versiones || {} };
 }
 
-// Perfil SEREMI cuando el código decide sin IA (sin fragmentos) o la IA no logró evidencia verificable.
-// Si hay archivos que no se pudieron leer y su nombre se parece al requisito, no se dice "no encontrado": se pide revisar.
-function clasificarSinIA(r, requisito, sel) {
-  if (r.presentacion) return r;
-  if (r.estado === 'no_evaluado') return { ...r, presentacion: 'revisar', accion: 'Revisar este requisito manualmente: ADA no pudo verificar la evidencia con citas textuales.' };
-  if (r.estado !== 'sin_evidencia') return r;
-  const raicesReq = raices(requisito.texto);
-  const parecidos = (sel.sin_texto || []).filter((a) => { const rn = raices(String(a.nombre || '').replace(/[_.-]+/g, ' ')); let n = 0; for (const x of raicesReq) if (rn.has(x)) n += 1; return n >= 2; });
-  if (parecidos.length) {
-    const nombres = parecidos.slice(0, 3).map((a) => `«${a.nombre}»`).join(', ');
-    return { ...r, presentacion: 'revisar', justificacion: `${r.justificacion} Pero hay archivos que ADA no pudo leer (escaneados, imágenes o sin texto) cuyo nombre se relaciona: ${nombres}.`, accion: `Revisar a mano ${nombres}: si corresponde a este requisito, verificar su contenido y, si es posible, subir una versión con texto legible.` };
+// Perfil SEREMI: reglas del código sobre la clasificación (la IA propone, el código decide en estos casos).
+// 1) Un archivo omitido (sensible excluido, imagen, escaneo sin texto, error) cuyo nombre se relaciona con el
+//    requisito impide decir "no encontrado": queda REQUIERE REVISIÓN nombrando ese archivo.
+// 2) "Listo" solo si el texto permite comprobarlo: firma/timbre, planos o imágenes, vigencia sin fecha citada,
+//    varias versiones del mismo documento o algo que la IA no pudo verificar → REQUIERE REVISIÓN con qué comprobar.
+const GENERICAS = new Set(['certif', 'regist', 'docume', 'proced', 'protoc', 'person', 'establ', 'progra', 'manual', 'sistem', 'instal', 'vigent', 'copia', 'final', 'versio', 'escane', 'imagen', 'fotogr', 'fotos', 'archiv', 'servic', 'salud', 'centro', 'clinic', 'general', 'gener', 'inform', 'pdf', 'docx']);
+const SIGLAS_SALUD = { sis: 'superintendencia salud', ci: 'consentimiento informado cedula identidad', dt: 'director tecnico', eno: 'enfermedades notificacion obligatoria', rcp: 'reanimacion cardiopulmonar', epp: 'elementos proteccion personal', iaas: 'infecciones asociadas atencion', reas: 'residuos establecimientos atencion salud' };
+const raicesNombre = (nombre) => {
+  const limpio = String(nombre || '').replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/[_.-]+/g, ' ');
+  const r = raices(limpio);
+  for (const sig of [...r]) if (SIGLAS_SALUD[sig]) for (const x of raices(SIGLAS_SALUD[sig])) r.add(x);
+  return r;
+};
+const relacionados = (requisito, omitidos) => {
+  const rq = [...raices(requisito.texto)].filter((x) => !GENERICAS.has(x) && x.length >= 4);
+  return omitidos.filter((a) => { const rn = raicesNombre(a.nombre); return rq.some((x) => rn.has(x)); });
+};
+const MOTIVO_OMITIDO = { no_legible: 'formato sin texto (imagen u otro)', sin_texto: 'sin texto, posiblemente escaneado', excluido_sensible: 'excluido por posibles datos personales', sin_acceso: 'sin acceso', bloqueado: 'fuera de la carpeta autorizada', error: 'no se pudo leer' };
+function ajustarSeremi(r, requisito, sel) {
+  let out = r;
+  if (!out.presentacion) {
+    if (out.estado === 'no_evaluado') return { ...out, presentacion: 'revisar', accion: 'Revisar este requisito manualmente: ADA no pudo verificar la evidencia con citas textuales.' };
+    if (out.estado !== 'sin_evidencia') return out;
+    out = { ...out, presentacion: 'no_encontrado', accion: `Conseguir o preparar el documento que acredite el requisito ${requisito.id} y agregarlo a la carpeta.` };
   }
-  return { ...r, presentacion: 'no_encontrado', accion: `Conseguir o preparar el documento que acredite el requisito ${requisito.id} y agregarlo a la carpeta.` };
+  if (out.presentacion === 'no_encontrado') {
+    const omitidos = (sel.sin_texto || []).filter((a) => a.estado !== 'poco_texto');
+    const parecidos = relacionados(requisito, omitidos);
+    if (parecidos.length) {
+      const nombres = parecidos.slice(0, 3).map((a) => `«${a.nombre}» (${MOTIVO_OMITIDO[a.estado] || a.estado})`).join(', ');
+      return { ...out, presentacion: 'revisar', revisar_archivos: parecidos.map((a) => a.archivo_id),
+        justificacion: `${out.justificacion} No se encontró en los documentos leídos, pero hay archivos no analizados cuyo nombre se relaciona: ${nombres}.`,
+        accion: `Abrir a mano ${nombres} y comprobar si acredita el requisito ${requisito.id}; si lo acredita, verificar que esté completo y vigente antes de subirlo.` };
+    }
+    return out;
+  }
+  if (out.presentacion !== 'listo') return out;
+  const t = norm(requisito.texto);
+  const archivos = [...new Set((out.evidencias || []).filter((x) => x.aporta !== 'en_contra').map((x) => x.nombre).filter(Boolean))];
+  const enArchivos = archivos.length ? archivos.map((x) => `«${x}»`).join(', ') : 'el documento';
+  const pendientes = [];
+  if (out.pendiente_verificar && String(out.pendiente_verificar).trim()) pendientes.push(String(out.pendiente_verificar).trim().replace(/[.\s]+$/, ''));
+  if (/firm|timbr/.test(t)) pendientes.push(`que ${enArchivos} tenga la firma o timbre exigido (ADA no puede verificar firmas)`);
+  if (/plano|fotograf|imagen|senaletic|señaletic|visible/.test(t)) pendientes.push(`a la vista el plano o la imagen exigida en ${enArchivos} (ADA no analiza imágenes)`);
+  const citas = (out.evidencias || []).filter((x) => x.aporta !== 'en_contra').map((x) => x.cita).join(' ');
+  if (/vigen|vencim|actualiz/.test(t) && !/\b(19|20)\d{2}\b|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre/i.test(citas)) pendientes.push(`la fecha de vigencia de ${enArchivos} (la cita no indica fecha)`);
+  for (const ev of out.evidencias || []) {
+    const v = (sel.versiones || {})[ev.archivo_id];
+    if (v && ev.aporta !== 'en_contra') pendientes.push(`que «${ev.nombre}» sea la versión válida: también existe ${v.otros.map((x) => `«${x}»`).join(', ')} (la fecha de modificación no indica cuál es la oficial)`);
+  }
+  if (!pendientes.length) return out;
+  const unicos = [...new Set(pendientes)];
+  return { ...out, presentacion: 'revisar', justificacion: `${out.justificacion} El contenido cumple, pero falta comprobar ${unicos.length === 1 ? 'un punto' : 'algunos puntos'} que el texto no permite verificar.`,
+    accion: `Antes de subir, comprobar ${unicos.join('; ')}.` };
 }
 
 const EJECUTORES = {
@@ -441,7 +485,7 @@ const EJECUTORES = {
     const sel = { nombre: s.nombre || 'documentos', fragmentos: fragmentosDeSeleccion(s, entrada.requisito.id) };
     const base = { requisito: entrada.requisito.id, texto_requisito: entrada.requisito.texto, archivo_id: s.archivo_id || null, nombre: s.nombre || null, version: s.version || null, config: entrada.config };
     const perfil = entrada.perfil || null;
-    const seremi = (r) => (perfil === 'seremi' ? clasificarSinIA(r, entrada.requisito, s) : r);
+    const seremi = (r) => (perfil === 'seremi' ? ajustarSeremi(r, entrada.requisito, s) : r);
     if (!sel.fragmentos.length) {
       // Nada en los documentos habla del requisito: lo dice el código, sin gastar en IA.
       return { resultado: seremi({ ...base, estado: 'sin_evidencia', evidencias: [], cita: '', cita_verificada: false, ubicacion: null, justificacion: 'Ningún fragmento de los documentos menciona este requisito.', modelo: 'código', intentos: [], escalado: false }), costo: 0, llamadasRegistradas: true };
@@ -477,7 +521,7 @@ const EJECUTORES = {
       const v = p ? p.resultado : (entrada.perfil === 'seremi' ? { estado: 'no_evaluado', justificacion: 'paso sin resultado', presentacion: 'revisar', accion: 'Revisar este requisito manualmente.' } : { estado: 'no_evaluado', justificacion: 'paso sin resultado' });
       return { requisito: r.id, texto_requisito: r.texto, fuente_norma: r.fuente || '', estado: v.estado, justificacion: v.justificacion || '', cita: v.cita || '', cita_verificada: !!v.cita_verificada,
         ubicacion: v.ubicacion || '', archivo_id: v.archivo_id || null, archivo_version: v.version || null, archivo: v.nombre || null, modelo: v.modelo || '', escalado: !!v.escalado, paso: p ? p.clave : null,
-        ...(v.presentacion ? { presentacion: v.presentacion, clasificacion: ETIQUETA_SEREMI[v.presentacion], accion: v.accion || '' } : {}),
+        ...(v.presentacion ? { presentacion: v.presentacion, clasificacion: ETIQUETA_SEREMI[v.presentacion], accion: v.accion || '', revisar_archivos: v.revisar_archivos || [] } : {}),
         evidencias: (v.evidencias || (v.cita ? [{ cita: v.cita, aporta: 'a_favor', ubicacion: v.ubicacion, archivo_id: v.archivo_id, nombre: v.nombre, version: v.version, verificada: !!v.cita_verificada }] : []))
           .map((x) => ({ cita: x.cita, aporta: x.aporta, ubicacion: x.ubicacion || '', archivo_id: x.archivo_id || null, archivo: x.nombre || null, archivo_version: x.version || null, verificada: !!x.verificada })) };
     });
@@ -515,7 +559,7 @@ const EJECUTORES = {
     for (const e of ORDEN_ESTADOS) res.addRow([`  ${ETIQUETA[e]}`, conteo[e] || 0]);
     if (entrada.perfil === 'seremi') {
       res.addRow(['Clasificación para la SEREMI', '']);
-      for (const k of PRESENTACION) res.addRow([`  ${ETIQUETA_SEREMI[k]}`, filas.filter((f) => f.presentacion === k).length]);
+      for (const k of PRESENTACION) { const ids = filas.filter((f) => f.presentacion === k).map((f) => f.requisito); res.addRow([`  ${ETIQUETA_SEREMI[k]}`, ids.length, ids.join(', ')]); }
     }
     res.addRow(['Documentos auditados', sel ? sel.resultado.docs.length : '']);
     if (objetivo.inventario) res.addRow(['Archivos en el inventario', `${objetivo.inventario.length} (detalle en la hoja Inventario)`]);
@@ -527,7 +571,7 @@ const EJECUTORES = {
       const inv = libro.addWorksheet('Inventario');
       inv.columns = COLUMNAS_INV.map((c) => ({ header: TITULOS[c], width: ANCHOS[c] || 16 }));
       inv.getRow(1).font = { bold: true };
-      for (const x of inventarioFinal(objetivo.inventario, previos, sel)) inv.addRow(COLUMNAS_INV.map((c) => (x[c] == null ? '' : String(x[c]))));
+      for (const x of inventarioFinal(objetivo.inventario, previos, sel, filas)) inv.addRow(COLUMNAS_INV.map((c) => (x[c] == null ? '' : String(x[c]))));
       inv.eachRow((row) => { row.alignment = { wrapText: true, vertical: 'top' }; });
     }
     const buf = Buffer.from(await libro.xlsx.writeBuffer());
@@ -576,27 +620,47 @@ const COLUMNAS_EV = ['requisito', 'n', 'aporta', 'archivo', 'archivo_version', '
 // Perfil SEREMI: la matriz empieza por lo que Cristian necesita para presentar (clasificación, archivo, cita, acción).
 const COLUMNAS_SEREMI = ['requisito', 'texto_requisito', 'clasificacion', 'archivo', 'cita', 'ubicacion', 'justificacion', 'accion', 'estado', 'n_evidencias', 'archivo_version', 'fuente_norma', 'modelo'];
 const columnasDe = (perfil) => (perfil === 'seremi' ? COLUMNAS_SEREMI : COLUMNAS);
-const COLUMNAS_INV = ['archivo_id', 'nombre', 'ruta', 'tipo', 'version', 'modificado', 'estado', 'detalle', 'lote', 'duplicado_de', 'grupo_versiones', 'caracteres', 'datos_enmascarados'];
+const COLUMNAS_INV = ['archivo_id', 'nombre', 'ruta', 'categoria', 'estado', 'detalle', 'requisitos_relacionados', 'tipo', 'version', 'modificado', 'lote', 'duplicado_de', 'grupo_versiones', 'caracteres', 'datos_enmascarados'];
+const CATEGORIA_INV = { fuente: 'Fuente de requisitos', auditado: 'Auditado', omitido: 'Omitido (justificado)' };
 // Estado final de CADA archivo del inventario: nada se omite en silencio.
-function inventarioFinal(inventario, previos, sel) {
+function inventarioFinal(inventario, previos, sel, filas = []) {
   const docs = new Map(((sel && sel.resultado.docs) || []).map((d) => [d.archivo_id, d]));
+  // Para cada archivo: en qué requisitos aporta evidencia y en cuáles hay que revisarlo a mano.
+  const evid = {}; const revisar = {};
+  for (const f of filas) {
+    for (const x of f.evidencias || []) if (x.archivo_id) (evid[x.archivo_id] = evid[x.archivo_id] || new Set()).add(f.requisito);
+    for (const id of f.revisar_archivos || []) (revisar[id] = revisar[id] || new Set()).add(f.requisito);
+  }
   return inventario.map((a) => {
     const ext = previos.find((p) => p.clave === `extraer:${a.id}` && p.resultado);
     const d = docs.get(a.id);
-    let estado = a.estado; let detalle = a.motivo || '';
-    if (ext) {
+    let categoria; let estado; let detalle = a.motivo || '';
+    if (a.estado === 'fuente de requisitos') { categoria = CATEGORIA_INV.fuente; estado = 'no se audita: es la lista de requisitos'; }
+    else if (ext) {
       const r = ext.resultado;
-      estado = r.estado === 'ok' ? (r.poco_texto ? 'auditado (poco texto)' : 'auditado') : r.estado === 'no_legible' ? 'no legible' : r.estado === 'sin_texto' ? 'sin texto (¿escaneado?)' : r.estado === 'sin_acceso' ? 'sin acceso' : 'error al leer';
-      detalle = r.estado === 'ok' ? (r.poco_texto ? 'menos de 300 caracteres de texto: revisar si es un escaneo' : '') : (r.motivo || detalle);
+      if (r.estado === 'ok') {
+        categoria = CATEGORIA_INV.auditado;
+        estado = a.incluido_por_decision ? 'auditado por tu decisión (posible dato sensible)' : 'auditado';
+        detalle = [a.incluido_por_decision ? 'lo incluiste en la aprobación; los datos personales se enmascararon antes del análisis' : '', r.poco_texto ? 'tiene menos de 300 caracteres de texto: revisar si es un escaneo o está incompleto' : ''].filter(Boolean).join('; ');
+      } else {
+        categoria = CATEGORIA_INV.omitido;
+        estado = r.estado === 'no_legible' ? 'omitido: formato sin texto' : r.estado === 'sin_texto' ? 'omitido: sin texto (¿escaneado?)' : r.estado === 'sin_acceso' ? 'omitido: sin acceso' : 'omitido: error al leer';
+        detalle = r.motivo || 'se intentó leer, pero no se obtuvo texto: hay que revisarlo a mano';
+      }
+    } else {
+      categoria = CATEGORIA_INV.omitido;
+      estado = a.estado === 'duplicado exacto' ? 'omitido: duplicado exacto' : a.estado === 'no legible (formato)' ? 'omitido: formato sin texto' : a.estado === 'excluido: posible dato sensible' ? 'omitido: posible dato sensible' : `omitido: ${a.estado}`;
+      detalle = a.estado === 'duplicado exacto' ? `mismo contenido que «${a.duplicado_de}», que sí se auditó` : a.estado === 'excluido: posible dato sensible' ? 'no se descargó: su nombre sugiere datos personales y no lo incluiste' : a.estado === 'no legible (formato)' ? 'no se descargó: ADA no extrae texto de este formato' : detalle;
     }
+    const rel = [evid[a.id] && evid[a.id].size ? `evidencia en ${[...evid[a.id]].join(', ')}` : '', revisar[a.id] && revisar[a.id].size ? `revisar a mano para ${[...revisar[a.id]].join(', ')}` : ''].filter(Boolean).join('; ');
     const masc = d && d.enmascarados ? Object.entries(d.enmascarados).map(([k, n]) => `${n} ${k}`).join(', ') : '';
-    return { archivo_id: a.id, nombre: a.nombre, ruta: a.ruta || '', tipo: a.tipo || '', version: a.version || '', modificado: a.modificado || '', estado, detalle, lote: a.lote || '',
+    return { archivo_id: a.id, nombre: a.nombre, ruta: a.ruta || '', categoria, tipo: a.tipo || '', version: a.version || '', modificado: a.modificado || '', estado, detalle, requisitos_relacionados: rel, lote: a.lote || '',
       duplicado_de: a.duplicado_de || '', grupo_versiones: a.grupo_versiones || '', caracteres: ext ? ext.resultado.caracteres : '', datos_enmascarados: masc };
   });
 }
-const TITULOS = { clasificacion: 'Clasificación SEREMI', accion: 'Acción concreta', archivo_id: 'Id del archivo', nombre: 'Nombre', ruta: 'Subcarpeta', tipo: 'Tipo', version: 'Versión', modificado: 'Modificado', detalle: 'Detalle', lote: 'Lote', duplicado_de: 'Duplicado de', grupo_versiones: 'Grupo de versiones', caracteres: 'Caracteres de texto', datos_enmascarados: 'Datos enmascarados', requisito: 'Requisito', texto_requisito: 'Texto del requisito', fuente_norma: 'Fuente en la norma', estado: 'Estado', justificacion: 'Justificación', n_evidencias: 'N.º de evidencias',
+const TITULOS = { categoria: 'Categoría', requisitos_relacionados: 'Requisitos relacionados', clasificacion: 'Clasificación SEREMI', accion: 'Acción concreta', archivo_id: 'Id del archivo', nombre: 'Nombre', ruta: 'Subcarpeta', tipo: 'Tipo', version: 'Versión', modificado: 'Modificado', detalle: 'Detalle', lote: 'Lote', duplicado_de: 'Duplicado de', grupo_versiones: 'Grupo de versiones', caracteres: 'Caracteres de texto', datos_enmascarados: 'Datos enmascarados', requisito: 'Requisito', texto_requisito: 'Texto del requisito', fuente_norma: 'Fuente en la norma', estado: 'Estado', justificacion: 'Justificación', n_evidencias: 'N.º de evidencias',
   cita: 'Cita principal', archivo: 'Archivo', archivo_version: 'Versión', ubicacion: 'Ubicación', modelo: 'Modelo', n: 'N.º', aporta: 'Aporta', verificada: 'Cita verificada' };
-const ANCHOS = { clasificacion: 22, accion: 50, nombre: 40, detalle: 40, grupo_versiones: 20, requisito: 10, texto_requisito: 50, fuente_norma: 40, estado: 22, justificacion: 50, cita: 50, archivo: 30, archivo_version: 26, ubicacion: 14, modelo: 24, aporta: 12 };
+const ANCHOS = { categoria: 20, requisitos_relacionados: 30, clasificacion: 22, accion: 50, nombre: 40, detalle: 40, grupo_versiones: 20, requisito: 10, texto_requisito: 50, fuente_norma: 40, estado: 22, justificacion: 50, cita: 50, archivo: 30, archivo_version: 26, ubicacion: 14, modelo: 24, aporta: 12 };
 const celda = (f, c) => (c === 'n_evidencias' ? String((f.evidencias || []).length) : c === 'archivo' ? (f.archivo || '') : String(f[c] == null ? '' : f[c]));
 const evidenciasPlanas = (filas) => filas.flatMap((f) => (f.evidencias || []).map((x, i) => ({ requisito: f.requisito, n: String(i + 1), aporta: x.aporta === 'en_contra' ? 'en contra' : 'a favor',
   archivo: x.archivo || '', archivo_version: x.archivo_version || '', ubicacion: x.ubicacion || '', cita: x.cita, verificada: x.verificada ? 'sí' : 'no' })));
@@ -676,13 +740,14 @@ function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada
   }
   l.push('', '## 2. Resumen');
   if (seremi) {
-    l.push('| Clasificación | Requisitos |', '| --- | --- |');
-    for (const k of PRESENTACION) { const n = filas.filter((f) => f.presentacion === k).length; if (n) l.push(`| ${ETIQUETA_SEREMI[k]} | ${n} |`); }
+    l.push('| Clasificación | N.º | Requisitos |', '| --- | --- | --- |');
+    for (const k of PRESENTACION) { const ids = filas.filter((f) => f.presentacion === k).map((f) => f.requisito); l.push(`| ${ETIQUETA_SEREMI[k]} | ${ids.length} | ${ids.length ? ids.join(', ') : '—'} |`); }
+    l.push(`| Total | ${filas.length} | |`);
   } else {
     l.push('| Estado | Requisitos |', '| --- | --- |');
     for (const e of ORDEN_ESTADOS) if (conteo[e]) l.push(`| ${ETIQUETA[e]} | ${conteo[e]} |`);
+    l.push(`| Total | ${filas.length} |`);
   }
-  l.push(`| Total | ${filas.length} |`);
   l.push('', '## 3. Hallazgos');
   l.push('Hechos verificados: cada uno se apoya en citas encontradas textualmente en los documentos.');
   if (!pendientes.length) l.push('- No hay hallazgos: todos los requisitos se cumplen o no aplican.');
@@ -702,7 +767,8 @@ function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada
   if (!recomendaciones.length) l.push('- Sin recomendaciones: no hay hallazgos que subsanar.');
   for (const r of recomendaciones) l.push(`- ${r.requisito} (prioridad ${r.prioridad}${r.generica ? ', genérica' : ''}): ${r.accion}`);
   l.push('', '## 5. Método y límites');
-  l.push('- La evaluación usa solo los documentos indicados; lo que no está en ellos figura como sin evidencia.');
+  l.push(seremi ? '- La evaluación usa solo el texto de los documentos auditados. "Listo para subir" exige una cita verificada que acredite el requisito; si falta comprobar firma, timbre, imagen, vigencia o versión, el requisito queda en "Requiere revisión" con lo que hay que comprobar.' : '- La evaluación usa solo los documentos indicados; lo que no está en ellos figura como sin evidencia.');
+  if (seremi) l.push('- Los archivos no analizados (posibles datos personales, imágenes, escaneos sin texto, duplicados) figuran en la hoja Inventario del Excel con su motivo; si su nombre se relaciona con un requisito sin evidencia, ese requisito queda en "Requiere revisión", no en "No encontrado".');
   l.push('- Cada cita fue comprobada por código contra el texto del documento; el detalle completo está en el Excel (hojas Matriz y Evidencias).');
   l.push('- Las recomendaciones son propuestas y requieren revisión profesional.');
   const masc = docs.reduce((a, d) => a + Object.values(d.enmascarados || {}).reduce((x, y) => x + y, 0), 0);
@@ -794,7 +860,8 @@ async function verificar(t, pasos, esperado, opciones) {
         else {
           const idsInv = inv.map((x) => x[0]);
           if (inv.length !== objetivo.inventario.length || new Set(idsInv).size !== idsInv.length || objetivo.inventario.some((a) => !idsInv.includes(a.id))) problemas.push(`el inventario del Excel tiene ${inv.length} archivos y la carpeta ${objetivo.inventario.length}`);
-          if (inv.some((x) => !x[6])) problemas.push('hay archivos del inventario sin estado');
+          const iE = COLUMNAS_INV.indexOf('estado'); const iC = COLUMNAS_INV.indexOf('categoria');
+          if (inv.some((x) => !x[iE] || !Object.values(CATEGORIA_INV).includes(x[iC]))) problemas.push('hay archivos del inventario sin estado o sin categoría');
           excel.inventario = inv.length;
         }
       }
@@ -925,8 +992,15 @@ function pasosDe(e, config) {
     });
     // Archivos del inventario que no se pudieron leer por formato: se pasan por nombre (nunca contenido) para que un
     // requisito sin evidencia que se parezca a uno de ellos quede como "requiere revisión" y no como "no encontrado".
-    const noLeidos = (e.inventario || []).filter((a) => a.estado === 'no legible (formato)').map((a) => ({ archivo_id: a.id, nombre: a.nombre, estado: 'no_legible' }));
-    pasos.push({ clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'consolidación de lotes', entrada: { lotes: lotes.length, requisitos: e.requisitos, no_leidos: noLeidos } });
+    const auditados = new Set(e.archivo_ids);
+    const noLeidos = (e.inventario || []).filter((a) => !auditados.has(a.id) && (a.estado === 'no legible (formato)' || a.estado === 'excluido: posible dato sensible'))
+      .map((a) => ({ archivo_id: a.id, nombre: a.nombre, estado: a.estado === 'no legible (formato)' ? 'no_legible' : 'excluido_sensible' }));
+    // Versiones del mismo documento (nombre parecido, contenido distinto): "listo" con una de ellas exige confirmar cuál vale.
+    const grupos = new Map();
+    for (const a of e.inventario || []) if (a.grupo_versiones && auditados.has(a.id)) { const g = a.grupo_versiones.split(':')[0]; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(a); }
+    const versiones = {};
+    for (const g of grupos.values()) if (g.length > 1) for (const a of g) versiones[a.id] = { otros: g.filter((x) => x.id !== a.id).map((x) => x.nombre) };
+    pasos.push({ clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'consolidación de lotes', entrada: { lotes: lotes.length, requisitos: e.requisitos, no_leidos: noLeidos, versiones } });
   } else {
     for (const id of e.archivo_ids) pasos.push({ clave: `extraer:${id}`, tipo: 'extraer', etapa: 'extracción', entrada: { archivo_id: id } });
     pasos.push({ clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'fragmentos', entrada: { archivo_ids: e.archivo_ids, requisitos: e.requisitos } });
@@ -1201,7 +1275,7 @@ async function inventarioDe(carpetaId, { excluir = [] } = {}) {
     if (distintas.length < 2) continue;
     g += 1;
     const reciente = grupo.slice().sort((x, y) => String(y.modificado).localeCompare(String(x.modificado)))[0];
-    for (const a of grupo) a.grupo_versiones = `V${g}: ${grupo.length} archivos parecidos; el más reciente es «${reciente.nombre}» (${reciente.modificado})`;
+    for (const a of grupo) a.grupo_versiones = `V${g}: ${grupo.length} versiones de un mismo documento; la modificada más recientemente es «${reciente.nombre}» (${reciente.modificado}), lo que no indica cuál es la válida`;
   }
   for (const a of filas) {
     if (excluir.includes(a.id)) { a.estado = 'fuente de requisitos'; a.motivo = 'es la norma o lista de requisitos: no se audita'; }
@@ -1387,7 +1461,7 @@ async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, or
     for (const idInc of incluirIds.map(String)) {
       const a = inventario.find((x) => x.id === idInc && x.estado === 'excluido: posible dato sensible');
       if (!a) throw err(`El archivo ${idInc} no está entre los que se pueden incluir`);
-      a.estado = 'incluido'; a.motivo = 'incluido por decisión de Cristian (posible dato sensible; RUT, correos, teléfonos y fechas de nacimiento se enmascaran)';
+      a.estado = 'incluido'; a.incluido_por_decision = true; a.motivo = 'incluido por decisión de Cristian (posible dato sensible; RUT, correos, teléfonos y fechas de nacimiento se enmascaran)';
       extra.push({ id: a.id, nombre: a.nombre });
     }
   }
@@ -1517,9 +1591,16 @@ async function avance(trabajoId) {
     const todas = await qPrincipal('SELECT id, datos_cifrado, estado FROM auditoria_propuestas WHERE usuario_id = ? AND creado_en >= ? ORDER BY creado_en', [usuario().id, v.creado_en]);
     for (const x of todas) { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); if (d.origen && d.origen.extraccion_trabajo === v.id) siguiente = { propuesta_id: x.id, estado: x.estado, requisitos: d.requisitos.length }; } catch (_) {} }
   }
+  let textos = null;
+  if (!bloques.length && ['completado', 'cancelado', 'fallido'].includes(v.estado)) {
+    try { const [o] = await qPrincipal('SELECT objetivo_cifrado FROM trabajos WHERE id = ?', [trabajoId]); textos = await textosGuardados(trabajoId, Cifrado.descifrarJSON(o.objetivo_cifrado) || {}); } catch (_) { textos = null; }
+  }
+  // La respuesta sencilla: qué requisitos se pueden subir, cuáles modificar, cuáles faltan, cuáles no aplican y cuáles revisar.
+  const resumenSeremi = r.matriz && r.matriz.filas.some((f) => f.presentacion)
+    ? Object.fromEntries(PRESENTACION.map((k) => [k, r.matriz.filas.filter((f) => f.presentacion === k).map((f) => f.requisito)])) : null;
   const errorLista = bloques.length && v.estado === 'completado' && !siguiente ? (v.eventos.filter((e) => e.tipo === 'lista_error').pop() || {}).detalle || null : null;
   return {
-    modo: bloques.length ? 'requisitos' : 'auditoria', ...(errorLista ? { lista_error: errorLista } : {}),
+    modo: bloques.length ? 'requisitos' : 'auditoria', ...(errorLista ? { lista_error: errorLista } : {}), ...(textos != null ? { textos_guardados: textos } : {}), ...(resumenSeremi ? { resumen_seremi: resumenSeremi } : {}),
     lotes_total: pasos.filter((p) => p.tipo === 'aud_seleccionar_lote').length, lotes_hechos: pasos.filter((p) => p.tipo === 'aud_seleccionar_lote' && p.estado === 'hecho').length,
     archivos_leidos: pasos.filter((p) => (p.tipo === 'aud_extraer' || p.tipo === 'extraer') && p.estado === 'hecho').length, archivos_total: pasos.filter((p) => p.tipo === 'aud_extraer' || p.tipo === 'extraer').length, bloques_hechos: bloques.filter((p) => p.estado === 'hecho').length, bloques_total: bloques.length, lista_propuesta: siguiente,
     informe_listo: v.estado === 'completado' && pasos.some((p) => p.tipo === 'aud_informe' && p.estado === 'hecho'),
@@ -1614,6 +1695,44 @@ H.registrar([
   ver_auditoria: (a, ctx) => estadoParaConversacion(a, ctx),
 });
 
+// Borrar los textos extraídos de ESTA auditoría (Cristian lo pide después de descargar el Excel y el Word):
+// las extracciones cifradas de sus archivos (incluida la lista de requisitos) y el texto de los fragmentos guardados
+// en sus pasos. No toca extracciones de otros archivos. El Excel, el informe y la matriz (con sus citas) se conservan.
+async function borrarExtracciones(trabajoId) {
+  const crypto = require('crypto');
+  const Extracciones = require('./extracciones');
+  const [t] = await qPrincipal('SELECT id, tipo, estado, usuario_id, objetivo_cifrado FROM trabajos WHERE id = ?', [trabajoId]);
+  if (!t || t.tipo !== 'auditoria' || t.usuario_id !== usuario().id) throw err('No existe esa auditoría', 404);
+  if (!['completado', 'cancelado', 'fallido'].includes(t.estado)) throw err('Primero debe terminar la auditoría (o cancelarla).', 409);
+  const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  const ids = [...new Set([...(objetivo.archivo_ids || []), ...(objetivo.inventario || []).filter((a) => a.estado === 'fuente de requisitos').map((a) => a.id), ...(objetivo.norma_id ? [objetivo.norma_id] : [])])];
+  let borradas = 0;
+  if (ids.length) {
+    const filas = await qPrincipal(`SELECT archivo_id, nombre, version FROM extracciones WHERE usuario_id = ? AND archivo_id IN (${ids.map(() => '?').join(',')})`, [usuario().id, ...ids]);
+    const r = await qPrincipal(`DELETE FROM extracciones WHERE usuario_id = ? AND archivo_id IN (${ids.map(() => '?').join(',')})`, [usuario().id, ...ids]);
+    borradas = r.affectedRows;
+    await Extracciones.evento('borrado', { origen: 'auditoria' }, { motivo: `auditoria ${trabajoId.slice(0, 8)}: ${filas.length} borradas` });
+  }
+  // Fragmentos de texto en los pasos de selección: se vacían (quedan ids, archivo y ubicación) y se actualiza su huella.
+  const pasos = await qPrincipal("SELECT id, resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('aud_seleccionar_lote', 'aud_seleccionar') AND resultado_cifrado IS NOT NULL", [trabajoId]);
+  let fragmentos = 0;
+  for (const p of pasos) {
+    const r = Cifrado.descifrarJSON(p.resultado_cifrado) || {};
+    for (const f of r.fragmentos || []) if (f.texto) { f.texto = ''; fragmentos += 1; }
+    r.textos_borrados = true;
+    await qPrincipal('UPDATE trabajo_pasos SET resultado_cifrado = ?, resultado_hash = ? WHERE id = ?', [Cifrado.cifrarJSON(r), crypto.createHash('sha256').update(JSON.stringify(r)).digest('hex'), p.id]);
+  }
+  await Trabajos.evento(trabajoId, 'textos_borrados', `${borradas} extracciones y ${fragmentos} fragmentos de texto borrados; Excel e informe conservados`, 0, `u${usuario().id}`);
+  const [otras] = await qPrincipal("SELECT COUNT(*) AS n FROM extracciones WHERE usuario_id = ? AND estado = 'valida'", [usuario().id]);
+  return { trabajo_id: trabajoId, archivos: ids.length, extracciones_borradas: borradas, fragmentos_vaciados: fragmentos, otras_extracciones_intactas: Number(otras.n), conservado: 'Excel, informe Word y matriz con sus citas' };
+}
+async function textosGuardados(trabajoId, objetivo) {
+  const ids = [...new Set([...(objetivo.archivo_ids || []), ...(objetivo.inventario || []).filter((a) => a.estado === 'fuente de requisitos').map((a) => a.id)])];
+  if (!ids.length) return 0;
+  const [r] = await qPrincipal(`SELECT COUNT(*) AS n FROM extracciones WHERE usuario_id = ? AND archivo_id IN (${ids.map(() => '?').join(',')})`, [usuario().id, ...ids]);
+  return Number(r.n);
+}
+
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

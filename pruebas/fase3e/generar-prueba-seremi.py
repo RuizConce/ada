@@ -160,28 +160,31 @@ E = {  # resultado correcto (estado técnico, clasificación SEREMI) y respuesta
  "40": ("cumple", "listo", [("P_QUEJAS", "Procedimiento de manejo de quejas de pacientes", "a_favor")], "Subir el procedimiento tal como está."),
  "41": ("no_cumple", "modificar", [("P_BOTIQUIN", "Botiquín de primeros auxilios con 4 unidades de gasa estéril", "en_contra")], "Reponer el botiquín hasta tener al menos 10 unidades de gasa estéril y actualizar el inventario."),
  "42": ("cumple", "listo", [("C_ESTETICA", "Certificaciones del personal para los procedimientos estéticos", "a_favor")], "Subir las certificaciones tal como están."),
- "43": None,  # certificados SIS excluidos por sensibles → no encontrado
+ "43": ("cumple", "listo", [("C_SIS", "Certificados del personal emitidos por la Superintendencia de Salud", "a_favor")], "Subir los certificados tal como están."),  # solo si lo incluyes; si no, REQUIERE REVISIÓN por el nombre
  "44": None,
  "45": ("parcial", "modificar", [("C_EXTINTOR", "extintor de polvo químico seco vigente en el primer piso", "a_favor"), ("C_EXTINTOR", "El segundo piso no tiene extintor", "en_contra")], "Instalar un extintor vigente en el segundo piso y actualizar el certificado."),
- "46": ("cumple", "listo", [("P_EPP", "Protocolo de uso de elementos de protección personal", "a_favor")], "Subir el protocolo tal como está."),
+ "46": ("cumple", "listo", [("P_EPP", "Protocolo de uso de elementos de protección personal", "a_favor")], "Subir el protocolo tal como está.", "que el protocolo esté completo: el texto parece terminar a mitad de la lista"),
  "47": ("cumple", "listo", [("P_BIOSEG", "Manual de bioseguridad del establecimiento, aprobado y vigente", "a_favor")], "Subir el manual tal como está."),
 }
-CODIGO = {"23": "no_encontrado", "32": "no_encontrado", "33": "no_encontrado", "34": "no_encontrado", "35": "revisar", "36": "no_encontrado", "37": "revisar", "43": "no_encontrado", "44": "no_encontrado"}
+CODIGO = {"23": "no_encontrado", "32": "revisar", "33": "no_encontrado", "34": "revisar", "35": "revisar", "36": "no_encontrado", "37": "revisar", "43": "no_encontrado", "44": "no_encontrado"}
 for rid, v in E.items():
     if v:
         for (aid, cita, _) in v[2]: assert cita in txt[aid], (rid, aid, cita)
 for n in range(18, 48): assert REQ[n] in requisitos_doc
 correcto = []
+# El código corrige "listo" cuando falta comprobar algo: 31 (hay dos versiones del manual) y 46 (la IA dejó algo por verificar).
+FINAL = {"31": "revisar", "46": "revisar"}
 for rid, v in E.items():
-    if v: correcto.append({"id": rid, "estado": v[0], "presentacion": v[1], "archivos": sorted(set(e[0] for e in v[2]))})
+    if v: correcto.append({"id": rid, "estado": v[0], "presentacion": FINAL.get(rid, v[1]), "archivos": sorted(set(e[0] for e in v[2]))})
     else: correcto.append({"id": rid, "estado": "sin_evidencia", "presentacion": CODIGO[rid], "archivos": []})
 salida = {
  "_nota": "Prueba SEREMI (Fase 3e a escala): 98 archivos ficticios en una carpeta con subcarpetas, 47 requisitos numerados y resultado correcto para el 18 al 47. Todo es inventado. Generado por pruebas/fase3e/generar-prueba-seremi.py.",
  "carpetas": carpetas, "archivos": archivos, "norma_id": "SREQ",
- "resultado_correcto": correcto,
+ "resultado_correcto": correcto,  # con «Certificados_SIS_personal.pdf» incluido por decisión expresa
+ "resultado_sin_sensibles": {"43": "revisar"},  # si no se incluye ningún archivo sensible, solo cambia el 43
  "simulado": {
    "requisitos": [{"referencia": str(n), "texto": REQ[n], "cita": REQ[n]} for n in range(1, 48)],
-   "evaluaciones": {rid: {"estado": v[0], "presentacion": v[1], "evidencias": [{"cita": c, "aporta": a} for (_, c, a) in v[2]], "justificacion": f"Evaluación simulada del requisito {rid}.", "accion": v[3]} for rid, v in E.items() if v},
+   "evaluaciones": {rid: {"estado": v[0], "presentacion": v[1], "evidencias": [{"cita": c, "aporta": a} for (_, c, a) in v[2]], "justificacion": f"Evaluación simulada del requisito {rid}.", "accion": v[3], **({"pendiente_verificar": v[4]} if len(v) > 4 else {})} for rid, v in E.items() if v},
  },
 }
 json.dump(salida, open("pruebas/datos-ficticios/prueba-seremi.json", "w"), ensure_ascii=False, indent=1)

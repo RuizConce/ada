@@ -402,6 +402,14 @@
     t.querySelector('.aud-barra i').style.width = `${pct}%`;
     t.querySelector('.aud-avance').textContent = `Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `${a.lotes_total ? `Lotes ${a.lotes_hechos || 0}/${a.lotes_total} · archivos leídos ${a.archivos_leidos || 0}/${a.archivos_total || '…'} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
     const ul = t.querySelector('.aud-matriz');
+    // Perfil SEREMI: la respuesta sencilla primero (qué subir, qué modificar, qué falta, qué no aplica, qué revisar).
+    if (terminado && a.resumen_seremi) {
+      const r = document.createElement('div');
+      r.className = 'aud-resumen-seremi';
+      const linea = (k, txt) => { const ids = a.resumen_seremi[k] || []; const p = document.createElement('p'); p.className = `aud-res aud-res-${k}`; p.textContent = `${txt} (${ids.length}): ${ids.length ? ids.join(', ') : 'ninguno'}`; r.appendChild(p); };
+      linea('listo', 'Puedes subir'); linea('modificar', 'Hay que modificar'); linea('no_encontrado', 'No se encuentran'); linea('no_aplica', 'No aplican (justificado)'); linea('revisar', 'Revisar a mano');
+      ul.before(r);
+    }
     for (const f of a.matriz || []) {
       const li = document.createElement('li');
       li.textContent = `${f.requisito}: ${f.clasificacion || ESTADO_AUD[f.estado] || f.estado}${f.evidencias > 1 ? ` · ${f.evidencias} citas verificadas${f.archivos > 1 ? ` de ${f.archivos} archivos` : ''}` : f.cita_verificada ? ` · cita verificada (${f.ubicacion})` : ''}`;
@@ -422,6 +430,15 @@
     if (terminado && a.excel_listo) {
       boton('Descargar Excel', (b) => descargar('auditoria', a.id, b), 'principal');
       if (a.informe_listo) boton('Descargar informe', (b) => descargar('auditoria_informe', a.id, b), 'principal');
+      if (a.textos_guardados > 0) {
+        boton('Borrar textos extraídos de esta auditoría', async (b) => {
+          if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = `Confirmar: borrar ${a.textos_guardados} textos guardados (Excel e informe se conservan)`; return; }
+          b.disabled = true;
+          try { const r = await api(`/api/auditorias/${a.id}/borrar-extracciones`, { method: 'POST' }); aviso(`Borré ${r.extracciones_borradas} textos de esta auditoría. El Excel y el informe se conservan.`); a.textos_guardados = 0; pintarEntregas(); } catch (e) { b.disabled = false; aviso(e.message, true); }
+        }, 'descartar');
+      } else if (a.textos_guardados === 0 && a.resumen_seremi) {
+        const n = document.createElement('p'); n.className = 'meta'; n.textContent = 'Textos extraídos de esta auditoría: borrados. El Excel y el informe se conservan.'; t.querySelector('.aud-matriz').after(n);
+      }
       boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
     }
     if (a.estado === 'pausado_presupuesto') {

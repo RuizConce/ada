@@ -1217,7 +1217,7 @@
   {
    "id": "31",
    "estado": "cumple",
-   "presentacion": "listo",
+   "presentacion": "revisar",
    "archivos": [
     "P_MANUAL_V2"
    ]
@@ -1225,7 +1225,7 @@
   {
    "id": "32",
    "estado": "sin_evidencia",
-   "presentacion": "no_encontrado",
+   "presentacion": "revisar",
    "archivos": []
   },
   {
@@ -1237,7 +1237,7 @@
   {
    "id": "34",
    "estado": "sin_evidencia",
-   "presentacion": "no_encontrado",
+   "presentacion": "revisar",
    "archivos": []
   },
   {
@@ -1300,9 +1300,11 @@
   },
   {
    "id": "43",
-   "estado": "sin_evidencia",
-   "presentacion": "no_encontrado",
-   "archivos": []
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "C_SIS"
+   ]
   },
   {
    "id": "44",
@@ -1321,7 +1323,7 @@
   {
    "id": "46",
    "estado": "cumple",
-   "presentacion": "listo",
+   "presentacion": "revisar",
    "archivos": [
     "P_EPP"
    ]
@@ -1335,6 +1337,9 @@
    ]
   }
  ],
+ "resultado_sin_sensibles": {
+  "43": "revisar"
+ },
  "simulado": {
   "requisitos": [
    {
@@ -1798,6 +1803,18 @@
     "justificacion": "Evaluación simulada del requisito 42.",
     "accion": "Subir las certificaciones tal como están."
    },
+   "43": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Certificados del personal emitidos por la Superintendencia de Salud",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 43.",
+    "accion": "Subir los certificados tal como están."
+   },
    "45": {
     "estado": "parcial",
     "presentacion": "modificar",
@@ -1824,7 +1841,8 @@
      }
     ],
     "justificacion": "Evaluación simulada del requisito 46.",
-    "accion": "Subir el protocolo tal como está."
+    "accion": "Subir el protocolo tal como está.",
+    "pendiente_verificar": "que el protocolo esté completo: el texto parece terminar a mitad de la lista"
    },
    "47": {
     "estado": "cumple",

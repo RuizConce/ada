@@ -105,7 +105,14 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     ok(f20.presentacion === 'listo' && lotes20.length === 2, `requisito 20 acreditado con documentos de lotes distintos (${lotes20.join(' y ')})`);
     ok(filas.find((f) => f.requisito === '35').presentacion === 'revisar' && /Plano_evacuacion_piso_1\.jpg/.test(filas.find((f) => f.requisito === '35').accion), '35: el plano está solo en imagen → REQUIERE REVISIÓN, nombrando el archivo (no “no encontrado”)');
     ok(filas.find((f) => f.requisito === '37').presentacion === 'revisar' && /escaneado/.test(filas.find((f) => f.requisito === '37').accion), '37: el certificado está escaneado sin texto → REQUIERE REVISIÓN');
-    ok(filas.find((f) => f.requisito === '31').archivo === 'Manual_normas_procedimientos_v2_final.pdf', '31: usa la versión más reciente del Manual');
+    const fila = (id) => filas.find((f) => f.requisito === id);
+    ok(fila('31').presentacion === 'revisar' && /versión válida/.test(fila('31').accion) && /Manual_normas_procedimientos_v1\.pdf/.test(fila('31').accion), `31: dos versiones del manual → REQUIERE REVISIÓN, sin asumir que la más reciente es la válida («${fila('31').accion}»)`);
+    ok(fila('32').presentacion === 'revisar' && /CI_consentimiento_botox\.pdf/.test(fila('32').accion) && fila('34').presentacion === 'revisar' && /Cedula_identidad_director_tecnico\.pdf/.test(fila('34').accion),
+      '32 y 34: la evidencia podría estar en archivos sensibles no analizados → REQUIERE REVISIÓN nombrándolos, no NO ENCONTRADO');
+    ok(fila('26').presentacion === 'revisar' && /firma/.test(fila('26').accion) && fila('46').presentacion === 'revisar' && /completo/.test(fila('46').accion), '26 (firma) y 46 (la IA dejó algo por comprobar): REQUIERE REVISIÓN con qué comprobar');
+    ok(fila('20').presentacion === 'listo' && fila('43').presentacion === 'listo', '20 (vigencia con fecha citada) y 43 (archivo SIS incluido por ti): LISTO PARA SUBIR');
+    const av = (await api(`/api/auditorias/${tB}/avance`)).d;
+    ok(av.resumen_seremi && av.resumen_seremi.listo.length === 12 && av.resumen_seremi.no_encontrado.join(',') === '23,33,36,44', `respuesta sencilla: ${Object.entries(av.resumen_seremi || {}).map(([k, v]) => `${k} ${v.join(',')}`).join(' · ')}`);
 
     // ---- 5. Descargas, solo lectura y datos personales ----
     st = await ctl('/control/stats');
@@ -123,9 +130,14 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     await libro.xlsx.load(Buffer.from(await (await fetch(`http://localhost:3200${e.d.url}`)).arrayBuffer()));
     const hojas = libro.worksheets.map((w) => w.name).join(',');
     const encab = []; libro.getWorksheet('Matriz').getRow(1).eachCell((x) => encab.push(String(x.value)));
-    const inventario = []; libro.getWorksheet('Inventario').eachRow((row, n) => { if (n > 1) inventario.push({ nombre: String(row.getCell(2).value), estado: String(row.getCell(7).value) }); });
+    const inventario = []; libro.getWorksheet('Inventario').eachRow((row, n) => { if (n > 1) inventario.push({ nombre: String(row.getCell(2).value), categoria: String(row.getCell(4).value), estado: String(row.getCell(5).value), rel: String(row.getCell(7).value || '') }); });
+    const cat = inventario.reduce((m, x) => { m[x.categoria] = (m[x.categoria] || 0) + 1; return m; }, {});
+    ok(cat['Fuente de requisitos'] === 1 && cat.Auditado === 88 && cat['Omitido (justificado)'] === 9, `inventario por categoría: ${JSON.stringify(cat)} (89 leídos: 88 incluidos + 1 sensible que incluiste; el escaneo sin texto queda omitido)`);
+    const invDe = (n) => inventario.find((x) => x.nombre === n) || {};
+    ok(/revisar a mano para 35/.test(invDe('Plano_evacuacion_piso_1.jpg').rel) && /revisar a mano para 34/.test(invDe('Cedula_identidad_director_tecnico.pdf').rel) && /evidencia en 20/.test(invDe('Z_Certificado_RCP_Carla_Soto.pdf').rel) && invDe('Certificados_SIS_personal.pdf').estado === 'auditado por tu decisión (posible dato sensible)',
+      `cada archivo omitido dice para qué requisito revisarlo; cada auditado, en qué requisito aporta evidencia ${JSON.stringify(['Plano_evacuacion_piso_1.jpg', 'Cedula_identidad_director_tecnico.pdf', 'Z_Certificado_RCP_Carla_Soto.pdf', 'Certificados_SIS_personal.pdf'].map((n) => [invDe(n).rel, invDe(n).estado]))}`);
     ok(hojas === 'Matriz,Evidencias,Resumen,Inventario' && encab.slice(0, 8).join(' | ') === 'Requisito | Texto del requisito | Clasificación SEREMI | Archivo | Cita principal | Ubicación | Justificación | Acción concreta', `Excel: ${hojas}; columnas ${encab.slice(0, 8).join(' | ')}`);
-    ok(inventario.length === 98 && inventario.find((x) => /escaneado/.test(x.nombre)).estado === 'sin texto (¿escaneado?)' && /^auditado/.test(inventario.find((x) => x.nombre === 'Certificados_SIS_personal.pdf').estado),
+    ok(inventario.length === 98 && inventario.find((x) => /escaneado/.test(x.nombre)).estado === 'omitido: sin texto (¿escaneado?)',
       `hoja Inventario con los 98 archivos y el estado final de cada uno (${inventario.length} filas; ${JSON.stringify(inventario.reduce((m, x) => { m[x.estado] = (m[x.estado] || 0) + 1; return m; }, {}))})`);
     const w = await post('/api/descargas', { tipo: 'auditoria_informe', id: tB });
     const par = await require('../../src/archivos').textoDeWord(Buffer.from(await (await fetch(`http://localhost:3200${w.d.url}`)).arrayBuffer()));
@@ -133,6 +145,20 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     const pagado = Number(sql(`SELECT COALESCE(SUM(costo_usd),0) FROM llamadas_ia WHERE trabajo_id='${tB}'`));
     ok(Math.abs(t.gastado_usd - pagado) < 1e-6 && t.resultado.costos.real_usd <= t.presupuesto_usd, `costo real US$${t.resultado.costos.real_usd.toFixed(4)} de US$${t.presupuesto_usd} (${t.resultado.costos.llamadas} llamadas; el informe no usa otra llamada)`);
     resumen.costo = t.resultado.costos.real_usd; resumen.tope = t.presupuesto_usd;
+    // ---- 7. Borrar los textos de ESTA auditoría (después de descargar), sin tocar otras extracciones ----
+    sql(`INSERT INTO extracciones (usuario_id, archivo_id, version, nombre, caracteres, texto_cifrado, estado, extraido_en, vence_en) VALUES (1, 'OTRO-DOC', 'v1', 'Otro documento guardado.pdf', 10, NULL, 'valida', NOW(), NOW() + INTERVAL 30 DAY)`);
+    const antes = Number(sql("SELECT COUNT(*) FROM extracciones WHERE archivo_id <> 'OTRO-DOC'"));
+    ok((await api(`/api/auditorias/${tB}/avance`)).d.textos_guardados === antes && antes >= 89, `antes de borrar: ${antes} textos guardados (cifrados) de esta auditoría`);
+    const cifrados = sql("SELECT COUNT(*) FROM extracciones WHERE archivo_id <> 'OTRO-DOC' AND texto_cifrado LIKE 'v%:%'");
+    ok(Number(cifrados) === antes && !sql("SELECT texto_cifrado FROM extracciones WHERE archivo_id = 'C_SIS'").includes('Superintendencia'), 'los textos completos guardados están cifrados (ninguno legible en la base)');
+    const b = (await post(`/api/auditorias/${tB}/borrar-extracciones`)).d;
+    ok(b.extracciones_borradas === antes && sql("SELECT COUNT(*) FROM extracciones WHERE archivo_id <> 'OTRO-DOC'") === '0' && sql("SELECT COUNT(*) FROM extracciones WHERE archivo_id = 'OTRO-DOC'") === '1',
+      `borrado específico: ${b.extracciones_borradas} textos de esta auditoría eliminados; la otra extracción guardada sigue intacta`);
+    const frags = sql(`SELECT resultado_cifrado FROM trabajo_pasos WHERE trabajo_id='${tB}' AND tipo IN ('aud_seleccionar_lote','aud_seleccionar')`).split('\n').filter(Boolean).map((x) => Cifrado.descifrarJSON(x));
+    ok(frags.length === 6 && frags.every((r) => r.textos_borrados && r.fragmentos.every((f) => f.texto === '')), `también se vaciaron ${b.fragmentos_vaciados} fragmentos de texto guardados en los pasos`);
+    const e2 = await post('/api/descargas', { tipo: 'auditoria', id: tB }); const w2 = await post('/api/descargas', { tipo: 'auditoria_informe', id: tB });
+    ok(e2.status === 200 && w2.status === 200 && (await fetch(`http://localhost:3200${e2.d.url}`)).status === 200 && (await api(`/api/auditorias/${tB}/avance`)).d.textos_guardados === 0, 'después de borrar, el Excel y el informe siguen descargables; la tarjeta indica 0 textos guardados');
+    sql("DELETE FROM extracciones WHERE archivo_id = 'OTRO-DOC'");
     const k = (await api(`/api/auditorias/propuestas/${pB.id.slice(0, 8)}/constancia`)).d;
     ok(k.resultado === 'correcto' && k.aprobacion && (k.aprobacion.origen.via === 'tarjeta_chat'), `constancia de la aprobación: ${k.resultado}`);
   } catch (err) { ok(false, `excepción: ${err.stack}`); console.log(srv.log.slice(-4000)); }
