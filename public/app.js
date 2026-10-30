@@ -475,6 +475,20 @@
     } catch (e) { $('#cierre-lectura').textContent = e.message; }
     ev.target.disabled = false;
   });
+  // Prueba 5: borra la extracción cifrada de ESTE archivo y nada más (las demás quedan intactas).
+  $('#cierre-borrar').addEventListener('click', async (ev) => {
+    const b = ev.currentTarget;
+    const id = $('#cierre-archivo').value.trim();
+    if (!id) return aviso('Pega el id del archivo de prueba', true);
+    if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar: borrar solo este archivo'; setTimeout(() => { b.dataset.paso = ''; b.textContent = 'Borrar solo lo guardado de este archivo'; }, 6000); return; }
+    b.disabled = true;
+    try {
+      const r = await api(`/api/extracciones/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      $('#cierre-lectura').textContent = `${new Date().toLocaleTimeString('es-CL')} · borrado lo guardado de este archivo (${r.borradas} registro${r.borradas === 1 ? '' : 's'}); las demás extracciones no se tocaron`;
+      if (typeof pintarDocumentosGuardados === 'function') pintarDocumentosGuardados();
+    } catch (e) { $('#cierre-lectura').textContent = e.message; }
+    b.disabled = false; b.dataset.paso = ''; b.textContent = 'Borrar solo lo guardado de este archivo';
+  });
   $('#cierre-comprobar').addEventListener('click', async () => {
     const id = $('#cierre-archivo').value.trim();
     if (!id) return aviso('Pega el id del archivo de prueba', true);

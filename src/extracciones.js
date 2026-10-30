@@ -502,7 +502,7 @@ async function cierre({ archivoId, desde, copiasVivas = null }) {
   const reuso5 = borr && ev.find((e) => e.id > borr.id && (!desc || e.id < desc.id) && e.tipo === 'reutilizacion');
   const ok5 = !!(borr && desc && !reuso5);
   v(5, 'Borrado voluntario de la extracción cifrada', ok5, ok5 ? [linea(borr), linea(desc)] : (borr ? [linea(borr), 'falta una lectura posterior'] : []),
-    'En Ajustes → Documentos guardados, borra lo guardado de este archivo y luego "Leer ahora": debe descargarlo de nuevo (no reutilizar).');
+    'En esta misma sección, "Borrar solo lo guardado de este archivo" y luego "Leer ahora": debe descargarlo de nuevo (no reutilizar).');
 
   return {
     generado_en: new Date(), archivo: (ev.find((e) => e.nombre) || {}).nombre || `…${String(archivoId).slice(-6)}`, archivo_id_termina_en: String(archivoId).slice(-6), desde: ini,
