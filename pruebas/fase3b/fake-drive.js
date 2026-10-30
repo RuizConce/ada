@@ -83,7 +83,8 @@ http.createServer(async (req, res) => {
     if (m[2] === '/copy') {
       const b = await leerCuerpo(req);
       n += 1;
-      const copia = { id: `copia-${n}`, name: b.name, mimeType: b.mimeType, version: 1, copiaDe: f.id, appProperties: b.appProperties, acceso: true, parents: f.parents };
+      const copia = { id: `copia-${n}`, name: b.name, mimeType: b.mimeType, version: 1, copiaDe: f.id, appProperties: b.appProperties, acceso: true, parents: b.parents || f.parents };
+      stats.copias_en = stats.copias_en || {}; inc(stats.copias_en, (b.parents || f.parents || ['?'])[0]);
       archivos.set(copia.id, copia); inc(stats.copias, f.id);
       return json(res, 200, { id: copia.id, name: copia.name });
     }

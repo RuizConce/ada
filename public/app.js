@@ -244,6 +244,44 @@
   const ESTADO_AUD = { cumple: 'Cumple', parcial: 'Parcial', no_cumple: 'No cumple', sin_evidencia: 'Sin evidencia', no_aplica_justificado: 'No aplica (justificado)', no_evaluado: 'No evaluado', contradictorio: 'Contradictorio' };
   const ETAPA_AUD = { ejecutando: 'Trabajando', pausado: 'En pausa', pausado_presupuesto: 'Detenido: se acabó el presupuesto', bloqueado: 'Detenido por un error', completado: 'Terminada', cancelado: 'Cancelada', fallido: 'Falló', esperando_aprobacion: 'Esperando aprobación' };
 
+
+  // Inventario de la carpeta (escala): qué se audita, qué no y por qué; nada se omite en silencio.
+  const ETIQ_SEREMI = { listo: 'LISTO PARA SUBIR', modificar: 'HAY QUE MODIFICAR', no_encontrado: 'NO ENCONTRADO', no_aplica: 'NO APLICA', revisar: 'REQUIERE REVISIÓN' };
+  const listaArchivos = (l) => (l.length > 6 ? `${l.slice(0, 5).map((a) => a.nombre).join(' · ')} · y ${l.length - 5} más` : l.map((a) => a.nombre).join(' · '));
+  function bloqueInventario(p, { conCasillas } = {}) {
+    if (!p.inventario) return null;
+    const d = document.createElement('details');
+    d.className = 'aud-inventario';
+    const c = p.inventario.por_estado || {};
+    const sum = document.createElement('summary');
+    sum.textContent = `Inventario: ${p.inventario.total} archivos${p.subcarpetas ? ` (incluye ${p.subcarpetas} subcarpeta${p.subcarpetas === 1 ? '' : 's'})` : ''} · ${c.incluido || 0} a auditar${p.lotes > 1 ? ` en ${p.lotes} lotes de hasta 20` : ''}`;
+    d.appendChild(sum);
+    const ul = document.createElement('ul');
+    const item = (txt) => { const li = document.createElement('li'); li.textContent = txt; ul.appendChild(li); return li; };
+    for (const [k, v] of Object.entries(c)) if (k !== 'incluido') item(`${v} · ${k}`);
+    for (const a of p.duplicados || []) item(`Duplicado: ${a.nombre} — ${a.detalle}`);
+    for (const a of p.versiones || []) item(`Versión: ${a.nombre} — ${a.detalle}`);
+    for (const a of p.no_legibles || []) item(`No legible: ${a.nombre} — ${a.detalle}`);
+    d.appendChild(ul);
+    if ((p.sensibles || []).length) {
+      const s = document.createElement('div');
+      s.className = 'aud-sensibles';
+      const t = document.createElement('p'); t.className = 'meta';
+      t.textContent = conCasillas ? 'Posibles datos personales (excluidos salvo que marques uno; si lo incluyes, RUT, correos, teléfonos y fechas de nacimiento se enmascaran antes del análisis):'
+        : 'Posibles datos personales: quedan fuera; podrás incluir alguno en el paso 2.';
+      s.appendChild(t);
+      for (const a of p.sensibles) {
+        const l = document.createElement('label'); l.className = 'aud-sensible';
+        if (conCasillas) { const i = document.createElement('input'); i.type = 'checkbox'; i.value = a.id; l.appendChild(i); }
+        l.appendChild(document.createTextNode(` ${a.nombre}${a.ruta ? ` (${a.ruta})` : ''}`));
+        s.appendChild(l);
+      }
+      d.appendChild(s);
+      d.open = true;
+    }
+    return d;
+  }
+
   // Paso 1 de una auditoría con norma: extraer la lista de requisitos (su propio costo y aprobación).
   function tarjetaExtraccion(p, origen) {
     const t = document.createElement('div');
@@ -255,7 +293,9 @@
       + '<p class="meta aud-est"></p><div class="tarjeta-botones"><button type="button" class="principal">Aprobar extracción</button><button type="button" class="descartar">Descartar</button></div>';
     t.querySelector('.aud-estado').textContent = `Paso 1 de 2 · ${p.id.slice(0, 8)}`;
     t.querySelector('.aud-norma').textContent = `Norma: ${p.norma.nombre} (${p.norma.caracteres.toLocaleString('es-CL')} caracteres, ${p.norma.bloques} bloque${p.norma.bloques === 1 ? '' : 's'})`;
-    t.querySelector('.aud-archivos').textContent = `Documentos a auditar después (${p.archivos.length}): ${p.archivos.map((a) => a.nombre).join(' · ')}`;
+    t.querySelector('.aud-archivos').textContent = `Documentos a auditar después (${p.archivos.length}): ${listaArchivos(p.archivos)}${p.rango ? ` · requisitos ${p.rango.desde} al ${p.rango.hasta}` : ''}${p.perfil === 'seremi' ? ' · clasificación SEREMI' : ''}`;
+    const inv = bloqueInventario(p);
+    if (inv) t.querySelector('.aud-archivos').after(inv);
     const pres = t.querySelector('.aud-pres');
     pres.value = String(p.presupuesto_sugerido);
     t.querySelector('.aud-est').textContent = `Extraer: hasta ${usdAud(p.estimado_usd)} (Sonnet; se cobra solo lo real). Al terminar verás la lista para revisarla y aprobarla junto con el presupuesto de la auditoría (referencia ~${usdAud(p.estimado_auditoria_usd)}). Nada se analiza contra tus documentos antes de eso.`;
@@ -291,7 +331,14 @@
       + '<p class="meta aud-est"></p><div class="tarjeta-botones"><button type="button" class="principal">Aprobar y empezar</button><button type="button" class="descartar">Descartar</button></div>';
     t.querySelector('.aud-estado').textContent = `${p.origen ? 'Paso 2 de 2 · ' : ''}Pendiente · ${p.id.slice(0, 8)}`;
     if (p.origen) t.querySelector('strong').textContent = `Revisa los ${p.requisitos.length} requisitos y aprueba la auditoría`;
-    t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${p.archivos.map((a) => a.nombre).join(' · ')}${p.motivo ? ` — ${p.motivo}` : ''}`;
+    t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${listaArchivos(p.archivos)}${p.motivo ? ` — ${p.motivo}` : ''}${p.perfil === 'seremi' ? ' · clasificación SEREMI' : ''}`;
+    if (p.rango || (p.faltantes || []).length) {
+      const r = document.createElement('p'); r.className = 'meta aud-rango';
+      r.textContent = `${p.rango ? `Requisitos ${p.rango.desde} al ${p.rango.hasta}: ${p.requisitos.length} encontrados en la lista` : ''}${(p.faltantes || []).length ? ` · no encontré en la lista: ${p.faltantes.join(', ')}` : ' · ninguno falta'}`;
+      t.querySelector('.aud-archivos').after(r);
+    }
+    const inv = bloqueInventario(p, { conCasillas: true });
+    if (inv) t.querySelector('.aud-archivos').after(inv);
     // Con lista extraída de una norma: de dónde sale cada requisito (cita textual de la norma), para revisarla.
     if (p.requisitos.some((r) => r.fuente)) {
       const d = document.createElement('details');
@@ -322,7 +369,8 @@
       });
       botones.forEach((b) => { b.disabled = true; });
       try {
-        const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), requisitos, configuracion: sel.value, origen }) });
+        const incluir_ids = [...t.querySelectorAll('.aud-sensible input:checked')].map((i) => i.value);
+        const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), requisitos, configuracion: sel.value, origen, ...(incluir_ids.length ? { incluir_ids } : {}) }) });
         propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
         encargosAuditoria.set(r.trabajo_id, { id: r.trabajo_id, propuesta_id: r.propuesta_id, config: r.configuracion, estado: r.estado, pasos_hechos: 0, pasos_total: 0, requisitos_evaluados: 0, requisitos_total: requisitos.length, costo_real_usd: 0, presupuesto_usd: r.presupuesto });
         pintarEntregas();
@@ -352,12 +400,13 @@
     t.querySelector('.aud-estado').textContent = a.estado === 'ejecutando' && a.estado_real === 'esperando ejecutor' ? 'Esperando turno' : (ETAPA_AUD[a.estado] || a.estado);
     const pct = a.pasos_total ? Math.round((100 * a.pasos_hechos) / a.pasos_total) : 0;
     t.querySelector('.aud-barra i').style.width = `${pct}%`;
-    t.querySelector('.aud-avance').textContent = `Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
+    t.querySelector('.aud-avance').textContent = `Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `${a.lotes_total ? `Lotes ${a.lotes_hechos || 0}/${a.lotes_total} · archivos leídos ${a.archivos_leidos || 0}/${a.archivos_total || '…'} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
     const ul = t.querySelector('.aud-matriz');
     for (const f of a.matriz || []) {
       const li = document.createElement('li');
-      li.textContent = `${f.requisito}: ${ESTADO_AUD[f.estado] || f.estado}${f.evidencias > 1 ? ` · ${f.evidencias} citas verificadas${f.archivos > 1 ? ` de ${f.archivos} archivos` : ''}` : f.cita_verificada ? ` · cita verificada (${f.ubicacion})` : ''}`;
+      li.textContent = `${f.requisito}: ${f.clasificacion || ESTADO_AUD[f.estado] || f.estado}${f.evidencias > 1 ? ` · ${f.evidencias} citas verificadas${f.archivos > 1 ? ` de ${f.archivos} archivos` : ''}` : f.cita_verificada ? ` · cita verificada (${f.ubicacion})` : ''}`;
       li.className = `aud-${f.estado}`;
+      if (f.accion && f.presentacion && f.presentacion !== 'listo') { const ac = document.createElement('small'); ac.textContent = ` → ${f.accion}`; li.appendChild(ac); }
       ul.appendChild(li);
     }
     const botones = t.querySelector('.tarjeta-botones');

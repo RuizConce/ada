@@ -581,3 +581,14 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-matriz .aud-contradictorio { color: #8e24aa; }
 #cierre-salida { white-space: pre-wrap; word-break: break-word; font-size: .76rem; max-height: 60vh; overflow: auto; padding: 10px; border-radius: 8px; background: rgba(127,127,127,.12); }
 .cierre-pasos { padding-left: 18px; }
+
+/* Inventario de carpeta y datos personales en las tarjetas de auditoría */
+.aud-inventario { margin: 6px 0; font-size: 13px; }
+.aud-inventario summary { cursor: pointer; font-weight: 600; }
+.aud-inventario ul { margin: 4px 0 4px 18px; padding: 0; max-height: 180px; overflow-y: auto; }
+.aud-inventario li { margin: 2px 0; overflow-wrap: anywhere; }
+.aud-sensibles { margin-top: 6px; }
+.aud-sensible { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; margin: 3px 0; overflow-wrap: anywhere; }
+.aud-matriz small { display: block; opacity: .8; }
+.aud-sensible input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 18px; margin: 1px 0 0; padding: 0; }
+.aud-sensible { justify-content: flex-start; text-align: left; flex-direction: row; }

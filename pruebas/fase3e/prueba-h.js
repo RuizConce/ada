@@ -69,7 +69,7 @@ const resumen = {};
     ok(Number(sql("SELECT COUNT(*) FROM trabajos WHERE tipo='auditoria' AND estado <> 'cancelado' AND creado_en > NOW() - INTERVAL 1 MINUTE")) === 0 && H.documentos.every((d) => descargasDe(st, d.id) === 0),
       'antes de aprobar: ningún trabajo y ningún documento a auditar descargado (solo se leyó la norma para estimar)');
     c = await chat([{ name: 'proponer_auditoria', input: { norma_id: 'HX', carpeta_id: 'carpeta-prueba' } }], conv);
-    ok(/fuera de la carpeta autorizada/.test(JSON.stringify(c.datos)), 'una norma fuera de la carpeta de prueba se rechaza');
+    ok(/fuera de las? carpetas? autorizadas?/.test(JSON.stringify(c.datos)), `una norma fuera de la carpeta de prueba se rechaza ${JSON.stringify(c.datos).slice(0, 300)}`);
 
     // ---- 2. Aprobación → extracción ----
     let r = await post(`/api/auditorias/propuestas/${pA.id}/aprobar`, { presupuesto: pA.presupuesto_sugerido, origen: 'tarjeta_chat' });
@@ -137,7 +137,7 @@ const resumen = {};
     ok(R.costos.real_usd <= t.presupuesto_usd && t.reservado_usd === 0, `costo real ${usd(R.costos.real_usd)} de ${usd(t.presupuesto_usd)} aprobado; sin reservas activas`);
     resumen.auditoria = { costo: R.costos.real_usd, presupuesto: t.presupuesto_usd, llamadas: R.costos.llamadas, pasos: pasos.length };
     // Entregables verificados.
-    ok(R.excel.filas === 10 && R.excel.evidencias === filas.reduce((a, f) => a + f.evidencias.length, 0) && R.excel.hojas.join(',') === 'Matriz,Evidencias,Resumen', `Excel consolidado: ${R.excel.filas} filas, ${R.excel.evidencias} evidencias, hojas ${R.excel.hojas.join('/')}`);
+    ok(R.excel.filas === 10 && R.excel.evidencias === filas.reduce((a, f) => a + f.evidencias.length, 0) && R.excel.hojas.join(',') === 'Matriz,Evidencias,Resumen,Inventario', `Excel consolidado: ${R.excel.filas} filas, ${R.excel.evidencias} evidencias, hojas ${R.excel.hojas.join('/')}`);
     ok(R.informe && R.informe.hallazgos === 5 && R.informe.recomendaciones === 5 && R.informe.origen_recomendaciones === 'IA', `informe ejecutivo: ${R.informe && R.informe.hallazgos} hallazgos y ${R.informe && R.informe.recomendaciones} recomendaciones, separados`);
     // Descargas reales de ambos entregables.
     const ExcelJS = require('exceljs'); const JSZip = require('jszip');

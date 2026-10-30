@@ -190,7 +190,9 @@ async function borrarTemporal(copia, original, ctx) {
 async function extraerConvirtiendo(f, destino, ctx) {
   const copia = await gfetch(`${DRIVE}/files/${encodeURIComponent(f.id)}/copy?fields=id,name&supportsAllDrives=true`, {
     method: 'POST',
-    body: JSON.stringify({ name: `${PREFIJO_TEMPORAL}${f.name}`, mimeType: destino, appProperties: { ada_temporal: '1', ada_original: f.id } }),
+    // La copia temporal se crea FUERA de la carpeta del documento (raíz de Mi unidad o la carpeta indicada), para no
+    // escribir nunca en las carpetas autorizadas; se borra apenas se lee.
+    body: JSON.stringify({ name: `${PREFIJO_TEMPORAL}${f.name}`, mimeType: destino, parents: [process.env.ADA_DRIVE_CARPETA_TEMPORALES || 'root'], appProperties: { ada_temporal: '1', ada_original: f.id } }),
   });
   try {
     if (destino.endsWith('spreadsheet')) return { tipo: 'hoja', tipo_archivo: TIPOS[f.mimeType], ...(await leerHoja(copia.id)) };
@@ -222,7 +224,43 @@ async function extraerContenido(f, ctx) {
 }
 
 const metadatos = (id) => gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?fields=${CAMPOS_VERSION}&supportsAllDrives=true`);
-const DRIVE_EXTRACCION = { metadatos, extraer: extraerContenido, leible: (m) => LEIBLE(m.mimeType || '') };
+// ---------- Carpetas autorizadas (modo prueba) ----------
+// ADA_DRIVE_CARPETA_PRUEBA: carpeta(s) ficticias de prueba, de lectura y escritura.
+// ADA_DRIVE_CARPETAS_LECTURA: carpeta(s) reales autorizadas SOLO PARA LEER (p. ej. Andaluz_SEREMI_para_subir).
+// Ambas incluyen sus subcarpetas. Todo lo demás de Drive sigue bloqueado en el servidor (antes de descargar).
+const listaIds = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+const carpetasEscritura = () => listaIds(process.env.ADA_DRIVE_CARPETA_PRUEBA);
+const carpetasLectura = () => [...new Set([...carpetasEscritura(), ...listaIds(process.env.ADA_DRIVE_CARPETAS_LECTURA)])];
+const padresDe = new Map(); // carpeta → { padres, hasta }
+async function padresDeCarpeta(id) {
+  const c = padresDe.get(id);
+  if (c && c.hasta > Date.now()) return c.padres;
+  const m = await gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?fields=id,parents,trashed&supportsAllDrives=true`);
+  const padres = m.trashed ? [] : (m.parents || []);
+  padresDe.set(id, { padres, hasta: Date.now() + 10 * 60 * 1000 });
+  return padres;
+}
+// ¿Está el archivo dentro de alguna de estas carpetas (directo o en una subcarpeta, hasta 8 niveles)?
+async function dentroDe(meta, raices) {
+  if (!meta || !raices.length) return false;
+  let nivel = (meta.parents || []).slice();
+  const vistos = new Set();
+  for (let prof = 0; prof < 8 && nivel.length; prof++) {
+    if (nivel.some((p) => raices.includes(p))) return true;
+    const siguiente = [];
+    for (const p of nivel) {
+      if (vistos.has(p)) continue;
+      vistos.add(p);
+      try { siguiente.push(...(await padresDeCarpeta(p))); } catch (_) { /* sin acceso a la carpeta: no autoriza */ }
+    }
+    nivel = siguiente;
+  }
+  return false;
+}
+const autorizadoLectura = (meta) => dentroDe(meta, carpetasLectura());
+const autorizadoEscritura = (meta) => dentroDe(meta, carpetasEscritura());
+
+const DRIVE_EXTRACCION = { metadatos, extraer: extraerContenido, leible: (m) => LEIBLE(m.mimeType || ''), autorizado: autorizadoLectura };
 
 // Lee un archivo: lo guardado si sigue valiendo (misma versión y con acceso), o lo extrae una sola vez.
 async function leer(a = {}, ctx = {}) {
@@ -231,7 +269,7 @@ async function leer(a = {}, ctx = {}) {
   const desde = Math.max(0, parseInt(a.desde, 10) || 0);
   const contexto = { origen: ctx.trabajoId ? 'trabajo' : 'chat', conversacionId: ctx.conversacionId, turnoId: ctx.turnoId, trabajoId: ctx.trabajoId, pasoId: ctx.pasoId };
   // Carpetas y tipos sin texto: solo sus datos (no se descarga ni se extrae nada).
-  const previo = await Extracciones.obtener(a.id, { metadatos, extraer: extraerContenido, leible: (m) => LEIBLE(m.mimeType || '') }, contexto);
+  const previo = await Extracciones.obtener(a.id, DRIVE_EXTRACCION, contexto);
   const f = previo.meta;
   const base = { id: f.id, nombre: f.name, enlace: f.webViewLink };
   if (previo.noLeible) {
@@ -256,7 +294,7 @@ async function leer(a = {}, ctx = {}) {
     : previo.fuente === 'drive_guardado'
       ? { estado: 'extraccion_nueva_guardada', descarga_nueva: true }
       : { estado: 'leido_sin_guardar', descarga_nueva: true, motivo: previo.sinGuardar || 'no_habilitado' };
-  if (Extracciones.modo() === 'prueba') guardado.en_carpeta_de_prueba = Extracciones.enCarpetaDePrueba(f);
+  if (Extracciones.modo() === 'prueba') guardado.en_carpeta_de_prueba = await autorizadoLectura(f);
   const r = { ...base, version: previo.version, ...origen, guardado, ...cuerpo };
   if (previo.sinGuardar === 'consentimiento_pendiente' && contexto.origen === 'chat' && typeof ctx.emitir === 'function' && !ctx.consentimientoPedido) {
     ctx.consentimientoPedido = true;
@@ -269,20 +307,20 @@ async function leer(a = {}, ctx = {}) {
 // Para los encargos (motor de trabajos): extrae o reutiliza sin devolver texto al resultado del paso.
 // Hasta aprobar la prueba con Drive real, solo funciona con Drive simulado o en la carpeta de prueba aprobada.
 async function obtenerParaTrabajo(archivoId, ctx) {
-  const carpetaPrueba = process.env.ADA_DRIVE_CARPETA_PRUEBA || '';
-  if (!SIMULADO && !carpetaPrueba) {
+  if (!SIMULADO && !carpetasLectura().length) {
     throw Object.assign(new Error('Los encargos todavía no pueden leer documentos reales: solo Drive simulado o la carpeta de prueba aprobada.'), { status: 409, config: true });
   }
   return Extracciones.obtener(archivoId, {
     metadatos: async (id) => {
       const meta = await metadatos(id);
-      if (!SIMULADO && !(carpetaPrueba && (meta.parents || []).includes(carpetaPrueba))) {
+      if (!SIMULADO && !(await autorizadoLectura(meta))) {
         throw Object.assign(new Error('Los encargos todavía no pueden leer documentos reales: solo Drive simulado o la carpeta de prueba aprobada.'), { status: 409, config: true });
       }
       return meta;
     },
     extraer: extraerContenido,
     leible: (m) => LEIBLE(m.mimeType || ''),
+    autorizado: autorizadoLectura,
   }, { ...ctx, origen: 'trabajo' });
 }
 
@@ -333,14 +371,13 @@ async function reintentarTemporales() {
 const FUERA_DE_PRUEBA = 'Archivo fuera de la carpeta autorizada para la prueba';
 async function protegerEscritura(objetivos, accion, ctx = {}) {
   if (Extracciones.modo() !== 'prueba' || usuario().id !== 1) return;
-  const carpetaPrueba = process.env.ADA_DRIVE_CARPETA_PRUEBA || '';
   const contexto = { origen: ctx.trabajoId ? 'trabajo' : 'chat', conversacionId: ctx.conversacionId, turnoId: ctx.turnoId };
   const bloquear = async (id, nombre, detalle) => {
     await Extracciones.evento('escritura_bloqueada', contexto, { archivoId: id || '(sin id)', nombre, motivo: accion });
     throw Object.assign(new Error(`${FUERA_DE_PRUEBA}: no hice ningún cambio (${detalle}). Durante la prueba de guardado solo se puede modificar lo que está en la carpeta de prueba, aunque lo autorices.`), { bloqueado: true, status: 403 });
   };
   for (const o of objetivos) {
-    if (o.carpeta && carpetaPrueba && o.id === carpetaPrueba) continue;
+    if (o.carpeta && carpetasEscritura().includes(o.id)) continue;
     if (!o.id) await bloquear(null, null, o.carpeta ? 'el destino no es la carpeta de prueba' : 'sin archivo');
     let meta;
     try {
@@ -349,7 +386,8 @@ async function protegerEscritura(objetivos, accion, ctx = {}) {
     } catch (e) {
       await bloquear(o.id, null, 'no pude comprobar dónde está');
     }
-    if (!Extracciones.enCarpetaDePrueba(meta)) await bloquear(o.id, meta.name, o.carpeta ? 'el destino está fuera de la carpeta de prueba' : 'está fuera de la carpeta de prueba');
+    // Solo la carpeta ficticia de prueba admite cambios; las carpetas reales autorizadas son SOLO DE LECTURA.
+    if (!(await autorizadoEscritura(meta))) await bloquear(o.id, meta.name, (await autorizadoLectura(meta)) ? 'la carpeta autorizada es solo de lectura' : o.carpeta ? 'el destino está fuera de la carpeta de prueba' : 'está fuera de la carpeta de prueba');
   }
 }
 
@@ -581,6 +619,34 @@ H.registrar([
   editar_documento_drive: editarDocumento,
 });
 
+// Inventario de una carpeta autorizada (Fase 3e a escala): todos los archivos, incluidas subcarpetas, con
+// paginación. Solo metadatos: no descarga ni abre nada.
+async function inventarioCarpeta(carpetaId, { maxArchivos = 400 } = {}) {
+  const raiz = await metadatos(carpetaId);
+  if (raiz.mimeType !== 'application/vnd.google-apps.folder') throw Object.assign(new Error('No es una carpeta'), { status: 400 });
+  if (Extracciones.modo() === 'prueba' && !(await autorizadoLectura({ parents: [carpetaId] }))) {
+    throw Object.assign(new Error(`«${raiz.name}» no es una carpeta autorizada: durante la prueba solo se leen las carpetas autorizadas.`), { status: 403, bloqueado: true });
+  }
+  const archivos = []; const carpetas = [];
+  const pendientes = [{ id: carpetaId, ruta: '' }];
+  while (pendientes.length) {
+    const c = pendientes.shift();
+    let token = null;
+    do {
+      const params = new URLSearchParams({ q: `'${comillas(c.id)}' in parents and trashed = false`, fields: `nextPageToken,files(${CAMPOS_VERSION})`, pageSize: '200', orderBy: 'name', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' });
+      if (token) params.set('pageToken', token);
+      const r = await gfetch(`${DRIVE}/files?${params}`);
+      for (const f of r.files || []) {
+        if (f.mimeType === 'application/vnd.google-apps.folder') { carpetas.push({ id: f.id, nombre: f.name, ruta: c.ruta }); pendientes.push({ id: f.id, ruta: `${c.ruta}${f.name}/` }); continue; }
+        archivos.push({ ...f, ruta: c.ruta });
+        if (archivos.length > maxArchivos) throw Object.assign(new Error(`La carpeta tiene más de ${maxArchivos} archivos`), { status: 400 });
+      }
+      token = r.nextPageToken;
+    } while (token);
+  }
+  return { carpeta: { id: raiz.id, nombre: raiz.name }, archivos, carpetas };
+}
+
 // Cierre 3b: lectura de verificación sin IA (mismo camino que leer_drive; devuelve solo metadatos, nunca el texto).
 async function lecturaVerificacion(archivoId) {
   const t0 = Date.now();
@@ -601,4 +667,4 @@ async function copiasTemporalesVivas() {
   return (r.files || []).map((f) => ({ id_termina_en: f.id.slice(-6), nombre: f.name, creado: f.createdTime }));
 }
 
-module.exports = { conectado, lecturaVerificacion, copiasTemporalesVivas, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };
+module.exports = { autorizadoLectura, autorizadoEscritura, carpetasLectura, inventarioCarpeta, LEIBLE, claveVersionDe: (m) => Extracciones.claveVersion(m), conectado, lecturaVerificacion, copiasTemporalesVivas, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };

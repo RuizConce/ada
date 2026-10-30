@@ -205,11 +205,12 @@ async function obtener(archivoId, drive, ctx = {}) {
   if (drive.leible && !drive.leible(meta)) return { meta, version, noLeible: true };
   // Durante la prueba (ADA_EXTRACCIONES=prueba) solo se lee contenido de la carpeta de prueba: lo de fuera se
   // rechaza aquí, en el servidor, antes de descargar, convertir o reutilizar nada (también lo guardado antes).
-  if (modo() === 'prueba' && usuario().id === 1 && !enCarpetaDePrueba(meta)) {
+  const autorizado = drive.autorizado ? await drive.autorizado(meta) : enCarpetaDePrueba(meta);
+  if (modo() === 'prueba' && usuario().id === 1 && !autorizado) {
     await evento('bloqueado_prueba', ctx, { archivoId, version, nombre: meta.name });
     throw err('Archivo fuera de la carpeta autorizada para la prueba: no lo abrí. Durante la prueba de guardado (Fase 3b) solo puedo abrir el contenido de archivos de la carpeta de prueba; se vuelve a la normalidad al terminar la prueba.', { bloqueado: true, status: 403 });
   }
-  const guardar = enAlcance(meta) ? await puedeGuardar() : { ok: false, motivo: 'fuera_de_prueba' };
+  const guardar = (modo() !== 'prueba' || autorizado) ? await puedeGuardar() : { ok: false, motivo: 'fuera_de_prueba' };
 
   // 2. Reutilizar si hay una extracción válida de esta misma versión.
   let motivoNueva = 'primera';

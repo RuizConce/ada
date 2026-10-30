@@ -1,0 +1,1843 @@
+{
+ "_nota": "Prueba SEREMI (Fase 3e a escala): 98 archivos ficticios en una carpeta con subcarpetas, 47 requisitos numerados y resultado correcto para el 18 al 47. Todo es inventado. Generado por pruebas/fase3e/generar-prueba-seremi.py.",
+ "carpetas": [
+  {
+   "id": "sub-certificados",
+   "name": "Certificados",
+   "mimeType": "application/vnd.google-apps.folder",
+   "parents": [
+    "carpeta-seremi"
+   ]
+  },
+  {
+   "id": "sub-procedimientos",
+   "name": "Procedimientos",
+   "mimeType": "application/vnd.google-apps.folder",
+   "parents": [
+    "carpeta-seremi"
+   ]
+  },
+  {
+   "id": "sub-otros",
+   "name": "Otros",
+   "mimeType": "application/vnd.google-apps.folder",
+   "parents": [
+    "sub-procedimientos"
+   ]
+  }
+ ],
+ "archivos": [
+  {
+   "id": "SREQ",
+   "name": "Requisitos SEREMI (ficticio).docx",
+   "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   "texto": "REQUISITOS SEREMI — PAUTA FICTICIA PARA PRUEBAS\nDocumento ficticio. No corresponde a ninguna norma real.\nPágina 1\n1. Requisito ficticio 1 de la pauta (no se revisa en esta prueba).\n2. Requisito ficticio 2 de la pauta (no se revisa en esta prueba).\n3. Requisito ficticio 3 de la pauta (no se revisa en esta prueba).\n4. Requisito ficticio 4 de la pauta (no se revisa en esta prueba).\n5. Requisito ficticio 5 de la pauta (no se revisa en esta prueba).\n6. Requisito ficticio 6 de la pauta (no se revisa en esta prueba).\n7. Requisito ficticio 7 de la pauta (no se revisa en esta prueba).\n8. Requisito ficticio 8 de la pauta (no se revisa en esta prueba).\n9. Requisito ficticio 9 de la pauta (no se revisa en esta prueba).\n10. Requisito ficticio 10 de la pauta (no se revisa en esta prueba).\n11. Requisito ficticio 11 de la pauta (no se revisa en esta prueba).\n12. Requisito ficticio 12 de la pauta (no se revisa en esta prueba).\n13. Requisito ficticio 13 de la pauta (no se revisa en esta prueba).\n14. Requisito ficticio 14 de la pauta (no se revisa en esta prueba).\n15. Requisito ficticio 15 de la pauta (no se revisa en esta prueba).\n16. Requisito ficticio 16 de la pauta (no se revisa en esta prueba).\n17. Requisito ficticio 17 de la pauta (no se revisa en esta prueba).\nPágina 2\n18. Contar con una nómina del personal clínico con su cargo y jornada.\n19. Contar con un procedimiento escrito de lavado de manos clínico.\n20. Todo el personal clínico debe acreditar capacitación vigente en reanimación cardiopulmonar (RCP).\n21. Contar con un programa de mantención preventiva de los equipos láser.\n22. Contar con un protocolo de manejo de residuos especiales.\n23. Contar con un registro de esterilización de instrumental.\n24. Si se usan gases medicinales, contar con certificado de instalación de la red.\n25. Contar con un procedimiento de limpieza y desinfección de superficies.\n26. Contar con un plan de emergencia y evacuación firmado por el director técnico.\n27. Contar con un libro de reclamos y sugerencias foliado.\n28. Contar con un protocolo de atención de reacciones adversas.\n29. Si existe autoclave, contar con registro de operación del autoclave.\n30. Contar con un contrato vigente de retiro de residuos especiales con empresa autorizada.\n31. Contar con un manual de normas y procedimientos actualizado.\n32. Contar con un consentimiento informado tipo para cada procedimiento.\nPágina 3\n33. Contar con un registro de notificación de enfermedades de declaración obligatoria (ENO).\n34. Contar con la carta de aceptación del director técnico firmada.\n35. Contar con un plano de evacuación visible en cada piso.\n36. Si existen instalaciones radiactivas, contar con su autorización sanitaria.\n37. Contar con un certificado de dotación de agua potable y alcantarillado.\n38. Contar con un protocolo de control de infecciones asociadas a la atención.\n39. Contar con un sistema de registros estadísticos mensuales.\n40. Contar con un procedimiento de manejo de quejas de pacientes.\n41. Contar con un botiquín de primeros auxilios con al menos 10 unidades de gasa estéril.\n42. Contar con certificaciones del personal para los procedimientos estéticos que realiza.\n43. Contar con el certificado de inscripción en la Superintendencia de Salud del personal.\n44. Contar con un procedimiento de calibración del equipo de depilación láser.\n45. Contar con un extintor de polvo químico seco vigente en cada piso.\n46. Contar con un protocolo de uso de elementos de protección personal.\n47. Contar con un manual de bioseguridad del establecimiento.\nNota final: la autoridad podrá solicitar antecedentes adicionales.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "c97f529b4409",
+   "version": 1
+  },
+  {
+   "id": "A_NOMINA",
+   "name": "A01_Nomina_personal_clinico.pdf",
+   "mimeType": "application/pdf",
+   "texto": "NÓMINA DEL PERSONAL CLÍNICO\nDocumento ficticio para pruebas.\nPágina 1\nLa nómina del personal clínico indica nombre, cargo y jornada de cada integrante: Dra. Ana Rojas, médico, 44 horas; Luis Pérez, técnico, 44 horas; Carla Soto, técnica, 22 horas.\nCertificados de RCP presentados: Ana Rojas vigente hasta 2027; Luis Pérez vigente hasta 2027.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "5cc24ef93472",
+   "version": 1
+  },
+  {
+   "id": "A_LAVADO",
+   "name": "A02_Procedimiento_lavado_manos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROCEDIMIENTO DE LAVADO DE MANOS\nDocumento ficticio para pruebas.\nPágina 1\nProcedimiento escrito de lavado de manos clínico: describe los cinco momentos, la técnica de lavado y el uso de solución alcohólica.\nAprobado y vigente desde marzo de 2026.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "ae0399f828b8",
+   "version": 1
+  },
+  {
+   "id": "A_MANTLASER",
+   "name": "A03_Programa_mantencion_laser.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROGRAMA DE MANTENCIÓN\nDocumento ficticio para pruebas.\nPágina 1\nPrograma de mantención preventiva de los equipos láser: la próxima mantención está programada, pero el programa no indica la frecuencia ni el responsable.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "502c49d03fc0",
+   "version": 1
+  },
+  {
+   "id": "A_RESIDUOS",
+   "name": "A04_Protocolo_residuos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROTOCOLO DE RESIDUOS\nDocumento ficticio para pruebas.\nPágina 1\nProtocolo de manejo de residuos especiales: clasificación, almacenamiento transitorio y entrega a empresa autorizada.\nEl protocolo está aprobado por la dirección técnica.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "5385a0570a08",
+   "version": 1
+  },
+  {
+   "id": "A_GASES",
+   "name": "A05_NO_APLICA_gases_medicinales.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DECLARACIÓN NO APLICA\nDocumento ficticio para pruebas.\nPágina 1\nEl establecimiento no utiliza gases medicinales; por lo tanto, no cuenta con red de gases medicinales ni requiere certificado de instalación.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "1d9f9be2b3af",
+   "version": 1
+  },
+  {
+   "id": "A_LIMPIEZA",
+   "name": "A06_Limpieza_y_desinfeccion.pdf",
+   "mimeType": "application/pdf",
+   "texto": "LIMPIEZA Y DESINFECCIÓN\nDocumento ficticio para pruebas.\nPágina 1\nProcedimiento de limpieza y desinfección de superficies: frecuencia diaria, productos autorizados y registro de ejecución.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "0f70ba56ba98",
+   "version": 1
+  },
+  {
+   "id": "A_EMERG",
+   "name": "A07_Plan_emergencia_evacuacion.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PLAN DE EMERGENCIA\nDocumento ficticio para pruebas.\nPágina 1\nPlan de emergencia y evacuación del establecimiento, con rutas, zonas de seguridad y responsables.\nFirma del director técnico: (espacio para firma).",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "b2bb650576be",
+   "version": 1
+  },
+  {
+   "id": "A_RECLAMOS",
+   "name": "A08_Libro_reclamos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "LIBRO DE RECLAMOS\nDocumento ficticio para pruebas.\nPágina 1\nLibro de reclamos y sugerencias foliado, del folio 1 al 100, disponible en recepción.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "29564df00323",
+   "version": 1
+  },
+  {
+   "id": "A_REACC",
+   "name": "A09_Protocolo_reacciones_adversas.pdf",
+   "mimeType": "application/pdf",
+   "texto": "REACCIONES ADVERSAS\nDocumento ficticio para pruebas.\nPágina 1\nProtocolo de atención de reacciones adversas: el documento es un borrador sin fecha y le falta el flujo de derivación a urgencia.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "1f89285c6fba",
+   "version": 1
+  },
+  {
+   "id": "A_AUTOCLAVE",
+   "name": "A10_NO_APLICA_autoclave.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DECLARACIÓN NO APLICA\nDocumento ficticio para pruebas.\nPágina 1\nEn el establecimiento no existe autoclave: todo el instrumental es desechable de un solo uso.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "f84d63ca1ab1",
+   "version": 1
+  },
+  {
+   "id": "A_CONTRATO",
+   "name": "A11_Contrato_retiro_residuos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CONTRATO DE RETIRO\nDocumento ficticio para pruebas.\nPágina 1\nContrato de retiro de residuos especiales con empresa autorizada, vigente hasta diciembre de 2027.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "dee2053a4ce6",
+   "version": 1
+  },
+  {
+   "id": "S_CEDULA",
+   "name": "Cedula_identidad_director_tecnico.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CÉDULA DE IDENTIDAD\nDocumento ficticio para pruebas.\nPágina 1\nCédula de identidad del director técnico. RUN 12.345.678-9. Fecha de nacimiento: 01/02/1980.\nCarta de aceptación del director técnico firmada, adjunta a su cédula.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "754c1186f914",
+   "version": 1
+  },
+  {
+   "id": "S_FICHA",
+   "name": "Ficha_clinica_paciente_ejemplo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "FICHA CLÍNICA\nDocumento ficticio para pruebas.\nPágina 1\nFicha clínica de un paciente ficticio con diagnóstico ficticio.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "d34235bf3de1",
+   "version": 1
+  },
+  {
+   "id": "S_CI",
+   "name": "CI_consentimiento_botox.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CONSENTIMIENTO INFORMADO\nDocumento ficticio para pruebas.\nPágina 1\nConsentimiento informado tipo para aplicación de toxina botulínica, con espacio para firma del paciente.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "fbdb6912ce51",
+   "version": 1
+  },
+  {
+   "id": "IMG_PLANO",
+   "name": "Plano_evacuacion_piso_1.jpg",
+   "mimeType": "image/jpeg",
+   "texto": null,
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "17eb41398c53",
+   "version": 1
+  },
+  {
+   "id": "IMG_LOGO",
+   "name": "Logo_clinica.png",
+   "mimeType": "image/png",
+   "texto": null,
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "36d109c436b4",
+   "version": 1
+  },
+  {
+   "id": "ZIP_FOTOS",
+   "name": "Fotos_instalaciones.zip",
+   "mimeType": "application/zip",
+   "texto": null,
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "857b7c0ceb44",
+   "version": 1
+  },
+  {
+   "id": "PDF_ESCANEO",
+   "name": "Certificado_dotacion_agua_escaneado.pdf",
+   "mimeType": "application/pdf",
+   "texto": "",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "escaneo-vacio",
+   "version": 1
+  },
+  {
+   "id": "DUP_LAVADO",
+   "name": "A02_Procedimiento_lavado_manos (1).pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROCEDIMIENTO DE LAVADO DE MANOS\nDocumento ficticio para pruebas.\nPágina 1\nProcedimiento escrito de lavado de manos clínico: describe los cinco momentos, la técnica de lavado y el uso de solución alcohólica.\nAprobado y vigente desde marzo de 2026.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "ae0399f828b8",
+   "version": 1
+  },
+  {
+   "id": "DUP_RECLAMOS",
+   "name": "Copia de A08_Libro_reclamos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "LIBRO DE RECLAMOS\nDocumento ficticio para pruebas.\nPágina 1\nLibro de reclamos y sugerencias foliado, del folio 1 al 100, disponible en recepción.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "29564df00323",
+   "version": 1
+  },
+  {
+   "id": "C_ESTETICA",
+   "name": "Certificaciones_procedimientos_esteticos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CERTIFICACIONES\nDocumento ficticio para pruebas.\nPágina 1\nCertificaciones del personal para los procedimientos estéticos: depilación láser y radiofrecuencia, todas vigentes.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "3d30ae026137",
+   "version": 1
+  },
+  {
+   "id": "C_SIS",
+   "name": "Certificados_SIS_personal.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CERTIFICADOS SIS\nDocumento ficticio para pruebas.\nPágina 1\nCertificados del personal emitidos por la Superintendencia de Salud. RUT 9.876.543-2.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "7ba6a3b6d5ae",
+   "version": 1
+  },
+  {
+   "id": "C_EXTINTOR",
+   "name": "Certificado_extintores.pdf",
+   "mimeType": "application/pdf",
+   "texto": "EXTINTORES\nDocumento ficticio para pruebas.\nPágina 1\nCertificado de mantención: extintor de polvo químico seco vigente en el primer piso. El segundo piso no tiene extintor.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "a019d4427b3d",
+   "version": 1
+  },
+  {
+   "id": "P_MANUAL_V1",
+   "name": "Manual_normas_procedimientos_v1.pdf",
+   "mimeType": "application/pdf",
+   "texto": "MANUAL DE NORMAS\nDocumento ficticio para pruebas.\nPágina 1\nManual de normas y procedimientos, versión 2023, desactualizado: no incluye los procedimientos láser.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "24f3755aa4ee",
+   "version": 1,
+   "modifiedTime": "2023-05-10T12:00:00.000Z"
+  },
+  {
+   "id": "P_MANUAL_V2",
+   "name": "Manual_normas_procedimientos_v2_final.pdf",
+   "mimeType": "application/pdf",
+   "texto": "MANUAL DE NORMAS\nDocumento ficticio para pruebas.\nPágina 1\nManual de normas y procedimientos actualizado a septiembre de 2026, incluye todos los procedimientos del establecimiento.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "dc1955573e35",
+   "version": 1,
+   "modifiedTime": "2026-09-15T12:00:00.000Z"
+  },
+  {
+   "id": "P_INFECCIONES",
+   "name": "Protocolo_control_infecciones.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CONTROL DE INFECCIONES\nDocumento ficticio para pruebas.\nPágina 1\nProtocolo de control de infecciones asociadas a la atención, con vigilancia y medidas de prevención.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "6d1b103cf5a1",
+   "version": 1
+  },
+  {
+   "id": "P_ESTADISTICA",
+   "name": "Registros_estadisticos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "REGISTROS ESTADÍSTICOS\nDocumento ficticio para pruebas.\nPágina 1\nSistema de registros estadísticos mensuales de atenciones, entregado a la autoridad cada mes.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "5fd8cfd7ecef",
+   "version": 1
+  },
+  {
+   "id": "P_QUEJAS",
+   "name": "Procedimiento_quejas.pdf",
+   "mimeType": "application/pdf",
+   "texto": "QUEJAS\nDocumento ficticio para pruebas.\nPágina 1\nProcedimiento de manejo de quejas de pacientes: plazos de respuesta y registro.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "23d68b03e4ce",
+   "version": 1
+  },
+  {
+   "id": "P_BOTIQUIN",
+   "name": "Inventario_botiquin.pdf",
+   "mimeType": "application/pdf",
+   "texto": "BOTIQUÍN\nDocumento ficticio para pruebas.\nPágina 1\nBotiquín de primeros auxilios con 4 unidades de gasa estéril.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "04bf8fe45a22",
+   "version": 1
+  },
+  {
+   "id": "P_EPP",
+   "name": "Protocolo_EPP.pdf",
+   "mimeType": "application/pdf",
+   "texto": "EPP\nDocumento ficticio para pruebas.\nPágina 1\nProtocolo de uso de elementos de protección personal: guantes, mascarilla y protección ocular.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "772b24fba548",
+   "version": 1
+  },
+  {
+   "id": "P_BIOSEG",
+   "name": "Manual_bioseguridad.pdf",
+   "mimeType": "application/pdf",
+   "texto": "BIOSEGURIDAD\nDocumento ficticio para pruebas.\nPágina 1\nManual de bioseguridad del establecimiento, aprobado y vigente.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "d98ad64ab999",
+   "version": 1
+  },
+  {
+   "id": "Z_RCP",
+   "name": "Z_Certificado_RCP_Carla_Soto.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CERTIFICADO RCP\nDocumento ficticio para pruebas.\nPágina 1\nCertificado de capacitación en reanimación cardiopulmonar (RCP) de Carla Soto, vigente hasta 2027.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "54e60754a284",
+   "version": 1
+  },
+  {
+   "id": "Z_ACTA",
+   "name": "Z_Acta_fiscalizacion.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ACTA\nDocumento ficticio para pruebas.\nPágina 1\nEl contrato de retiro de residuos especiales se encuentra vencido desde 2025, según la fiscalización.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "5d6fe2d74d75",
+   "version": 1
+  },
+  {
+   "id": "R001",
+   "name": "M001_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 1\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 1 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "19ddbde7d299",
+   "version": 1
+  },
+  {
+   "id": "R002",
+   "name": "M002_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 2\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 2 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "01228a0169bf",
+   "version": 1
+  },
+  {
+   "id": "R003",
+   "name": "M003_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 3\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 3 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "cf390e42e953",
+   "version": 1
+  },
+  {
+   "id": "R004",
+   "name": "M004_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 4\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 4 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "c8be28d05a98",
+   "version": 1
+  },
+  {
+   "id": "R005",
+   "name": "M005_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 5\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 5 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "1d9785e124ea",
+   "version": 1
+  },
+  {
+   "id": "R006",
+   "name": "M006_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 6\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 6 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "4c086239b3aa",
+   "version": 1
+  },
+  {
+   "id": "R007",
+   "name": "M007_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 7\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 7 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "1d7785e42dcf",
+   "version": 1
+  },
+  {
+   "id": "R008",
+   "name": "M008_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 8\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 8 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "d79282eceae5",
+   "version": 1
+  },
+  {
+   "id": "R009",
+   "name": "M009_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 9\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 9 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "1cced336b882",
+   "version": 1
+  },
+  {
+   "id": "R010",
+   "name": "M010_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 10\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 10 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "5f90f802782e",
+   "version": 1
+  },
+  {
+   "id": "R011",
+   "name": "M011_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 11\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 11 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "8ec589615ceb",
+   "version": 1
+  },
+  {
+   "id": "R012",
+   "name": "M012_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 12\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 12 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "40d9495cc6f3",
+   "version": 1
+  },
+  {
+   "id": "R013",
+   "name": "M013_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 13\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 13 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "c1f82a650da7",
+   "version": 1
+  },
+  {
+   "id": "R014",
+   "name": "M014_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 14\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 14 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "b792326e1276",
+   "version": 1
+  },
+  {
+   "id": "R015",
+   "name": "M015_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 15\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 15 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "d09177118642",
+   "version": 1
+  },
+  {
+   "id": "R016",
+   "name": "M016_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 16\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 16 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "35d44aa775cb",
+   "version": 1
+  },
+  {
+   "id": "R017",
+   "name": "M017_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 17\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 17 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "ae35ad05cc26",
+   "version": 1
+  },
+  {
+   "id": "R018",
+   "name": "M018_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 18\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 18 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "b3d68cf78816",
+   "version": 1
+  },
+  {
+   "id": "R019",
+   "name": "M019_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 19\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 19 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "81f4720657cd",
+   "version": 1
+  },
+  {
+   "id": "R020",
+   "name": "M020_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 20\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 20 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "7317e08a7395",
+   "version": 1
+  },
+  {
+   "id": "R021",
+   "name": "M021_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 21\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 21 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "3b94d8da7e3e",
+   "version": 1
+  },
+  {
+   "id": "R022",
+   "name": "M022_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 22\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 22 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "af79f7582206",
+   "version": 1
+  },
+  {
+   "id": "R023",
+   "name": "M023_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 23\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 23 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "b4cfc0e5d69c",
+   "version": 1
+  },
+  {
+   "id": "R024",
+   "name": "M024_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 24\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 24 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "d01e2f7b9715",
+   "version": 1
+  },
+  {
+   "id": "R025",
+   "name": "M025_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 25\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 25 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "0bc31356e6b0",
+   "version": 1
+  },
+  {
+   "id": "R026",
+   "name": "M026_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 26\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 26 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "7eb96157644b",
+   "version": 1
+  },
+  {
+   "id": "R027",
+   "name": "M027_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 27\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 27 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "975bb5d7725b",
+   "version": 1
+  },
+  {
+   "id": "R028",
+   "name": "M028_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 28\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 28 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "7c5b9781e36a",
+   "version": 1
+  },
+  {
+   "id": "R029",
+   "name": "M029_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 29\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 29 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "1382345b2a92",
+   "version": 1
+  },
+  {
+   "id": "R030",
+   "name": "M030_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 30\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 30 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "b16160653210",
+   "version": 1
+  },
+  {
+   "id": "R031",
+   "name": "M031_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 31\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 31 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "6760988c9aeb",
+   "version": 1
+  },
+  {
+   "id": "R032",
+   "name": "M032_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 32\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 32 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "de218363cd14",
+   "version": 1
+  },
+  {
+   "id": "R033",
+   "name": "M033_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 33\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 33 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "fa0177fbced2",
+   "version": 1
+  },
+  {
+   "id": "R034",
+   "name": "M034_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 34\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 34 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "9c67010e55e5",
+   "version": 1
+  },
+  {
+   "id": "R035",
+   "name": "M035_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 35\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 35 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "d5cfb6d7bad4",
+   "version": 1
+  },
+  {
+   "id": "R036",
+   "name": "M036_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 36\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 36 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "aaec1d69a9fc",
+   "version": 1
+  },
+  {
+   "id": "R037",
+   "name": "M037_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 37\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 37 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "9177c6b1f0fc",
+   "version": 1
+  },
+  {
+   "id": "R038",
+   "name": "M038_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 38\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 38 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "8a4ea025ebf2",
+   "version": 1
+  },
+  {
+   "id": "R039",
+   "name": "M039_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 39\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 39 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "50a186f71db1",
+   "version": 1
+  },
+  {
+   "id": "R040",
+   "name": "M040_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 40\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 40 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "0e439ae3b346",
+   "version": 1
+  },
+  {
+   "id": "R041",
+   "name": "M041_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 41\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 41 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "2faf764ee0fe",
+   "version": 1
+  },
+  {
+   "id": "R042",
+   "name": "M042_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 42\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 42 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "86697b9b918a",
+   "version": 1
+  },
+  {
+   "id": "R043",
+   "name": "M043_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 43\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 43 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "c7f7c74494e4",
+   "version": 1
+  },
+  {
+   "id": "R044",
+   "name": "M044_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 44\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 44 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "7ad3bddd4262",
+   "version": 1
+  },
+  {
+   "id": "R045",
+   "name": "M045_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 45\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 45 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "7072c6b3b38a",
+   "version": 1
+  },
+  {
+   "id": "R046",
+   "name": "M046_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 46\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 46 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "d8da0d4bd29d",
+   "version": 1
+  },
+  {
+   "id": "R047",
+   "name": "M047_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 47\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 47 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "bd68fa655380",
+   "version": 1
+  },
+  {
+   "id": "R048",
+   "name": "M048_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 48\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 48 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "b152f8ef14ca",
+   "version": 1
+  },
+  {
+   "id": "R049",
+   "name": "M049_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 49\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 49 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "54b020ba3f2e",
+   "version": 1
+  },
+  {
+   "id": "R050",
+   "name": "M050_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 50\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 50 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "ddebdaaf3467",
+   "version": 1
+  },
+  {
+   "id": "R051",
+   "name": "M051_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 51\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 51 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "ac409cacdbc4",
+   "version": 1
+  },
+  {
+   "id": "R052",
+   "name": "M052_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 52\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 52 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "2c9d6bb2c0a7",
+   "version": 1
+  },
+  {
+   "id": "R053",
+   "name": "M053_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 53\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 53 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "7b5492d1428b",
+   "version": 1
+  },
+  {
+   "id": "R054",
+   "name": "M054_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 54\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 54 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "86c564c52745",
+   "version": 1
+  },
+  {
+   "id": "R055",
+   "name": "M055_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 55\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 55 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "c32a674bf6fe",
+   "version": 1
+  },
+  {
+   "id": "R056",
+   "name": "M056_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 56\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 56 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "221dbeafc6ea",
+   "version": 1
+  },
+  {
+   "id": "R057",
+   "name": "M057_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 57\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 57 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "6ab1d89db2bb",
+   "version": 1
+  },
+  {
+   "id": "R058",
+   "name": "M058_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 58\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 58 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "2ace704f3131",
+   "version": 1
+  },
+  {
+   "id": "R059",
+   "name": "M059_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 59\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 59 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "0f505c78b88f",
+   "version": 1
+  },
+  {
+   "id": "R060",
+   "name": "M060_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 60\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 60 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "67129ac5f0ce",
+   "version": 1
+  },
+  {
+   "id": "R061",
+   "name": "M061_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 61\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 61 de la oficina de administración.",
+   "parents": [
+    "sub-certificados"
+   ],
+   "md5Checksum": "63bdfd81569a",
+   "version": 1
+  },
+  {
+   "id": "R062",
+   "name": "M062_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 62\nDocumento ficticio para pruebas.\nPágina 1\nLa información de marketing describe campañas en redes sociales y promociones de temporada.\nRegistro interno número 62 de la oficina de administración.",
+   "parents": [
+    "sub-procedimientos"
+   ],
+   "md5Checksum": "e13cddc6a9b2",
+   "version": 1
+  },
+  {
+   "id": "R063",
+   "name": "M063_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 63\nDocumento ficticio para pruebas.\nPágina 1\nEste documento administrativo ficticio registra antecedentes generales sin relación con la pauta.\nRegistro interno número 63 de la oficina de administración.",
+   "parents": [
+    "sub-otros"
+   ],
+   "md5Checksum": "935f9e246155",
+   "version": 1
+  },
+  {
+   "id": "R064",
+   "name": "M064_Documento_administrativo.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DOCUMENTO ADMINISTRATIVO 64\nDocumento ficticio para pruebas.\nPágina 1\nSe adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.\nRegistro interno número 64 de la oficina de administración.",
+   "parents": [
+    "carpeta-seremi"
+   ],
+   "md5Checksum": "8e01773e4299",
+   "version": 1
+  }
+ ],
+ "norma_id": "SREQ",
+ "resultado_correcto": [
+  {
+   "id": "18",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "A_NOMINA"
+   ]
+  },
+  {
+   "id": "19",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "A_LAVADO"
+   ]
+  },
+  {
+   "id": "20",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "A_NOMINA",
+    "Z_RCP"
+   ]
+  },
+  {
+   "id": "21",
+   "estado": "parcial",
+   "presentacion": "modificar",
+   "archivos": [
+    "A_MANTLASER"
+   ]
+  },
+  {
+   "id": "22",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "A_RESIDUOS"
+   ]
+  },
+  {
+   "id": "23",
+   "estado": "sin_evidencia",
+   "presentacion": "no_encontrado",
+   "archivos": []
+  },
+  {
+   "id": "24",
+   "estado": "no_aplica_justificado",
+   "presentacion": "no_aplica",
+   "archivos": [
+    "A_GASES"
+   ]
+  },
+  {
+   "id": "25",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "A_LIMPIEZA"
+   ]
+  },
+  {
+   "id": "26",
+   "estado": "cumple",
+   "presentacion": "revisar",
+   "archivos": [
+    "A_EMERG"
+   ]
+  },
+  {
+   "id": "27",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "A_RECLAMOS"
+   ]
+  },
+  {
+   "id": "28",
+   "estado": "parcial",
+   "presentacion": "modificar",
+   "archivos": [
+    "A_REACC"
+   ]
+  },
+  {
+   "id": "29",
+   "estado": "no_aplica_justificado",
+   "presentacion": "no_aplica",
+   "archivos": [
+    "A_AUTOCLAVE"
+   ]
+  },
+  {
+   "id": "30",
+   "estado": "contradictorio",
+   "presentacion": "revisar",
+   "archivos": [
+    "A_CONTRATO",
+    "Z_ACTA"
+   ]
+  },
+  {
+   "id": "31",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "P_MANUAL_V2"
+   ]
+  },
+  {
+   "id": "32",
+   "estado": "sin_evidencia",
+   "presentacion": "no_encontrado",
+   "archivos": []
+  },
+  {
+   "id": "33",
+   "estado": "sin_evidencia",
+   "presentacion": "no_encontrado",
+   "archivos": []
+  },
+  {
+   "id": "34",
+   "estado": "sin_evidencia",
+   "presentacion": "no_encontrado",
+   "archivos": []
+  },
+  {
+   "id": "35",
+   "estado": "sin_evidencia",
+   "presentacion": "revisar",
+   "archivos": []
+  },
+  {
+   "id": "36",
+   "estado": "sin_evidencia",
+   "presentacion": "no_encontrado",
+   "archivos": []
+  },
+  {
+   "id": "37",
+   "estado": "sin_evidencia",
+   "presentacion": "revisar",
+   "archivos": []
+  },
+  {
+   "id": "38",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "P_INFECCIONES"
+   ]
+  },
+  {
+   "id": "39",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "P_ESTADISTICA"
+   ]
+  },
+  {
+   "id": "40",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "P_QUEJAS"
+   ]
+  },
+  {
+   "id": "41",
+   "estado": "no_cumple",
+   "presentacion": "modificar",
+   "archivos": [
+    "P_BOTIQUIN"
+   ]
+  },
+  {
+   "id": "42",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "C_ESTETICA"
+   ]
+  },
+  {
+   "id": "43",
+   "estado": "sin_evidencia",
+   "presentacion": "no_encontrado",
+   "archivos": []
+  },
+  {
+   "id": "44",
+   "estado": "sin_evidencia",
+   "presentacion": "no_encontrado",
+   "archivos": []
+  },
+  {
+   "id": "45",
+   "estado": "parcial",
+   "presentacion": "modificar",
+   "archivos": [
+    "C_EXTINTOR"
+   ]
+  },
+  {
+   "id": "46",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "P_EPP"
+   ]
+  },
+  {
+   "id": "47",
+   "estado": "cumple",
+   "presentacion": "listo",
+   "archivos": [
+    "P_BIOSEG"
+   ]
+  }
+ ],
+ "simulado": {
+  "requisitos": [
+   {
+    "referencia": "1",
+    "texto": "Requisito ficticio 1 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 1 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "2",
+    "texto": "Requisito ficticio 2 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 2 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "3",
+    "texto": "Requisito ficticio 3 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 3 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "4",
+    "texto": "Requisito ficticio 4 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 4 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "5",
+    "texto": "Requisito ficticio 5 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 5 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "6",
+    "texto": "Requisito ficticio 6 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 6 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "7",
+    "texto": "Requisito ficticio 7 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 7 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "8",
+    "texto": "Requisito ficticio 8 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 8 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "9",
+    "texto": "Requisito ficticio 9 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 9 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "10",
+    "texto": "Requisito ficticio 10 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 10 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "11",
+    "texto": "Requisito ficticio 11 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 11 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "12",
+    "texto": "Requisito ficticio 12 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 12 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "13",
+    "texto": "Requisito ficticio 13 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 13 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "14",
+    "texto": "Requisito ficticio 14 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 14 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "15",
+    "texto": "Requisito ficticio 15 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 15 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "16",
+    "texto": "Requisito ficticio 16 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 16 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "17",
+    "texto": "Requisito ficticio 17 de la pauta (no se revisa en esta prueba).",
+    "cita": "Requisito ficticio 17 de la pauta (no se revisa en esta prueba)."
+   },
+   {
+    "referencia": "18",
+    "texto": "Contar con una nómina del personal clínico con su cargo y jornada.",
+    "cita": "Contar con una nómina del personal clínico con su cargo y jornada."
+   },
+   {
+    "referencia": "19",
+    "texto": "Contar con un procedimiento escrito de lavado de manos clínico.",
+    "cita": "Contar con un procedimiento escrito de lavado de manos clínico."
+   },
+   {
+    "referencia": "20",
+    "texto": "Todo el personal clínico debe acreditar capacitación vigente en reanimación cardiopulmonar (RCP).",
+    "cita": "Todo el personal clínico debe acreditar capacitación vigente en reanimación cardiopulmonar (RCP)."
+   },
+   {
+    "referencia": "21",
+    "texto": "Contar con un programa de mantención preventiva de los equipos láser.",
+    "cita": "Contar con un programa de mantención preventiva de los equipos láser."
+   },
+   {
+    "referencia": "22",
+    "texto": "Contar con un protocolo de manejo de residuos especiales.",
+    "cita": "Contar con un protocolo de manejo de residuos especiales."
+   },
+   {
+    "referencia": "23",
+    "texto": "Contar con un registro de esterilización de instrumental.",
+    "cita": "Contar con un registro de esterilización de instrumental."
+   },
+   {
+    "referencia": "24",
+    "texto": "Si se usan gases medicinales, contar con certificado de instalación de la red.",
+    "cita": "Si se usan gases medicinales, contar con certificado de instalación de la red."
+   },
+   {
+    "referencia": "25",
+    "texto": "Contar con un procedimiento de limpieza y desinfección de superficies.",
+    "cita": "Contar con un procedimiento de limpieza y desinfección de superficies."
+   },
+   {
+    "referencia": "26",
+    "texto": "Contar con un plan de emergencia y evacuación firmado por el director técnico.",
+    "cita": "Contar con un plan de emergencia y evacuación firmado por el director técnico."
+   },
+   {
+    "referencia": "27",
+    "texto": "Contar con un libro de reclamos y sugerencias foliado.",
+    "cita": "Contar con un libro de reclamos y sugerencias foliado."
+   },
+   {
+    "referencia": "28",
+    "texto": "Contar con un protocolo de atención de reacciones adversas.",
+    "cita": "Contar con un protocolo de atención de reacciones adversas."
+   },
+   {
+    "referencia": "29",
+    "texto": "Si existe autoclave, contar con registro de operación del autoclave.",
+    "cita": "Si existe autoclave, contar con registro de operación del autoclave."
+   },
+   {
+    "referencia": "30",
+    "texto": "Contar con un contrato vigente de retiro de residuos especiales con empresa autorizada.",
+    "cita": "Contar con un contrato vigente de retiro de residuos especiales con empresa autorizada."
+   },
+   {
+    "referencia": "31",
+    "texto": "Contar con un manual de normas y procedimientos actualizado.",
+    "cita": "Contar con un manual de normas y procedimientos actualizado."
+   },
+   {
+    "referencia": "32",
+    "texto": "Contar con un consentimiento informado tipo para cada procedimiento.",
+    "cita": "Contar con un consentimiento informado tipo para cada procedimiento."
+   },
+   {
+    "referencia": "33",
+    "texto": "Contar con un registro de notificación de enfermedades de declaración obligatoria (ENO).",
+    "cita": "Contar con un registro de notificación de enfermedades de declaración obligatoria (ENO)."
+   },
+   {
+    "referencia": "34",
+    "texto": "Contar con la carta de aceptación del director técnico firmada.",
+    "cita": "Contar con la carta de aceptación del director técnico firmada."
+   },
+   {
+    "referencia": "35",
+    "texto": "Contar con un plano de evacuación visible en cada piso.",
+    "cita": "Contar con un plano de evacuación visible en cada piso."
+   },
+   {
+    "referencia": "36",
+    "texto": "Si existen instalaciones radiactivas, contar con su autorización sanitaria.",
+    "cita": "Si existen instalaciones radiactivas, contar con su autorización sanitaria."
+   },
+   {
+    "referencia": "37",
+    "texto": "Contar con un certificado de dotación de agua potable y alcantarillado.",
+    "cita": "Contar con un certificado de dotación de agua potable y alcantarillado."
+   },
+   {
+    "referencia": "38",
+    "texto": "Contar con un protocolo de control de infecciones asociadas a la atención.",
+    "cita": "Contar con un protocolo de control de infecciones asociadas a la atención."
+   },
+   {
+    "referencia": "39",
+    "texto": "Contar con un sistema de registros estadísticos mensuales.",
+    "cita": "Contar con un sistema de registros estadísticos mensuales."
+   },
+   {
+    "referencia": "40",
+    "texto": "Contar con un procedimiento de manejo de quejas de pacientes.",
+    "cita": "Contar con un procedimiento de manejo de quejas de pacientes."
+   },
+   {
+    "referencia": "41",
+    "texto": "Contar con un botiquín de primeros auxilios con al menos 10 unidades de gasa estéril.",
+    "cita": "Contar con un botiquín de primeros auxilios con al menos 10 unidades de gasa estéril."
+   },
+   {
+    "referencia": "42",
+    "texto": "Contar con certificaciones del personal para los procedimientos estéticos que realiza.",
+    "cita": "Contar con certificaciones del personal para los procedimientos estéticos que realiza."
+   },
+   {
+    "referencia": "43",
+    "texto": "Contar con el certificado de inscripción en la Superintendencia de Salud del personal.",
+    "cita": "Contar con el certificado de inscripción en la Superintendencia de Salud del personal."
+   },
+   {
+    "referencia": "44",
+    "texto": "Contar con un procedimiento de calibración del equipo de depilación láser.",
+    "cita": "Contar con un procedimiento de calibración del equipo de depilación láser."
+   },
+   {
+    "referencia": "45",
+    "texto": "Contar con un extintor de polvo químico seco vigente en cada piso.",
+    "cita": "Contar con un extintor de polvo químico seco vigente en cada piso."
+   },
+   {
+    "referencia": "46",
+    "texto": "Contar con un protocolo de uso de elementos de protección personal.",
+    "cita": "Contar con un protocolo de uso de elementos de protección personal."
+   },
+   {
+    "referencia": "47",
+    "texto": "Contar con un manual de bioseguridad del establecimiento.",
+    "cita": "Contar con un manual de bioseguridad del establecimiento."
+   }
+  ],
+  "evaluaciones": {
+   "18": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "La nómina del personal clínico indica nombre, cargo y jornada de cada integrante",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 18.",
+    "accion": "Subir la nómina tal como está."
+   },
+   "19": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento escrito de lavado de manos clínico",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 19.",
+    "accion": "Subir el procedimiento tal como está."
+   },
+   "20": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Certificados de RCP presentados: Ana Rojas vigente hasta 2027; Luis Pérez vigente hasta 2027",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "Certificado de capacitación en reanimación cardiopulmonar (RCP) de Carla Soto, vigente hasta 2027",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 20.",
+    "accion": "Subir la nómina junto con el certificado de RCP de Carla Soto."
+   },
+   "21": {
+    "estado": "parcial",
+    "presentacion": "modificar",
+    "evidencias": [
+     {
+      "cita": "el programa no indica la frecuencia ni el responsable",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 21.",
+    "accion": "Agregar al programa la frecuencia de mantención y el responsable, y volver a firmarlo."
+   },
+   "22": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Protocolo de manejo de residuos especiales",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 22.",
+    "accion": "Subir el protocolo tal como está."
+   },
+   "24": {
+    "estado": "no_aplica_justificado",
+    "presentacion": "no_aplica",
+    "evidencias": [
+     {
+      "cita": "El establecimiento no utiliza gases medicinales",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 24.",
+    "accion": "Subir la declaración de no aplica firmada."
+   },
+   "25": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de limpieza y desinfección de superficies",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 25.",
+    "accion": "Subir el procedimiento tal como está."
+   },
+   "26": {
+    "estado": "cumple",
+    "presentacion": "revisar",
+    "evidencias": [
+     {
+      "cita": "Plan de emergencia y evacuación del establecimiento",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 26.",
+    "accion": "Verificar visualmente que el plan tenga la firma del director técnico antes de subirlo."
+   },
+   "27": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Libro de reclamos y sugerencias foliado",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 27.",
+    "accion": "Subir el libro tal como está."
+   },
+   "28": {
+    "estado": "parcial",
+    "presentacion": "modificar",
+    "evidencias": [
+     {
+      "cita": "el documento es un borrador sin fecha y le falta el flujo de derivación a urgencia",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 28.",
+    "accion": "Completar el flujo de derivación a urgencia, fechar el protocolo y aprobarlo."
+   },
+   "29": {
+    "estado": "no_aplica_justificado",
+    "presentacion": "no_aplica",
+    "evidencias": [
+     {
+      "cita": "En el establecimiento no existe autoclave",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 29.",
+    "accion": "Subir la declaración de no aplica firmada."
+   },
+   "30": {
+    "estado": "contradictorio",
+    "presentacion": "revisar",
+    "evidencias": [
+     {
+      "cita": "Contrato de retiro de residuos especiales con empresa autorizada, vigente hasta diciembre de 2027",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "El contrato de retiro de residuos especiales se encuentra vencido desde 2025",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 30.",
+    "accion": "Confirmar con la empresa la vigencia del contrato y subir la versión vigente."
+   },
+   "31": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Manual de normas y procedimientos actualizado a septiembre de 2026",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 31.",
+    "accion": "Subir la versión 2 del manual y no la versión 1."
+   },
+   "38": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Protocolo de control de infecciones asociadas a la atención",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 38.",
+    "accion": "Subir el protocolo tal como está."
+   },
+   "39": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Sistema de registros estadísticos mensuales de atenciones",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 39.",
+    "accion": "Subir el documento tal como está."
+   },
+   "40": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de manejo de quejas de pacientes",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 40.",
+    "accion": "Subir el procedimiento tal como está."
+   },
+   "41": {
+    "estado": "no_cumple",
+    "presentacion": "modificar",
+    "evidencias": [
+     {
+      "cita": "Botiquín de primeros auxilios con 4 unidades de gasa estéril",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 41.",
+    "accion": "Reponer el botiquín hasta tener al menos 10 unidades de gasa estéril y actualizar el inventario."
+   },
+   "42": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Certificaciones del personal para los procedimientos estéticos",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 42.",
+    "accion": "Subir las certificaciones tal como están."
+   },
+   "45": {
+    "estado": "parcial",
+    "presentacion": "modificar",
+    "evidencias": [
+     {
+      "cita": "extintor de polvo químico seco vigente en el primer piso",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "El segundo piso no tiene extintor",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 45.",
+    "accion": "Instalar un extintor vigente en el segundo piso y actualizar el certificado."
+   },
+   "46": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Protocolo de uso de elementos de protección personal",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 46.",
+    "accion": "Subir el protocolo tal como está."
+   },
+   "47": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Manual de bioseguridad del establecimiento, aprobado y vigente",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 47.",
+    "accion": "Subir el manual tal como está."
+   }
+  }
+ }
+}
