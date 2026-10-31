@@ -37,8 +37,19 @@ REQ.update({
  46: "Contar con un protocolo de uso de elementos de protección personal.",
  47: "Contar con un manual de bioseguridad del establecimiento.",
 })
+# Subapartados (como en la guía real): quedan dentro de su número, no como requisitos aparte.
+SUBS = {
+ 24: ["Si se usan gases medicinales, contar con certificado de instalación de la red.", "Si se usan gases medicinales, contar con un programa de mantención de la red."],
+ 34: ["Contar con la carta de aceptación del director técnico firmada.", "Contar con el certificado de título del director técnico."],
+ 35: ["Contar con un plano de evacuación visible en cada piso.", "Contar con señalética de vías de evacuación."],
+ 38: ["Contar con un protocolo de control de infecciones asociadas a la atención.", "Definir indicadores de vigilancia de infecciones.", "Designar un responsable del programa de infecciones.", "Registrar las capacitaciones del personal en prevención de infecciones."],
+}
+ENCAB = {24: "Gases medicinales:", 34: "Director técnico:", 35: "Evacuación:", 38: "Infecciones asociadas a la atención:"}
+def linea(n):
+    if n in SUBS: return f"{n}. {ENCAB[n]}\n" + "\n".join(f"{chr(97 + i)}) {t}" for i, t in enumerate(SUBS[n]))
+    return f"{n}. {REQ[n]}"
 requisitos_doc = "REQUISITOS SEREMI — PAUTA FICTICIA PARA PRUEBAS\nDocumento ficticio. No corresponde a ninguna norma real.\nPágina 1\n" + "\n".join(
-    (f"Página {2 if n == 18 else 3}\n" if n in (18, 33) else "") + f"{n}. {REQ[n]}" for n in range(1, 48)) + "\nNota final: la autoridad podrá solicitar antecedentes adicionales."
+    (f"Página {2 if n == 18 else 3}\n" if n in (18, 33) else "") + linea(n) for n in range(1, 48)) + "\nNota final: la autoridad podrá solicitar antecedentes adicionales."
 
 RELLENO = ["Este documento administrativo ficticio registra antecedentes generales sin relación con la pauta.",
            "Se adjuntan cotizaciones de mobiliario, facturas de compra y detalles de despacho del proveedor.",
@@ -126,6 +137,12 @@ agregar("Z_RCP", "Z_Certificado_RCP_Carla_Soto.pdf", doc("Certificado RCP", [[
     "Certificado de capacitación en reanimación cardiopulmonar (RCP) de Carla Soto, vigente hasta 2027."]]), carpeta="sub-otros")
 agregar("Z_ACTA", "Z_Acta_fiscalizacion.pdf", doc("Acta", [[
     "El contrato de retiro de residuos especiales se encuentra vencido desde 2025, según la fiscalización."]]), carpeta="sub-otros")
+# Nombre con "pacientes" que NO es dato personal (procedimiento): debe auditarse, no excluirse.
+agregar("A_TRASLADO", "A12_Traslado_de_pacientes.pdf", doc("Traslado de pacientes", [["Procedimiento de traslado de pacientes a un centro de mayor complejidad en caso de urgencia."]]))
+# Archivos sensibles nombrados con el número de un requisito: excluidos, pero el requisito no puede quedar NO ENCONTRADO
+# (33) ni HAY QUE MODIFICAR (41) sin revisarlos.
+agregar("S_ENO", "33_Registro_pacientes_ENO.pdf", doc("Registro ENO", [["Registro de notificación ENO con nombres y RUT de pacientes."]]), carpeta="sub-otros")
+agregar("S_BOT", "41_Listado_pacientes_curaciones.pdf", doc("Curaciones", [["Listado de pacientes atendidos en curaciones, con insumos utilizados."]]), carpeta="sub-otros")
 # ---- Relleno hasta 98 archivos ----
 i = 0
 while len(archivos) < 98:
@@ -155,7 +172,7 @@ E = {  # resultado correcto (estado técnico, clasificación SEREMI) y respuesta
  "35": None,  # solo hay un plano en imagen → REQUIERE REVISIÓN (código)
  "36": None,
  "37": None,  # solo un escaneo sin texto → REQUIERE REVISIÓN (código)
- "38": ("cumple", "listo", [("P_INFECCIONES", "Protocolo de control de infecciones asociadas a la atención", "a_favor")], "Subir el protocolo tal como está."),
+ "38": ("parcial", "modificar", [("P_INFECCIONES", "Protocolo de control de infecciones asociadas a la atención", "a_favor")], "Completar los subapartados b, c y d: indicadores de vigilancia, responsable del programa y registro de capacitaciones."),
  "39": ("cumple", "listo", [("P_ESTADISTICA", "Sistema de registros estadísticos mensuales de atenciones", "a_favor")], "Subir el documento tal como está."),
  "40": ("cumple", "listo", [("P_QUEJAS", "Procedimiento de manejo de quejas de pacientes", "a_favor")], "Subir el procedimiento tal como está."),
  "41": ("no_cumple", "modificar", [("P_BOTIQUIN", "Botiquín de primeros auxilios con 4 unidades de gasa estéril", "en_contra")], "Reponer el botiquín hasta tener al menos 10 unidades de gasa estéril y actualizar el inventario."),
@@ -166,14 +183,14 @@ E = {  # resultado correcto (estado técnico, clasificación SEREMI) y respuesta
  "46": ("cumple", "listo", [("P_EPP", "Protocolo de uso de elementos de protección personal", "a_favor")], "Subir el protocolo tal como está.", "que el protocolo esté completo: el texto parece terminar a mitad de la lista"),
  "47": ("cumple", "listo", [("P_BIOSEG", "Manual de bioseguridad del establecimiento, aprobado y vigente", "a_favor")], "Subir el manual tal como está."),
 }
-CODIGO = {"23": "no_encontrado", "32": "revisar", "33": "no_encontrado", "34": "revisar", "35": "revisar", "36": "no_encontrado", "37": "revisar", "43": "no_encontrado", "44": "no_encontrado"}
+CODIGO = {"23": "no_encontrado", "32": "revisar", "33": "revisar", "34": "revisar", "35": "revisar", "36": "no_encontrado", "37": "revisar", "43": "no_encontrado", "44": "no_encontrado"}
 for rid, v in E.items():
     if v:
         for (aid, cita, _) in v[2]: assert cita in txt[aid], (rid, aid, cita)
-for n in range(18, 48): assert REQ[n] in requisitos_doc
+for n in range(18, 48): assert (all(t in requisitos_doc for t in SUBS[n]) if n in SUBS else REQ[n] in requisitos_doc)
 correcto = []
 # El código corrige "listo" cuando falta comprobar algo: 31 (hay dos versiones del manual) y 46 (la IA dejó algo por verificar).
-FINAL = {"31": "revisar", "46": "revisar"}
+FINAL = {"31": "revisar", "46": "revisar", "41": "revisar"}  # 41: la IA diría "modificar", pero hay un archivo omitido con su número
 for rid, v in E.items():
     if v: correcto.append({"id": rid, "estado": v[0], "presentacion": FINAL.get(rid, v[1]), "archivos": sorted(set(e[0] for e in v[2]))})
     else: correcto.append({"id": rid, "estado": "sin_evidencia", "presentacion": CODIGO[rid], "archivos": []})
@@ -183,7 +200,9 @@ salida = {
  "resultado_correcto": correcto,  # con «Certificados_SIS_personal.pdf» incluido por decisión expresa
  "resultado_sin_sensibles": {"43": "revisar"},  # si no se incluye ningún archivo sensible, solo cambia el 43
  "simulado": {
-   "requisitos": [{"referencia": str(n), "texto": REQ[n], "cita": REQ[n]} for n in range(1, 48)],
+   # Lo que devuelve la extracción simulada: subapartados como ítems "24 a)", "24 b)"… (como pasó con la guía real).
+   # Con FAKE_H_EXTRACCION_OMITIR=32,47 la IA simulada además se salta esos números (se recuperan del texto).
+   "requisitos": [x for n in range(1, 48) for x in ([{"referencia": f"{n} {chr(97 + i)})", "texto": t, "cita": t} for i, t in enumerate(SUBS[n])] if n in SUBS else [{"referencia": str(n), "texto": REQ[n], "cita": REQ[n]}])],
    "evaluaciones": {rid: {"estado": v[0], "presentacion": v[1], "evidencias": [{"cita": c, "aporta": a} for (_, c, a) in v[2]], "justificacion": f"Evaluación simulada del requisito {rid}.", "accion": v[3], **({"pendiente_verificar": v[4]} if len(v) > 4 else {})} for rid, v in E.items() if v},
  },
 }

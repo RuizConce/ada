@@ -26,7 +26,11 @@ const sql = (q) => execSync(`mysql -uada -pada ada -N -B -e ${JSON.stringify(q)}
   await p.waitForTimeout(1200);
   await p.$eval('#abrir-ajustes', (e) => e.click()); await p.waitForTimeout(800);
   await p.$eval('#cierre-3b', (e) => { e.open = true; e.scrollIntoView(); });
-  for (const id of ['BORRABLE1', 'QUEDA1']) { await p.fill('#cierre-archivo', id); await p.click('#cierre-leer'); await p.waitForFunction(() => /guardada cifrada/.test(document.querySelector('#cierre-lectura').textContent), null, { timeout: 8000 }); }
+  for (const id of ['BORRABLE1', 'QUEDA1']) {
+    await p.$eval('#cierre-lectura', (e) => { e.textContent = ''; }); // que no cuente el mensaje de la lectura anterior
+    await p.fill('#cierre-archivo', id); await p.click('#cierre-leer');
+    await p.waitForFunction(() => /guardada cifrada/.test(document.querySelector('#cierre-lectura').textContent), null, { timeout: 8000 });
+  }
   ok(sql("SELECT COUNT(*) FROM extracciones WHERE estado='valida'") === '2', 'dos extracciones guardadas');
   await p.fill('#cierre-archivo', 'BORRABLE1');
   await p.click('#cierre-borrar');

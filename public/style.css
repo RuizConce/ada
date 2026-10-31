@@ -596,3 +596,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-resumen-seremi { margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); }
 .aud-resumen-seremi .aud-res { margin: 3px 0; font-size: 14px; overflow-wrap: anywhere; }
 .aud-res-listo { color: #4ade80; } .aud-res-modificar { color: #f59e0b; } .aud-res-revisar { color: #93c5fd; }
+
+.aud-rango p { margin: 2px 0; overflow-wrap: anywhere; }
+.aud-aviso { color: #fbbf24; }
+.aud-corregir { margin: 6px 0; }
+.aud-corregir button { width: 100%; }

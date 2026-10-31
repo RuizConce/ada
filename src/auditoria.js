@@ -180,6 +180,7 @@ Perfil de esta auditoría: preparar la presentación ante la SEREMI de Salud. Ad
 - no_aplica: el requisito no aplica al establecimiento y la evidencia lo muestra (por ejemplo, un documento "NO APLICA" con su justificación).
 - revisar: con el texto no se puede concluir (documentos que se contradicen, o algo que solo se vería en imágenes: firmas, timbres, fotos, planos; vigencia sin fecha; documento incompleto o cortado; o texto ilegible).
 Si algo de lo exigido no se puede comprobar con el texto, descríbelo en "pendiente_verificar" y no uses "listo".
+Si el requisito tiene subapartados (a), b)…), la clasificación es del requisito completo: "listo" solo si todos los subapartados están acreditados; en "justificacion" indica qué pasa con cada subapartado.
 "justificacion" es la observación: qué está bien y qué falta. "accion" es una instrucción concreta para Cristian (qué corregir y en qué archivo, o qué documento conseguir), en 1 o 2 frases terminadas en punto.`;
 const HERRAMIENTA_SEREMI = { ...HERRAMIENTA, input_schema: { ...HERRAMIENTA.input_schema, properties: { ...HERRAMIENTA.input_schema.properties,
   presentacion: { type: 'string', enum: PRESENTACION }, accion: { type: 'string', description: 'acción concreta para presentar el requisito, 1 o 2 frases' },
@@ -359,7 +360,7 @@ function consolidarLotes(entrada, previos) {
 //    requisito impide decir "no encontrado": queda REQUIERE REVISIÓN nombrando ese archivo.
 // 2) "Listo" solo si el texto permite comprobarlo: firma/timbre, planos o imágenes, vigencia sin fecha citada,
 //    varias versiones del mismo documento o algo que la IA no pudo verificar → REQUIERE REVISIÓN con qué comprobar.
-const GENERICAS = new Set(['certif', 'regist', 'docume', 'proced', 'protoc', 'person', 'establ', 'progra', 'manual', 'sistem', 'instal', 'vigent', 'copia', 'final', 'versio', 'escane', 'imagen', 'fotogr', 'fotos', 'archiv', 'servic', 'salud', 'centro', 'clinic', 'general', 'gener', 'inform', 'pdf', 'docx']);
+const GENERICAS = new Set(['piso', 'pisos', 'certif', 'regist', 'docume', 'proced', 'protoc', 'person', 'establ', 'progra', 'manual', 'sistem', 'instal', 'vigent', 'copia', 'final', 'versio', 'escane', 'imagen', 'fotogr', 'fotos', 'archiv', 'servic', 'salud', 'centro', 'clinic', 'general', 'gener', 'inform', 'pdf', 'docx']);
 const SIGLAS_SALUD = { sis: 'superintendencia salud', ci: 'consentimiento informado cedula identidad', dt: 'director tecnico', eno: 'enfermedades notificacion obligatoria', rcp: 'reanimacion cardiopulmonar', epp: 'elementos proteccion personal', iaas: 'infecciones asociadas atencion', reas: 'residuos establecimientos atencion salud' };
 const raicesNombre = (nombre) => {
   const limpio = String(nombre || '').replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/[_.-]+/g, ' ');
@@ -367,11 +368,14 @@ const raicesNombre = (nombre) => {
   for (const sig of [...r]) if (SIGLAS_SALUD[sig]) for (const x of raices(SIGLAS_SALUD[sig])) r.add(x);
   return r;
 };
+// Un archivo se relaciona con un requisito si su nombre lleva el número del requisito (p. ej. «25_NO_APLICA_…»,
+// «Req 43 …») o comparte una palabra específica con su texto.
+const llevaNumero = (nombre, id) => { const n = String(id).match(/^\d{1,3}/); return !!n && new RegExp(`(^|[^0-9])0*${n[0]}([^0-9]|$)`).test(String(nombre || '').replace(/\.[A-Za-z0-9]{2,5}$/, '')); };
 const relacionados = (requisito, omitidos) => {
   const rq = [...raices(requisito.texto)].filter((x) => !GENERICAS.has(x) && x.length >= 4);
-  return omitidos.filter((a) => { const rn = raicesNombre(a.nombre); return rq.some((x) => rn.has(x)); });
+  return omitidos.filter((a) => { if (llevaNumero(a.nombre, requisito.id)) return true; const rn = raicesNombre(a.nombre); return rq.some((x) => rn.has(x)); });
 };
-const MOTIVO_OMITIDO = { no_legible: 'formato sin texto (imagen u otro)', sin_texto: 'sin texto, posiblemente escaneado', excluido_sensible: 'excluido por posibles datos personales', sin_acceso: 'sin acceso', bloqueado: 'fuera de la carpeta autorizada', error: 'no se pudo leer' };
+const MOTIVO_OMITIDO = { duplicado_no_auditado: 'copia de un archivo que tampoco se analizó', no_legible: 'formato sin texto (imagen u otro)', sin_texto: 'sin texto, posiblemente escaneado', excluido_sensible: 'excluido por posibles datos personales', sin_acceso: 'sin acceso', bloqueado: 'fuera de la carpeta autorizada', error: 'no se pudo leer' };
 function ajustarSeremi(r, requisito, sel) {
   let out = r;
   if (!out.presentacion) {
@@ -379,17 +383,19 @@ function ajustarSeremi(r, requisito, sel) {
     if (out.estado !== 'sin_evidencia') return out;
     out = { ...out, presentacion: 'no_encontrado', accion: `Conseguir o preparar el documento que acredite el requisito ${requisito.id} y agregarlo a la carpeta.` };
   }
-  if (out.presentacion === 'no_encontrado') {
-    const omitidos = (sel.sin_texto || []).filter((a) => a.estado !== 'poco_texto');
-    const parecidos = relacionados(requisito, omitidos);
-    if (parecidos.length) {
-      const nombres = parecidos.slice(0, 3).map((a) => `«${a.nombre}» (${MOTIVO_OMITIDO[a.estado] || a.estado})`).join(', ');
-      return { ...out, presentacion: 'revisar', revisar_archivos: parecidos.map((a) => a.archivo_id),
-        justificacion: `${out.justificacion} No se encontró en los documentos leídos, pero hay archivos no analizados cuyo nombre se relaciona: ${nombres}.`,
-        accion: `Abrir a mano ${nombres} y comprobar si acredita el requisito ${requisito.id}; si lo acredita, verificar que esté completo y vigente antes de subirlo.` };
-    }
-    return out;
+  // Archivos no analizados relacionados con este requisito: con "no encontrado" o "hay que modificar" la conclusión
+  // podría ser falsa (la evidencia o una declaración de no aplica podría estar ahí) → REQUIERE REVISIÓN.
+  const omitidos = (sel.sin_texto || []).filter((a) => a.estado !== 'poco_texto');
+  const parecidos = relacionados(requisito, omitidos);
+  const nombres = parecidos.slice(0, 3).map((a) => `«${a.nombre}» (${MOTIVO_OMITIDO[a.estado] || a.estado})`).join(', ');
+  if (parecidos.length && ['no_encontrado', 'modificar'].includes(out.presentacion)) {
+    const antes = out.presentacion === 'no_encontrado' ? 'No se encontró en los documentos leídos' : 'Lo leído indica que hay que modificarlo';
+    return { ...out, presentacion: 'revisar', revisar_archivos: parecidos.map((a) => a.archivo_id), clasificacion_sin_omitidos: out.presentacion,
+      justificacion: `${out.justificacion} ${antes}, pero hay archivos no analizados relacionados con este requisito: ${nombres}.`,
+      accion: `Abrir a mano ${nombres} y comprobar si acredita el requisito ${requisito.id} (o si declara que no aplica)${out.presentacion === 'modificar' && out.accion ? `; si no, ${out.accion.charAt(0).toLowerCase()}${out.accion.slice(1)}` : '; si lo acredita, verificar que esté completo y vigente antes de subirlo.'}` };
   }
+  if (parecidos.length) out = { ...out, revisar_archivos: parecidos.map((a) => a.archivo_id), justificacion: `${out.justificacion} También hay archivos no analizados relacionados: ${nombres}.` };
+  if (out.presentacion === 'no_encontrado') return out;
   if (out.presentacion !== 'listo') return out;
   const t = norm(requisito.texto);
   const archivos = [...new Set((out.evidencias || []).filter((x) => x.aporta !== 'en_contra').map((x) => x.nombre).filter(Boolean))];
@@ -939,8 +945,8 @@ function validarEntrada(d) {
   const archivo_ids = [...new Set((Array.isArray(d.archivo_ids) && d.archivo_ids.length ? d.archivo_ids : [d.archivo_id]).filter(Boolean).map(String))];
   if (!archivo_ids.length || archivo_ids.length > MAX_ARCHIVOS) throw err(`Indica entre 1 y ${MAX_ARCHIVOS} documentos (de la carpeta de prueba)`);
   for (const id of archivo_ids) if (!/^[\w-]{3,128}$/.test(id)) throw err(`Id de documento inválido: ${id}`);
-  const requisitos = (d.requisitos || []).map((r, i) => ({ id: String(r.id || `R${i + 1}`).trim().slice(0, 12), texto: String(r.texto || '').trim().slice(0, 600),
-    ...(r.fuente ? { fuente: String(r.fuente).trim().slice(0, 400) } : {}) })).filter((r) => r.texto);
+  const requisitos = (d.requisitos || []).map((r, i) => ({ id: String(r.id || `R${i + 1}`).trim().slice(0, 12), texto: String(r.texto || '').trim().slice(0, 1500),
+    ...(r.fuente ? { fuente: String(r.fuente).trim().slice(0, 1200) } : {}), ...(Array.isArray(r.subapartados) && r.subapartados.length ? { subapartados: r.subapartados.slice(0, 8).map((x) => ({ id: String(x.id).slice(0, 12), texto: String(x.texto || '').slice(0, 600) })) } : {}) })).filter((r) => r.texto);
   if (!requisitos.length || requisitos.length > MAX_REQUISITOS) throw err(`Entre 1 y ${MAX_REQUISITOS} requisitos`);
   if (new Set(requisitos.map((r) => r.id)).size !== requisitos.length) throw err('Hay ids de requisito repetidos');
   for (const r of requisitos) if (!/^[\w.-]{1,12}$/.test(r.id)) throw err(`Id de requisito inválido: ${r.id}`);
@@ -993,8 +999,10 @@ function pasosDe(e, config) {
     // Archivos del inventario que no se pudieron leer por formato: se pasan por nombre (nunca contenido) para que un
     // requisito sin evidencia que se parezca a uno de ellos quede como "requiere revisión" y no como "no encontrado".
     const auditados = new Set(e.archivo_ids);
-    const noLeidos = (e.inventario || []).filter((a) => !auditados.has(a.id) && (a.estado === 'no legible (formato)' || a.estado === 'excluido: posible dato sensible'))
-      .map((a) => ({ archivo_id: a.id, nombre: a.nombre, estado: a.estado === 'no legible (formato)' ? 'no_legible' : 'excluido_sensible' }));
+    const idPorNombre = new Map((e.inventario || []).map((a) => [a.nombre, a.id]));
+    const noLeidos = (e.inventario || []).filter((a) => !auditados.has(a.id) && (a.estado === 'no legible (formato)' || a.estado === 'excluido: posible dato sensible'
+        || (a.estado === 'duplicado exacto' && !auditados.has(idPorNombre.get(a.duplicado_de)))))
+      .map((a) => ({ archivo_id: a.id, nombre: a.nombre, estado: a.estado === 'no legible (formato)' ? 'no_legible' : a.estado === 'duplicado exacto' ? 'duplicado_no_auditado' : 'excluido_sensible' }));
     // Versiones del mismo documento (nombre parecido, contenido distinto): "listo" con una de ellas exige confirmar cuál vale.
     const grupos = new Map();
     for (const a of e.inventario || []) if (a.grupo_versiones && auditados.has(a.id)) { const g = a.grupo_versiones.split(':')[0]; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(a); }
@@ -1248,7 +1256,10 @@ async function archivosDeLaPropuesta(d) {
 // Solo metadatos (no descarga nada): cada archivo con id, nombre, subcarpeta, tipo, versión y estado. Detecta
 // duplicados exactos, posibles versiones del mismo documento y formatos sin texto. Nada se omite en silencio:
 // lo que no se audita queda en el inventario con su motivo.
-const SENSIBLE = /c[eé]dula|carnet|\bci\b|\bc\s?i\b|ficha|consentimiento|paciente|\brut\b|licencia\s+m[eé]dica|\bsis\b|isapre|fonasa|historia\s+cl[ií]nica/i;
+// "Pacientes" solo cuenta si el nombre sugiere datos de pacientes (registro, listado, nómina, datos…), no un procedimiento
+// como "Traslado de pacientes".
+const SENSIBLE = /c[eé]dula|carnet|\bci\b|\bc\s?i\b|ficha|consentimiento|\brut\b|licencia\s+m[eé]dica|\bsis\b|isapre|fonasa|historia\s+cl[ií]nica|(registro|listado|lista|n[oó]mina|base|datos|planilla)s?\s+(de\s+)?pacientes?/i;
+const esSensible = (nombre) => SENSIBLE.test(String(nombre || '').replace(/[_.-]+/g, ' '));
 const baseNombre = (n) => norm(String(n || '')).replace(/\.[a-z0-9]{2,5}$/, '').replace(/_+/g, ' ').replace(/^(copia de|copy of)\s+/, '').replace(/\(\d+\)/g, ' ')
   .replace(/\b(final|definitivo|corregido|nuevo|actualizado|version|v\d+)\b/g, ' ').replace(/\d{1,4}[-_./]\d{1,2}[-_./]\d{1,4}(?:[ _]\d{1,2}[_:]\d{2}(?:[_:]\d{2})?)?/g, ' ')
   .replace(/[^a-z0-9ñ]+/g, ' ').trim();
@@ -1281,7 +1292,7 @@ async function inventarioDe(carpetaId, { excluir = [] } = {}) {
     if (excluir.includes(a.id)) { a.estado = 'fuente de requisitos'; a.motivo = 'es la norma o lista de requisitos: no se audita'; }
     else if (!a.legible) { a.estado = 'no legible (formato)'; a.motivo = `${a.tipo}: ADA no extrae texto de este formato (por ejemplo, imágenes)`; }
     else if (a.duplicado_de) { a.estado = 'duplicado exacto'; a.motivo = `mismo contenido que «${a.duplicado_de}»: se audita una sola vez`; }
-    else if (SENSIBLE.test(a.nombre.replace(/[_.-]+/g, ' '))) { a.estado = 'excluido: posible dato sensible'; a.motivo = 'por su nombre podría tener cédula, ficha clínica, consentimiento u otros datos personales; se incluye solo si lo apruebas'; }
+    else if (esSensible(a.nombre)) { a.estado = 'excluido: posible dato sensible'; a.motivo = 'por su nombre podría tener cédula, ficha clínica, consentimiento u otros datos personales; se incluye solo si lo apruebas'; }
     else a.estado = 'incluido';
   }
   return { carpeta: inv.carpeta, subcarpetas: inv.carpetas.length, inventario: filas };
@@ -1336,6 +1347,75 @@ async function proponerExtraccion(d, ctx) {
 }
 
 // Al terminar la extracción: la lista queda como propuesta de auditoría PENDIENTE (paso 2), en la misma conversación.
+// ---- Lista por número (cuando se pide un rango, p. ej. 18 al 47) ----
+// Una fila por número del rango. Los subapartados (24 a), 24 b)…) quedan DENTRO de la fila de su número, no como
+// requisitos aparte. Si a la extracción con IA le faltó un número, se busca literalmente en el texto de la norma
+// (sin IA, sin costo); si tampoco está ahí, se informa como ausente en la fuente. Nada se inventa.
+const numeroRef = (ref) => { const m = String(ref || '').match(/(\d{1,3})/); return m ? Number(m[1]) : null; };
+const letraRef = (ref) => { const m = String(ref || '').match(/\d{1,3}\s*[.\-]?\s*\(?([a-z])\)?(?![a-z])/i); return m ? m[1].toLowerCase() : null; };
+const INICIO_ITEM = /^\s*(?:(?:n[°º.]?|requisito|item|ítem)\s*)?(\d{1,3})\s*(?:[.)\-–:°º]|\s{2,}|\t)\s*(\S.*)$/i;
+function itemsDeNorma(texto) {
+  const lineas = String(texto || '').split(/\r?\n/);
+  const items = []; let actual = null; let pagina = null;
+  for (const l of lineas) {
+    const pg = l.match(/^\s*p[áa]gina\s+(\d+)/i); if (pg) { pagina = pg[1]; continue; }
+    const m = l.match(INICIO_ITEM);
+    const n = m ? Number(m[1]) : null;
+    // Un número nuevo empieza un ítem solo si sigue el orden (n = anterior + 1, o el primero), para no confundir
+    // cantidades o fechas al inicio de una línea con un número de requisito.
+    if (m && (!actual || n === actual.numero + 1 || (n > actual.numero && n - actual.numero <= 3))) {
+      if (actual) items.push(actual);
+      actual = { numero: n, texto: m[2].trim(), pagina };
+    } else if (actual && l.trim()) {
+      if (/^\s*(nota|anexo|cap[ií]tulo|t[ií]tulo)\b/i.test(l) && actual.texto.length > 40) { items.push(actual); actual = null; continue; }
+      if (actual.texto.length < 1500) actual.texto += ` ${l.trim()}`;
+    }
+  }
+  if (actual) items.push(actual);
+  return items;
+}
+function listaRango(bloques, rango, textoNorma) {
+  const { desde, hasta } = rango;
+  const porNumero = new Map();
+  for (const b of bloques) for (const r of b.requisitos || []) {
+    const n = numeroRef(r.referencia);
+    if (n == null || n < desde || n > hasta) continue;
+    if (!porNumero.has(n)) porNumero.set(n, []);
+    const g = porNumero.get(n);
+    if (!g.some((x) => limpia(x.texto) === limpia(r.texto))) g.push(r); // duplicado solo si es el MISMO número y el mismo texto
+  }
+  const literales = textoNorma ? itemsDeNorma(textoNorma) : [];
+  const requisitos = []; const faltantes = []; const recuperados = [];
+  for (let n = desde; n <= hasta; n++) {
+    const g = porNumero.get(n) || [];
+    if (g.length) {
+      const letras = g.map((r, i) => letraRef(r.referencia) || String.fromCharCode(97 + i));
+      const subapartados = g.length > 1 ? g.map((r, i) => ({ id: `${n}${letras[i]}`, texto: r.texto, fuente: `${r.referencia}: «${r.cita}»` })) : [];
+      requisitos.push({ id: String(n), numero: n,
+        texto: g.length > 1 ? g.map((r, i) => `${letras[i]}) ${r.texto.replace(/[.\s]+$/, '')}`).join('; ') + '.' : g[0].texto,
+        fuente: g.map((r) => `${r.referencia}: «${r.cita}»`).join(' · '), referencia: g.map((r) => r.referencia).join(', '),
+        cita_norma: g[0].cita, ubicacion_norma: g[0].ubicacion, ...(subapartados.length ? { subapartados } : {}) });
+      continue;
+    }
+    const lit = literales.find((x) => x.numero === n);
+    if (lit && lit.texto.length >= 10) {
+      const texto = lit.texto.replace(/\s+/g, ' ').trim();
+      requisitos.push({ id: String(n), numero: n, texto, fuente: `${n}${lit.pagina ? ` (página ${lit.pagina})` : ''}: «${texto.slice(0, 160)}${texto.length > 160 ? '…' : ''}» — copiado literalmente de la norma`, referencia: String(n),
+        cita_norma: texto.slice(0, 300), ubicacion_norma: lit.pagina ? `página ${lit.pagina}` : null, recuperado: true });
+      recuperados.push(n);
+    } else faltantes.push(n);
+  }
+  return { requisitos, faltantes, recuperados, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
+}
+// Lee los resultados ya pagados de la extracción (pasos req_bloque) y el texto de la norma ya guardado.
+async function bloquesDe(trabajoId) {
+  const filas = await qPrincipal("SELECT clave, resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo = 'aud_req_bloque' AND estado = 'hecho'", [trabajoId]);
+  return filas.map((f) => Cifrado.descifrarJSON(f.resultado_cifrado)).filter(Boolean).sort((a, b) => a.bloque - b.bloque);
+}
+async function textoDeNorma(t, objetivo) {
+  try { return (await require('./drive').textoParaTrabajo(objetivo.norma.id, { trabajoId: t.id, pasoId: null })).texto; } catch (_) { return null; }
+}
+
 async function listaParaAprobar(t, objetivo, final) {
   try { await crearListaParaAprobar(t, objetivo, final); } catch (e) {
     // Que no quede en silencio: el avance lo muestra y se puede reintentar sin volver a pagar la extracción.
@@ -1346,14 +1426,15 @@ async function listaParaAprobar(t, objetivo, final) {
 async function crearListaParaAprobar(t, objetivo, final) {
   const lista = final && final.lista ? final.lista : null;
   if (!lista || !lista.requisitos.length) return;
-  const archivos = objetivo.archivos;
-  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0;
+  let archivos = objetivo.archivos;
+  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0; let recuperados = []; let subapartados = [];
   if (objetivo.rango) {
     const { desde, hasta } = objetivo.rango;
-    const dentro = reqs.filter((r) => r.numero != null && r.numero >= desde && r.numero <= hasta);
-    fueraDeRango = reqs.length - dentro.length;
-    for (let n = desde; n <= hasta; n++) if (!dentro.some((r) => r.numero === n)) faltantes.push(n);
-    reqs = dentro;
+    const r = listaRango(await bloquesDe(t.id), objetivo.rango, await textoDeNorma(t, objetivo));
+    fueraDeRango = lista.requisitos.filter((x) => x.numero == null || x.numero < desde || x.numero > hasta).length;
+    reqs = r.requisitos; faltantes = r.faltantes; recuperados = r.recuperados; subapartados = r.subapartados;
+    // Inventarios hechos con la regla anterior: un nombre que ya no sugiere datos personales vuelve a "incluido".
+    if (objetivo.inventario) for (const a of objetivo.inventario) if (a.estado === 'excluido: posible dato sensible' && !esSensible(a.nombre)) { a.estado = 'incluido'; a.motivo = ''; if (!archivos.some((x) => x.id === a.id)) archivos = archivos.concat([{ id: a.id, nombre: a.nombre }]); }
     if (!reqs.length) throw new Error(`La lista extraída no tiene requisitos numerados entre ${desde} y ${hasta}${lista.numeracion_de_la_norma ? '' : ' (la norma no parece numerar sus requisitos)'}`);
   }
   if (!objetivo.rango && reqs.length > MAX_REQUISITOS) reqs = reqs.slice(0, MAX_REQUISITOS);
@@ -1361,7 +1442,7 @@ async function crearListaParaAprobar(t, objetivo, final) {
   const est = estimacion({ archivo_ids: e.archivo_ids, requisitos: e.requisitos, perfil: objetivo.perfil });
   const id = crypto.randomUUID();
   const datos = { tipo: 'auditoria', archivos, requisitos: e.requisitos, config: objetivo.config || CONFIG_PROVISIONAL, motivo: `Requisitos ${objetivo.rango ? `${objetivo.rango.desde} al ${objetivo.rango.hasta} ` : ''}extraídos de «${objetivo.norma.nombre}»`,
-    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango,
+    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, subapartados,
     ...(objetivo.inventario ? { inventario: objetivo.inventario, carpeta: objetivo.carpeta, subcarpetas: objetivo.subcarpetas } : {}),
     origen: { extraccion_trabajo: t.id, extraccion_propuesta: objetivo.propuesta && objetivo.propuesta.id, norma: { id: objetivo.norma.id, nombre: objetivo.norma.nombre, version: objetivo.norma.version },
       duplicados: lista.duplicados.length, descartados: lista.descartados.length, exceso: lista.exceso } };
@@ -1396,7 +1477,8 @@ function tarjetaDe(id, datos, estado = 'pendiente') {
   return { tipo: 'auditoria', origen: datos.origen || null, id, estado, archivos: datos.archivos, requisitos: datos.requisitos, configuracion: datos.config, configuraciones: est.configuraciones,
     estimados: est.por_configuracion, estimado_usd: est.por_configuracion[datos.config],
     presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[datos.config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo,
-    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], lotes: Math.ceil(datos.archivos.length / LOTE), ...extrasInventario(datos) };
+    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [],
+    agrupada: !!datos.rango && Array.isArray(datos.recuperados), lotes: Math.ceil(datos.archivos.length / LOTE), ...extrasInventario(datos) };
 }
 
 async function proponer(d, ctx = {}) {
@@ -1427,6 +1509,34 @@ async function proponer(d, ctx = {}) {
   }
   return { ...base, ok: true, tarjeta: 'enviada',
     nota: 'Envié la tarjeta a la app. Aún no sé si se dibujó: dile que debería ver la tarjeta "Auditoría propuesta" con un botón Aprobar y que, si no la ve, cierre y vuelva a abrir ADA (o la busque en Ajustes → Auditoría → Propuestas pendientes). NO ha empezado ni se ha cobrado nada; empieza solo con el botón. Dilo en una o dos frases.' };
+}
+
+// Rehacer la lista de una propuesta pendiente desde la extracción YA pagada: relee los resultados guardados de los
+// bloques y el texto de la norma ya guardado, agrupa por número y vuelve a buscar los faltantes. Sin IA ni costo.
+// La propuesta anterior queda descartada (reemplazada) y aparece una nueva tarjeta con la lista corregida.
+async function rehacerLista(id) {
+  const p = await propuesta(id);
+  if (p.estado !== 'pendiente') throw err(`La propuesta ya está "${p.estado}"`, 409);
+  const extraccionId = p.datos.origen && p.datos.origen.extraccion_trabajo;
+  if (!extraccionId) throw err('Esta propuesta no viene de una extracción de requisitos', 409);
+  const [t] = await qPrincipal('SELECT * FROM trabajos WHERE id = ? AND usuario_id = ?', [extraccionId, usuario().id]);
+  if (!t || t.estado !== 'completado') throw err('La extracción de requisitos no está completa', 409);
+  const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  const [c] = await qPrincipal("SELECT resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo = 'aud_req_consolidar' AND estado = 'hecho'", [t.id]);
+  if (!c) throw err('No encuentro la lista consolidada de la extracción', 409);
+  const lista = Cifrado.descifrarJSON(c.resultado_cifrado);
+  const llamadasAntes = Number(((await qPrincipal('SELECT COUNT(*) AS n FROM llamadas_ia WHERE trabajo_id = ?', [t.id]))[0] || {}).n || 0);
+  const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [new Date(), id, usuario().id]);
+  if (!r.affectedRows) throw err('La propuesta cambió mientras la corregía', 409);
+  try { await crearListaParaAprobar(t, objetivo, { lista }); } catch (e) {
+    await qPrincipal("UPDATE auditoria_propuestas SET estado = 'pendiente', actualizado_en = ? WHERE id = ?", [new Date(), id]);
+    throw e;
+  }
+  const [nueva] = await qPrincipal("SELECT id FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente' ORDER BY creado_en DESC LIMIT 1", [usuario().id]);
+  await Trabajos.evento(t.id, 'lista_corregida', `propuesta ${id.slice(0, 8)} reemplazada por ${nueva.id.slice(0, 8)} sin nuevas llamadas a la IA`, 0, `u${usuario().id}`);
+  const llamadasDespues = Number(((await qPrincipal('SELECT COUNT(*) AS n FROM llamadas_ia WHERE trabajo_id = ?', [t.id]))[0] || {}).n || 0);
+  const n = await propuesta(nueva.id);
+  return { reemplazada: id, nueva: tarjetaDe(n.id, n.datos), llamadas_ia_nuevas: llamadasDespues - llamadasAntes, costo_usd: 0 };
 }
 
 async function propuesta(id) {
@@ -1735,4 +1845,4 @@ async function textosGuardados(trabajoId, objetivo) {
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

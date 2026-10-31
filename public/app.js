@@ -333,9 +333,33 @@
     if (p.origen) t.querySelector('strong').textContent = `Revisa los ${p.requisitos.length} requisitos y aprueba la auditoría`;
     t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${listaArchivos(p.archivos)}${p.motivo ? ` — ${p.motivo}` : ''}${p.perfil === 'seremi' ? ' · clasificación SEREMI' : ''}`;
     if (p.rango || (p.faltantes || []).length) {
-      const r = document.createElement('p'); r.className = 'meta aud-rango';
-      r.textContent = `${p.rango ? `Requisitos ${p.rango.desde} al ${p.rango.hasta}: ${p.requisitos.length} encontrados en la lista` : ''}${(p.faltantes || []).length ? ` · no encontré en la lista: ${p.faltantes.join(', ')}` : ' · ninguno falta'}`;
+      const r = document.createElement('div'); r.className = 'meta aud-rango';
+      const total = p.rango ? p.rango.hasta - p.rango.desde + 1 : p.requisitos.length;
+      const linea = (txt, clase) => { const x = document.createElement('p'); x.textContent = txt; if (clase) x.className = clase; r.appendChild(x); };
+      const numeros = new Set(p.requisitos.map((x) => (String(x.id).match(/^\d+/) || [x.id])[0])).size;
+      if (p.rango) linea(`Requisitos ${p.rango.desde} al ${p.rango.hasta}: ${numeros} de ${total} en la lista${numeros !== p.requisitos.length ? ` (en ${p.requisitos.length} filas: hay subapartados separados)` : ''}${(p.faltantes || []).length ? '' : ' · ninguno falta'}`);
+      if ((p.subapartados || []).length) linea(`Subapartados dentro de su requisito: ${p.subapartados.join(' · ')}`);
+      if ((p.recuperados || []).length) linea(`Tomados literalmente del texto de la norma (la extracción no los había separado): ${p.recuperados.join(', ')}. Revisa su texto abajo.`, 'aud-aviso');
+      if ((p.faltantes || []).length) linea(`No aparecen numerados en el texto de la norma: ${p.faltantes.join(', ')}. No los agregué; revisa el documento original.`, 'aud-aviso');
       t.querySelector('.aud-archivos').after(r);
+      // Listas hechas con la versión anterior (subapartados como requisitos aparte): se corrigen sin volver a pagar.
+      if (p.rango && p.origen && !p.agrupada) {
+        const c = document.createElement('div'); c.className = 'aud-corregir';
+        const nota = document.createElement('p'); nota.className = 'meta aud-aviso';
+        nota.textContent = 'Esta lista separa subapartados como requisitos aparte y puede omitir números. Corrígela antes de aprobar: usa la extracción ya pagada, sin llamadas nuevas a la IA.';
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'principal'; b.textContent = 'Corregir la lista (sin costo)';
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          try {
+            const r2 = await api(`/api/auditorias/propuestas/${p.id}/rehacer-lista`, { method: 'POST' });
+            propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id).concat([r2.nueva]);
+            pintarEntregas();
+            aviso(`Lista corregida: ${r2.nueva.requisitos.length} requisitos, sin costo.`);
+          } catch (e) { b.disabled = false; aviso(e.message, true); }
+        });
+        c.appendChild(nota); c.appendChild(b);
+        r.after(c);
+      }
     }
     const inv = bloqueInventario(p, { conCasillas: true });
     if (inv) t.querySelector('.aud-archivos').after(inv);

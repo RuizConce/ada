@@ -83,7 +83,8 @@ function extraerRequisitos(req) {
   const h = require(process.env.FAKE_H);
   const texto = String(req.messages[0].content);
   global.__h.extraccion += 1;
-  const lista = (process.env.FAKE_H_EXTRACCION === 'vacia' ? [] : h.simulado.requisitos).filter((r) => process.env.FAKE_H_EXTRACCION === 'todas' || texto.includes(r.cita.split(' ').slice(0, 3).join(' ')));
+  const omitir = String(process.env.FAKE_H_EXTRACCION_OMITIR || '').split(',').filter(Boolean);
+  const lista = (process.env.FAKE_H_EXTRACCION === 'vacia' ? [] : h.simulado.requisitos).filter((r) => !omitir.includes(String(r.referencia).match(/\d+/)[0])).filter((r) => process.env.FAKE_H_EXTRACCION === 'todas' || texto.includes(r.cita.split(' ').slice(0, 3).join(' ')));
   return { id: `msg_r${++n}`, stop_reason: 'tool_use', usage: usoDe(req, 80 * lista.length + 50), content: [{ type: 'tool_use', id: `r${n}`, name: 'registrar_requisitos', input: { requisitos: lista } }] };
 }
 function recomendaciones(req) {

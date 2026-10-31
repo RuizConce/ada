@@ -390,6 +390,7 @@ for (const accion of ['aprobar', 'pausar', 'reanudar', 'cancelar', 'reintentar']
   app.post(`/api/trabajos/:id/${accion}`, auth, soloAdmin, envolver((req) => Trabajos[accion](req.params.id)));
 }
 app.post('/api/trabajos/:id/aprobar-paso', auth, soloAdmin, envolver((req) => Trabajos.aprobarPaso(req.params.id, { lista: (req.body || {}).lista })));
+app.post('/api/auditorias/propuestas/:id/rehacer-lista', auth, soloAdmin, envolver((req) => Auditoria.rehacerLista(req.params.id)));
 app.post('/api/auditorias/:id/borrar-extracciones', auth, soloAdmin, envolver((req) => Auditoria.borrarExtracciones(req.params.id)));
 app.post('/api/trabajos/:id/ampliar', auth, soloAdmin, envolver((req) => Trabajos.ampliar(req.params.id, (req.body || {}).monto)));
 // Cifrado: estado (sin revelar la clave) y recifrado tras rotar la clave.

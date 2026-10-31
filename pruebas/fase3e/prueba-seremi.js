@@ -15,7 +15,7 @@ async function arrancar() {
   srv = spawn('node', ['-r', `${S}/../fase3b/fake-claude-3b.js`, 'src/server.js'], { cwd: `${S}/../..`, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '3200', DATABASE_URL: 'mysql://ada:ada@localhost:3306/ada', ANTHROPIC_API_KEY: 'fake', ADA_PASSWORD: 'p', ADA_AVISOS: 'no', TZ: 'America/Santiago', ADA_CLAVE_DATOS: CLAVE,
       ADA_DRIVE_URL: 'http://localhost:9933', ADA_EXTRACCIONES: 'prueba', ADA_DRIVE_CARPETA_PRUEBA: 'carpeta-prueba', ADA_DRIVE_CARPETAS_LECTURA: 'carpeta-seremi',
-      ADA_TRABAJO_LEASE_MS: '3000', ADA_TRABAJO_CICLO_MS: '150', ADA_TURNOS_2MIN: '100', ADA_TOPE_DIARIO: '1000', FAKE_H: require.resolve('../datos-ficticios/prueba-seremi.json') } });
+      ADA_TRABAJO_LEASE_MS: '3000', ADA_TRABAJO_CICLO_MS: '150', ADA_TURNOS_2MIN: '100', ADA_TOPE_DIARIO: '1000', FAKE_H: require.resolve('../datos-ficticios/prueba-seremi.json'), FAKE_H_EXTRACCION_OMITIR: '32,47' } });
   srv.log = ''; srv.stdout.on('data', (d) => { srv.log += d; }); srv.stderr.on('data', (d) => { srv.log += d; });
   for (let i = 0; i < 60; i++) { await dormir(200); try { await fetch('http://localhost:3200/api/ajustes'); break; } catch (_) {} }
   tk = (await (await fetch('http://localhost:3200/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: 'Cristian', password: 'p' }) })).json()).token;
@@ -55,9 +55,9 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     const inv = pA && pA.inventario;
     console.log('   inventario:', JSON.stringify(inv), '· subcarpetas', pA && pA.subcarpetas);
     ok(inv && inv.total === 98 && pA.subcarpetas === 3, 'inventario de los 98 archivos, incluidas 3 subcarpetas');
-    ok(inv.por_estado['fuente de requisitos'] === 1 && inv.por_estado['duplicado exacto'] === 2 && inv.por_estado['no legible (formato)'] === 3 && inv.por_estado['excluido: posible dato sensible'] === 4 && inv.por_estado.incluido === 88,
-      'estados: 1 fuente, 2 duplicados exactos, 3 no legibles, 4 con posible dato sensible, 88 a auditar');
-    ok(pA.sensibles.map((a) => a.nombre).sort().join(' | ') === 'CI_consentimiento_botox.pdf | Cedula_identidad_director_tecnico.pdf | Certificados_SIS_personal.pdf | Ficha_clinica_paciente_ejemplo.pdf', `sensibles listados: ${pA.sensibles.map((a) => a.nombre).join(', ')}`);
+    ok(inv.por_estado['fuente de requisitos'] === 1 && inv.por_estado['duplicado exacto'] === 2 && inv.por_estado['no legible (formato)'] === 3 && inv.por_estado['excluido: posible dato sensible'] === 6 && inv.por_estado.incluido === 86,
+      'estados: 1 fuente, 2 duplicados exactos, 3 no legibles, 6 con posible dato sensible, 86 a auditar (Traslado de pacientes incluido)');
+    ok(pA.sensibles.map((a) => a.nombre).sort().join(' | ') === '33_Registro_pacientes_ENO.pdf | 41_Listado_pacientes_curaciones.pdf | CI_consentimiento_botox.pdf | Cedula_identidad_director_tecnico.pdf | Certificados_SIS_personal.pdf | Ficha_clinica_paciente_ejemplo.pdf' && !pA.sensibles.some((a) => /Traslado/.test(a.nombre)), `sensibles listados: ${pA.sensibles.map((a) => a.nombre).join(', ')}`);
     ok(pA.versiones.some((a) => /Manual_normas_procedimientos_v1/.test(a.nombre)) && pA.versiones.some((a) => /v2_final/.test(a.nombre) && /más reciente/.test(a.detalle)), 'detecta las dos versiones del Manual y cuál es la más reciente');
     ok(pA.duplicados.every((a) => /mismo contenido que/.test(a.detalle)), `duplicados: ${pA.duplicados.map((a) => `${a.nombre} (${a.detalle})`).join('; ')}`);
     let st = await ctl('/control/stats');
@@ -70,7 +70,26 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     // ---- 2. Extracción de requisitos → lista 18–47 con su numeración original ----
     let r = await post(`/api/auditorias/propuestas/${pA.id}/aprobar`, { presupuesto: pA.presupuesto_sugerido, origen: 'tarjeta_chat' });
     let a = await esperar(r.d.trabajo_id);
-    const pB = (await api('/api/auditorias/propuestas')).d.find((x) => a.lista_propuesta && x.id === a.lista_propuesta.propuesta_id);
+    let pB = (await api('/api/auditorias/propuestas')).d.find((x) => a.lista_propuesta && x.id === a.lista_propuesta.propuesta_id);
+    const r24 = pB.requisitos.find((x) => x.id === '24'); const r38 = pB.requisitos.find((x) => x.id === '38');
+    ok(/^a\) Si se usan gases.*; b\) Si se usan gases/.test(r24.texto) && /a\) .*; b\) .*; c\) .*; d\) /.test(r38.texto) && pB.subapartados.join(' · ') === '24 (24a, 24b) · 34 (34a, 34b) · 35 (35a, 35b) · 38 (38a, 38b, 38c, 38d)',
+      `subapartados dentro de su requisito: ${pB.subapartados.join(' · ')}`);
+    ok(pB.recuperados.join(',') === '32,47' && pB.faltantes.length === 0 && /copiado literalmente de la norma/.test(pB.requisitos.find((x) => x.id === '47').fuente) && pB.requisitos.find((x) => x.id === '47').texto === 'Contar con un manual de bioseguridad del establecimiento.',
+      `32 y 47 (que la IA no separó) tomados literalmente del texto de la norma, sin inventar: «${pB.requisitos.find((x) => x.id === '32').texto}»`);
+    console.log('   presupuesto mínimo K1 con 30 filas agrupadas:', pB.presupuesto_minimo.K1, '· sugerido', pB.presupuesto_sugerido);
+    // ---- 2b. Una tarjeta hecha con la versión anterior (34 filas, faltan 32 y 47) se corrige sin volver a pagar ----
+    const fila0 = sql(`SELECT datos_cifrado FROM auditoria_propuestas WHERE id='${pB.id}'`);
+    const viejo = Cifrado.descifrarJSON(fila0);
+    viejo.requisitos = viejo.requisitos.filter((x) => !['32', '47'].includes(x.id)).flatMap((x) => (x.subapartados ? x.subapartados.map((y) => ({ id: y.id, texto: y.texto, fuente: y.fuente })) : [x]));
+    viejo.faltantes = [32, 47]; delete viejo.recuperados; delete viejo.subapartados;
+    sql(`UPDATE auditoria_propuestas SET datos_cifrado='${Cifrado.cifrarJSON(viejo)}' WHERE id='${pB.id}'`);
+    const viejaCard = (await api('/api/auditorias/propuestas')).d.find((x) => x.id === pB.id);
+    ok(viejaCard.requisitos.length === 34 && !viejaCard.agrupada, `tarjeta con el formato anterior: ${viejaCard.requisitos.length} filas, faltan 32 y 47 (como en la carpeta real)`);
+    const llamadasExtr = sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${r.d.trabajo_id}'`);
+    const rh = await post(`/api/auditorias/propuestas/${pB.id}/rehacer-lista`);
+    ok(rh.status === 200 && rh.d.nueva.requisitos.length === 30 && rh.d.nueva.agrupada && rh.d.llamadas_ia_nuevas === 0 && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${r.d.trabajo_id}'`) === llamadasExtr && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${pB.id}'`) === 'descartada',
+      `«Corregir la lista»: 30 filas, sin llamadas nuevas a la IA ni costo; la tarjeta anterior queda reemplazada`);
+    pB = rh.d.nueva;
     ok(pB && pB.requisitos.map((x) => x.id).join(',') === Array.from({ length: 30 }, (_, i) => String(i + 18)).join(','), `lista: ${pB && pB.requisitos.length} requisitos con sus números originales 18…47`);
     ok(pB.perfil === 'seremi' && pB.faltantes.length === 0 && pB.lotes === 5 && pB.inventario.total === 98, `la tarjeta 2 conserva perfil SEREMI, inventario y lotes (${pB.lotes} lotes de hasta 20)`);
 
@@ -87,8 +106,8 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     const filas = t.resultado.matriz.filas;
     const pasos = t.detalle_pasos;
     const nExtraer = pasos.filter((p) => p.tipo === 'aud_extraer').length; const nLotes = pasos.filter((p) => p.tipo === 'aud_seleccionar_lote').length;
-    ok(Number(sql(`SELECT COUNT(*) FROM trabajos WHERE tipo='auditoria' AND creado_en >= (SELECT creado_en FROM trabajos WHERE id='${tB}')`)) === 1 && nExtraer === 89 && nLotes === 5 && pasos.some((p) => p.clave === 'seleccionar'),
-      `UNA sola auditoría: 89 archivos leídos en 5 lotes internos y una consolidación (${pasos.length} pasos)`);
+    ok(Number(sql(`SELECT COUNT(*) FROM trabajos WHERE tipo='auditoria' AND creado_en >= (SELECT creado_en FROM trabajos WHERE id='${tB}')`)) === 1 && nExtraer === 87 && nLotes === 5 && pasos.some((p) => p.clave === 'seleccionar'),
+      `UNA sola auditoría: 87 archivos leídos en 5 lotes internos y una consolidación (${pasos.length} pasos)`);
 
     // ---- 4. Matriz única 18–47 con clasificación SEREMI ----
     ok(filas.map((f) => f.requisito).join(',') === Array.from({ length: 30 }, (_, i) => String(i + 18)).join(','), 'matriz única con los 30 requisitos, números originales 18 al 47, sin omitir ni duplicar');
@@ -111,14 +130,17 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
       '32 y 34: la evidencia podría estar en archivos sensibles no analizados → REQUIERE REVISIÓN nombrándolos, no NO ENCONTRADO');
     ok(fila('26').presentacion === 'revisar' && /firma/.test(fila('26').accion) && fila('46').presentacion === 'revisar' && /completo/.test(fila('46').accion), '26 (firma) y 46 (la IA dejó algo por comprobar): REQUIERE REVISIÓN con qué comprobar');
     ok(fila('20').presentacion === 'listo' && fila('43').presentacion === 'listo', '20 (vigencia con fecha citada) y 43 (archivo SIS incluido por ti): LISTO PARA SUBIR');
+    ok(fila('33').presentacion === 'revisar' && /33_Registro_pacientes_ENO\.pdf/.test(fila('33').accion), '33: un archivo omitido lleva su número → REQUIERE REVISIÓN, no NO ENCONTRADO');
+    ok(fila('41').presentacion === 'revisar' && /41_Listado_pacientes_curaciones\.pdf/.test(fila('41').accion) && /Reponer el botiquín/i.test(fila('41').accion), '41: lo leído diría HAY QUE MODIFICAR, pero hay un archivo omitido con su número → REQUIERE REVISIÓN (con la corrección como siguiente paso)');
+    ok(fila('38').presentacion === 'modificar' && /subapartados b, c y d/.test(fila('38').accion) && /a\) .*d\) /.test(fila('38').texto_requisito), '38: una sola fila con sus 4 subapartados; la acción dice cuáles faltan');
     const av = (await api(`/api/auditorias/${tB}/avance`)).d;
-    ok(av.resumen_seremi && av.resumen_seremi.listo.length === 12 && av.resumen_seremi.no_encontrado.join(',') === '23,33,36,44', `respuesta sencilla: ${Object.entries(av.resumen_seremi || {}).map(([k, v]) => `${k} ${v.join(',')}`).join(' · ')}`);
+    ok(av.resumen_seremi && av.resumen_seremi.listo.join(',') === '18,19,20,22,25,27,39,40,42,43,47' && av.resumen_seremi.no_encontrado.join(',') === '23,36,44', `respuesta sencilla: ${Object.entries(av.resumen_seremi || {}).map(([k, v]) => `${k} ${v.join(',')}`).join(' · ')}`);
 
     // ---- 5. Descargas, solo lectura y datos personales ----
     st = await ctl('/control/stats');
-    const incluidos = D.archivos.filter((x) => !['SREQ', 'S_CEDULA', 'S_FICHA', 'S_CI', 'IMG_PLANO', 'IMG_LOGO', 'ZIP_FOTOS', 'DUP_LAVADO', 'DUP_RECLAMOS'].includes(x.id));
-    ok(incluidos.every((x) => descargas(st, x.id) === 1), `los 89 archivos auditados se descargaron una sola vez cada uno${cortado ? ', incluso con el corte del servidor' : ''} ${incluidos.filter((x) => descargas(st, x.id) !== 1).map((x) => `${x.id}=${descargas(st, x.id)}`).join(' ')}`);
-    ok(['S_CEDULA', 'S_FICHA', 'S_CI', 'IMG_PLANO', 'IMG_LOGO', 'ZIP_FOTOS', 'DUP_LAVADO', 'DUP_RECLAMOS'].every((id) => descargas(st, id) === 0), `cédula, ficha, consentimiento, imágenes y duplicados: nunca se descargaron ${['S_CEDULA', 'S_FICHA', 'S_CI', 'IMG_PLANO', 'IMG_LOGO', 'ZIP_FOTOS', 'DUP_LAVADO', 'DUP_RECLAMOS'].map((id) => `${id}=${descargas(st, id)}`).join(' ')}`);
+    const incluidos = D.archivos.filter((x) => !['SREQ', 'S_ENO', 'S_BOT', 'S_CEDULA', 'S_FICHA', 'S_CI', 'IMG_PLANO', 'IMG_LOGO', 'ZIP_FOTOS', 'DUP_LAVADO', 'DUP_RECLAMOS'].includes(x.id));
+    ok(incluidos.every((x) => descargas(st, x.id) === 1), `los 87 archivos auditados se descargaron una sola vez cada uno${cortado ? ', incluso con el corte del servidor' : ''} ${incluidos.filter((x) => descargas(st, x.id) !== 1).map((x) => `${x.id}=${descargas(st, x.id)}`).join(' ')}`);
+    ok(['S_ENO', 'S_BOT', 'S_CEDULA', 'S_FICHA', 'S_CI', 'IMG_PLANO', 'IMG_LOGO', 'ZIP_FOTOS', 'DUP_LAVADO', 'DUP_RECLAMOS'].every((id) => descargas(st, id) === 0), `cédula, ficha, consentimiento, imágenes y duplicados: nunca se descargaron ${['S_ENO', 'S_BOT', 'S_CEDULA', 'S_FICHA', 'S_CI', 'IMG_PLANO', 'IMG_LOGO', 'ZIP_FOTOS', 'DUP_LAVADO', 'DUP_RECLAMOS'].map((id) => `${id}=${descargas(st, id)}`).join(' ')}`);
     ok(!Object.keys(st.escrituras).length && Object.keys(st.copias_en || {}).every((k) => k === 'root'), `ninguna escritura en la carpeta; copias temporales solo fuera de ella (${JSON.stringify(st.copias_en)}) y borradas`);
     ok(!(st.vivos || []).length, 'no queda ninguna copia temporal');
     const guardado = sql(`SELECT resultado_cifrado FROM trabajo_pasos WHERE trabajo_id='${tB}' AND resultado_cifrado IS NOT NULL`).split('\n').filter(Boolean).map((x) => JSON.stringify(Cifrado.descifrarJSON(x))).join('\n');
@@ -132,9 +154,9 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     const encab = []; libro.getWorksheet('Matriz').getRow(1).eachCell((x) => encab.push(String(x.value)));
     const inventario = []; libro.getWorksheet('Inventario').eachRow((row, n) => { if (n > 1) inventario.push({ nombre: String(row.getCell(2).value), categoria: String(row.getCell(4).value), estado: String(row.getCell(5).value), rel: String(row.getCell(7).value || '') }); });
     const cat = inventario.reduce((m, x) => { m[x.categoria] = (m[x.categoria] || 0) + 1; return m; }, {});
-    ok(cat['Fuente de requisitos'] === 1 && cat.Auditado === 88 && cat['Omitido (justificado)'] === 9, `inventario por categoría: ${JSON.stringify(cat)} (89 leídos: 88 incluidos + 1 sensible que incluiste; el escaneo sin texto queda omitido)`);
+    ok(cat['Fuente de requisitos'] === 1 && cat.Auditado === 86 && cat['Omitido (justificado)'] === 11, `inventario por categoría: ${JSON.stringify(cat)} (87 leídos: 86 incluidos + 1 sensible que incluiste; el escaneo sin texto queda omitido)`);
     const invDe = (n) => inventario.find((x) => x.nombre === n) || {};
-    ok(/revisar a mano para 35/.test(invDe('Plano_evacuacion_piso_1.jpg').rel) && /revisar a mano para 34/.test(invDe('Cedula_identidad_director_tecnico.pdf').rel) && /evidencia en 20/.test(invDe('Z_Certificado_RCP_Carla_Soto.pdf').rel) && invDe('Certificados_SIS_personal.pdf').estado === 'auditado por tu decisión (posible dato sensible)',
+    ok(/revisar a mano para [\d, ]*35/.test(invDe('Plano_evacuacion_piso_1.jpg').rel) && /revisar a mano para [\d, ]*34/.test(invDe('Cedula_identidad_director_tecnico.pdf').rel) && /evidencia en 20/.test(invDe('Z_Certificado_RCP_Carla_Soto.pdf').rel) && invDe('Certificados_SIS_personal.pdf').estado === 'auditado por tu decisión (posible dato sensible)',
       `cada archivo omitido dice para qué requisito revisarlo; cada auditado, en qué requisito aporta evidencia ${JSON.stringify(['Plano_evacuacion_piso_1.jpg', 'Cedula_identidad_director_tecnico.pdf', 'Z_Certificado_RCP_Carla_Soto.pdf', 'Certificados_SIS_personal.pdf'].map((n) => [invDe(n).rel, invDe(n).estado]))}`);
     ok(hojas === 'Matriz,Evidencias,Resumen,Inventario' && encab.slice(0, 8).join(' | ') === 'Requisito | Texto del requisito | Clasificación SEREMI | Archivo | Cita principal | Ubicación | Justificación | Acción concreta', `Excel: ${hojas}; columnas ${encab.slice(0, 8).join(' | ')}`);
     ok(inventario.length === 98 && inventario.find((x) => /escaneado/.test(x.nombre)).estado === 'omitido: sin texto (¿escaneado?)',
@@ -148,7 +170,7 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     // ---- 7. Borrar los textos de ESTA auditoría (después de descargar), sin tocar otras extracciones ----
     sql(`INSERT INTO extracciones (usuario_id, archivo_id, version, nombre, caracteres, texto_cifrado, estado, extraido_en, vence_en) VALUES (1, 'OTRO-DOC', 'v1', 'Otro documento guardado.pdf', 10, NULL, 'valida', NOW(), NOW() + INTERVAL 30 DAY)`);
     const antes = Number(sql("SELECT COUNT(*) FROM extracciones WHERE archivo_id <> 'OTRO-DOC'"));
-    ok((await api(`/api/auditorias/${tB}/avance`)).d.textos_guardados === antes && antes >= 89, `antes de borrar: ${antes} textos guardados (cifrados) de esta auditoría`);
+    ok((await api(`/api/auditorias/${tB}/avance`)).d.textos_guardados === antes && antes >= 88, `antes de borrar: ${antes} textos guardados (cifrados) de esta auditoría`);
     const cifrados = sql("SELECT COUNT(*) FROM extracciones WHERE archivo_id <> 'OTRO-DOC' AND texto_cifrado LIKE 'v%:%'");
     ok(Number(cifrados) === antes && !sql("SELECT texto_cifrado FROM extracciones WHERE archivo_id = 'C_SIS'").includes('Superintendencia'), 'los textos completos guardados están cifrados (ninguno legible en la base)');
     const b = (await post(`/api/auditorias/${tB}/borrar-extracciones`)).d;
