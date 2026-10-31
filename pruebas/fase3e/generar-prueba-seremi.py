@@ -45,7 +45,10 @@ SUBS = {
  38: ["Contar con un protocolo de control de infecciones asociadas a la atención.", "Definir indicadores de vigilancia de infecciones.", "Designar un responsable del programa de infecciones.", "Registrar las capacitaciones del personal en prevención de infecciones."],
 }
 ENCAB = {24: "Gases medicinales:", 34: "Director técnico:", 35: "Evacuación:", 38: "Infecciones asociadas a la atención:"}
+# 32 y 47 con el formato de la guía real (tabla convertida a texto): «-- 1 32 TÍTULO EN MAYÚSCULAS Texto…».
+TITULO = {32: "CONSENTIMIENTO INFORMADO", 47: "MANUAL DE BIOSEGURIDAD"}
 def linea(n):
+    if n in TITULO: return f"-- 1 {n} {TITULO[n]} {REQ[n]}"
     if n in SUBS: return f"{n}. {ENCAB[n]}\n" + "\n".join(f"{chr(97 + i)}) {t}" for i, t in enumerate(SUBS[n]))
     return f"{n}. {REQ[n]}"
 requisitos_doc = "REQUISITOS SEREMI — PAUTA FICTICIA PARA PRUEBAS\nDocumento ficticio. No corresponde a ninguna norma real.\nPágina 1\n" + "\n".join(

@@ -945,7 +945,7 @@ function validarEntrada(d) {
   const archivo_ids = [...new Set((Array.isArray(d.archivo_ids) && d.archivo_ids.length ? d.archivo_ids : [d.archivo_id]).filter(Boolean).map(String))];
   if (!archivo_ids.length || archivo_ids.length > MAX_ARCHIVOS) throw err(`Indica entre 1 y ${MAX_ARCHIVOS} documentos (de la carpeta de prueba)`);
   for (const id of archivo_ids) if (!/^[\w-]{3,128}$/.test(id)) throw err(`Id de documento inválido: ${id}`);
-  const requisitos = (d.requisitos || []).map((r, i) => ({ id: String(r.id || `R${i + 1}`).trim().slice(0, 12), texto: String(r.texto || '').trim().slice(0, 1500),
+  const requisitos = (d.requisitos || []).map((r, i) => ({ id: String(r.id || `R${i + 1}`).trim().slice(0, 12), texto: String(r.texto || '').trim().slice(0, MAX_TEXTO_REQUISITO),
     ...(r.fuente ? { fuente: String(r.fuente).trim().slice(0, 1200) } : {}), ...(Array.isArray(r.subapartados) && r.subapartados.length ? { subapartados: r.subapartados.slice(0, 8).map((x) => ({ id: String(x.id).slice(0, 12), texto: String(x.texto || '').slice(0, 600) })) } : {}) })).filter((r) => r.texto);
   if (!requisitos.length || requisitos.length > MAX_REQUISITOS) throw err(`Entre 1 y ${MAX_REQUISITOS} requisitos`);
   if (new Set(requisitos.map((r) => r.id)).size !== requisitos.length) throw err('Hay ids de requisito repetidos');
@@ -1368,12 +1368,53 @@ function itemsDeNorma(texto) {
       actual = { numero: n, texto: m[2].trim(), pagina };
     } else if (actual && l.trim()) {
       if (/^\s*(nota|anexo|cap[ií]tulo|t[ií]tulo)\b/i.test(l) && actual.texto.length > 40) { items.push(actual); actual = null; continue; }
-      if (actual.texto.length < 1500) actual.texto += ` ${l.trim()}`;
+      if (actual.texto.length < MAX_TEXTO_REQUISITO) actual.texto += ` ${l.trim()}`;
     }
   }
   if (actual) items.push(actual);
   return items;
 }
+// Formato "encabezado": el número va seguido de un título en MAYÚSCULAS, a veces en medio de una línea y precedido de
+// restos de tabla o de página (p. ej. «-- 1 32 EN CASO DE QUE SE QUIERA AUTORIZAR…»). El texto completo del requisito va
+// desde su número hasta donde empieza el siguiente requisito (un número mayor, hasta +5, con título en mayúsculas o
+// con formato «33.»). Si no se encuentra dónde termina, o queda demasiado largo, NO se recupera (se informa).
+const MAX_TEXTO_REQUISITO = 5000;
+const MAYUS = 'A-ZÁÉÍÓÚÑÜ';
+const ENCABEZADO = (n) => new RegExp(`(?:^|[^0-9.,/])(${n})\\s+([${MAYUS}][${MAYUS}0-9,()/°º-]*(?:\\s+[${MAYUS}0-9,()/°º-]+){1,}[${MAYUS}])`, 'g');
+function itemEncabezado(texto, n, desdePos = 0) {
+  const t = String(texto || '');
+  const re = ENCABEZADO(n); re.lastIndex = desdePos;
+  const m = re.exec(t);
+  if (!m) return null;
+  const inicio = m.index + m[0].indexOf(m[1]);
+  const cuerpoDesde = inicio + String(n).length;
+  // Fin: el primer inicio de un requisito posterior (n+1 … n+5), en formato encabezado o «33.», «33)», «33.-».
+  let fin = -1; let siguiente = null;
+  for (let k = n + 1; k <= n + 5; k++) {
+    const a = ENCABEZADO(k); a.lastIndex = cuerpoDesde; const ma = a.exec(t);
+    const b = new RegExp(`(?:^|\\n)\\s*(${k})\\s*[.)\\-–:]\\s`, 'g'); b.lastIndex = cuerpoDesde; const mb = b.exec(t);
+    for (const x of [ma, mb]) if (x) { const pos = x.index + x[0].indexOf(x[1]); if (fin < 0 || pos < fin) { fin = pos; siguiente = k; } }
+  }
+  let final = fin;
+  let hastaElFinal = false;
+  if (final < 0) {
+    const resto = t.slice(cuerpoDesde);
+    const corte = resto.search(/\n\s*(ANEXO|NOTA FINAL|Nota final|Notas?:)/);
+    if (corte >= 0) final = cuerpoDesde + corte;
+    else if (resto.length <= MAX_TEXTO_REQUISITO) { final = t.length; hastaElFinal = true; } // último requisito del documento
+  }
+  if (final < 0 || final <= cuerpoDesde) return { numero: n, problema: 'no encontré dónde termina (no hay un requisito siguiente reconocible)' };
+  let cuerpo = t.slice(cuerpoDesde, final)
+    .replace(/(^|\n)\s*p[áa]gina\s+\d+\s*(de\s+\d+)?\s*(?=\n|$)/gi, '$1')    // encabezados de página (no son parte del requisito)
+    .replace(/\s--\s*\d+(\s*(de|of)\s*\d+)?\s*(--)?(?=\s|$)/gi, ' ')       // restos de tabla o pie de página («-- 1»)
+    .replace(/\s*--\s*\d+(\s*(de|of)\s*\d+)?\s*(--)?\s*$/i, '')   // restos de tabla o de página antes del siguiente número
+    .replace(/(\s+\d{1,3})+\s*$/, '')                             // números sueltos al final (columnas de la tabla)
+    .replace(/\s+/g, ' ').trim();
+  if (cuerpo.length > MAX_TEXTO_REQUISITO) return { numero: n, problema: `el texto recuperado tiene ${cuerpo.length} caracteres (más de ${MAX_TEXTO_REQUISITO}): no lo recorto` };
+  const antes = t.slice(0, inicio); const pg = antes.match(/p[áa]gina\s+(\d+)[^]*$/i);
+  return { numero: n, texto: cuerpo, pagina: pg ? pg[1] : null, termina_antes_de: siguiente, hasta_el_final: hastaElFinal, inicio };
+}
+
 function listaRango(bloques, rango, textoNorma) {
   const { desde, hasta } = rango;
   const porNumero = new Map();
@@ -1385,7 +1426,7 @@ function listaRango(bloques, rango, textoNorma) {
     if (!g.some((x) => limpia(x.texto) === limpia(r.texto))) g.push(r); // duplicado solo si es el MISMO número y el mismo texto
   }
   const literales = textoNorma ? itemsDeNorma(textoNorma) : [];
-  const requisitos = []; const faltantes = []; const recuperados = [];
+  const requisitos = []; const faltantes = []; const recuperados = []; const detalle = []; const problemas = [];
   for (let n = desde; n <= hasta; n++) {
     const g = porNumero.get(n) || [];
     if (g.length) {
@@ -1397,9 +1438,15 @@ function listaRango(bloques, rango, textoNorma) {
         cita_norma: g[0].cita, ubicacion_norma: g[0].ubicacion, ...(subapartados.length ? { subapartados } : {}) });
       continue;
     }
-    const lit = literales.find((x) => x.numero === n);
-    if (lit && lit.texto.length >= 10) {
+    let lit = literales.find((x) => x.numero === n && x.texto.length >= 10);
+    if (!lit && textoNorma) {
+      const e = itemEncabezado(textoNorma, n);
+      if (e && e.texto && e.texto.length >= 20) lit = e;
+      else if (e && e.problema) problemas.push({ numero: n, problema: e.problema });
+    }
+    if (lit) {
       const texto = lit.texto.replace(/\s+/g, ' ').trim();
+      detalle.push({ numero: n, caracteres: texto.length, empieza: texto.slice(0, 80), termina: texto.slice(-80), termina_antes_de: lit.termina_antes_de || null, hasta_el_final: !!lit.hasta_el_final });
       requisitos.push({ id: String(n), numero: n, texto, fuente: `${n}${lit.pagina ? ` (página ${lit.pagina})` : ''}: «${texto.slice(0, 160)}${texto.length > 160 ? '…' : ''}» — copiado literalmente de la norma`, referencia: String(n),
         cita_norma: texto.slice(0, 300), ubicacion_norma: lit.pagina ? `página ${lit.pagina}` : null, recuperado: true });
       recuperados.push(n);
@@ -1413,14 +1460,21 @@ function listaRango(bloques, rango, textoNorma) {
     while ((m = re.exec(plano)) && fr.length < 3) fr.push(plano.slice(Math.max(0, m.index - 40), m.index + 60).trim());
     return { numero: n, fragmentos: fr };
   });
-  return { requisitos, faltantes, recuperados, menciones, texto_norma_disponible: !!textoNorma, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
+  return { requisitos, faltantes, recuperados, recuperados_detalle: detalle, problemas, menciones: menciones.map((m) => ({ ...m, problema: (problemas.find((x) => x.numero === m.numero) || {}).problema || null })), texto_norma_disponible: !!textoNorma, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
 }
 // Lee los resultados ya pagados de la extracción (pasos req_bloque) y el texto de la norma ya guardado.
 async function bloquesDe(trabajoId) {
   const filas = await qPrincipal("SELECT clave, resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo = 'aud_req_bloque' AND estado = 'hecho'", [trabajoId]);
   return filas.map((f) => Cifrado.descifrarJSON(f.resultado_cifrado)).filter(Boolean).sort((a, b) => a.bloque - b.bloque);
 }
-async function textoDeNorma(t, objetivo) {
+// Texto de la norma: primero el que quedó guardado (cifrado) en la extracción, sin tocar Drive. Solo si se permite
+// (al terminar una extracción nueva) y no hay texto guardado, se lee desde Drive.
+async function textoDeNorma(t, objetivo, { soloGuardado = false } = {}) {
+  try {
+    const [f] = await qPrincipal("SELECT texto_cifrado FROM extracciones WHERE usuario_id = ? AND archivo_id = ? AND estado = 'valida' AND texto_cifrado IS NOT NULL ORDER BY id DESC LIMIT 1", [usuario().id, String(objetivo.norma.id)]);
+    if (f) { const c = JSON.parse(Cifrado.descifrar(f.texto_cifrado)); const tx = c.tipo === 'texto' ? c.texto : null; if (tx) return tx; }
+  } catch (_) { /* sigue */ }
+  if (soloGuardado) return null;
   try { return (await require('./drive').textoParaTrabajo(objetivo.norma.id, { trabajoId: t.id, pasoId: null })).texto; } catch (_) { return null; }
 }
 
@@ -1431,16 +1485,16 @@ async function listaParaAprobar(t, objetivo, final) {
     throw e;
   }
 }
-async function crearListaParaAprobar(t, objetivo, final) {
+async function crearListaParaAprobar(t, objetivo, final, opciones = {}) {
   const lista = final && final.lista ? final.lista : null;
   if (!lista || !lista.requisitos.length) return;
   let archivos = objetivo.archivos;
-  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0; let recuperados = []; let subapartados = []; let menciones = []; let textoDisponible = null;
+  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0; let recuperados = []; let subapartados = []; let menciones = []; let textoDisponible = null; let recuperadosDetalle = [];
   if (objetivo.rango) {
     const { desde, hasta } = objetivo.rango;
-    const r = listaRango(await bloquesDe(t.id), objetivo.rango, await textoDeNorma(t, objetivo));
+    const r = listaRango(await bloquesDe(t.id), objetivo.rango, await textoDeNorma(t, objetivo, { soloGuardado: !!opciones.soloGuardado }));
     fueraDeRango = lista.requisitos.filter((x) => x.numero == null || x.numero < desde || x.numero > hasta).length;
-    reqs = r.requisitos; faltantes = r.faltantes; recuperados = r.recuperados; subapartados = r.subapartados; menciones = r.menciones; textoDisponible = r.texto_norma_disponible;
+    reqs = r.requisitos; faltantes = r.faltantes; recuperados = r.recuperados; recuperadosDetalle = r.recuperados_detalle; subapartados = r.subapartados; menciones = r.menciones; textoDisponible = r.texto_norma_disponible;
     // Inventarios hechos con la regla anterior: un nombre que ya no sugiere datos personales vuelve a "incluido".
     if (objetivo.inventario) for (const a of objetivo.inventario) if (a.estado === 'excluido: posible dato sensible' && !esSensible(a.nombre)) { a.estado = 'incluido'; a.motivo = ''; if (!archivos.some((x) => x.id === a.id)) archivos = archivos.concat([{ id: a.id, nombre: a.nombre }]); }
     if (!reqs.length) throw new Error(`La lista extraída no tiene requisitos numerados entre ${desde} y ${hasta}${lista.numeracion_de_la_norma ? '' : ' (la norma no parece numerar sus requisitos)'}`);
@@ -1450,7 +1504,7 @@ async function crearListaParaAprobar(t, objetivo, final) {
   const est = estimacion({ archivo_ids: e.archivo_ids, requisitos: e.requisitos, perfil: objetivo.perfil });
   const id = crypto.randomUUID();
   const datos = { tipo: 'auditoria', archivos, requisitos: e.requisitos, config: objetivo.config || CONFIG_PROVISIONAL, motivo: `Requisitos ${objetivo.rango ? `${objetivo.rango.desde} al ${objetivo.rango.hasta} ` : ''}extraídos de «${objetivo.norma.nombre}»`,
-    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, subapartados, menciones, texto_norma_disponible: textoDisponible,
+    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, recuperados_detalle: recuperadosDetalle, subapartados, menciones, texto_norma_disponible: textoDisponible,
     ...(objetivo.inventario ? { inventario: objetivo.inventario, carpeta: objetivo.carpeta, subcarpetas: objetivo.subcarpetas } : {}),
     origen: { extraccion_trabajo: t.id, extraccion_propuesta: objetivo.propuesta && objetivo.propuesta.id, norma: { id: objetivo.norma.id, nombre: objetivo.norma.nombre, version: objetivo.norma.version },
       duplicados: lista.duplicados.length, descartados: lista.descartados.length, exceso: lista.exceso } };
@@ -1485,7 +1539,7 @@ function tarjetaDe(id, datos, estado = 'pendiente') {
   return { tipo: 'auditoria', origen: datos.origen || null, id, estado, archivos: datos.archivos, requisitos: datos.requisitos, configuracion: datos.config, configuraciones: est.configuraciones,
     estimados: est.por_configuracion, estimado_usd: est.por_configuracion[datos.config],
     presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[datos.config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo,
-    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [], menciones: datos.menciones || [], texto_norma_disponible: datos.texto_norma_disponible,
+    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [], menciones: datos.menciones || [], recuperados_detalle: datos.recuperados_detalle || [], texto_norma_disponible: datos.texto_norma_disponible,
     agrupada: !!datos.rango && Array.isArray(datos.recuperados), lotes: Math.ceil(datos.archivos.length / LOTE), ...extrasInventario(datos) };
 }
 
@@ -1536,7 +1590,7 @@ async function rehacerLista(id) {
   const llamadasAntes = Number(((await qPrincipal('SELECT COUNT(*) AS n FROM llamadas_ia WHERE trabajo_id = ?', [t.id]))[0] || {}).n || 0);
   const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [new Date(), id, usuario().id]);
   if (!r.affectedRows) throw err('La propuesta cambió mientras la corregía', 409);
-  try { await crearListaParaAprobar(t, objetivo, { lista }); } catch (e) {
+  try { await crearListaParaAprobar(t, objetivo, { lista }, { soloGuardado: true }); } catch (e) {
     await qPrincipal("UPDATE auditoria_propuestas SET estado = 'pendiente', actualizado_en = ? WHERE id = ?", [new Date(), id]);
     throw e;
   }

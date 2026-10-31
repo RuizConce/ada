@@ -333,6 +333,7 @@
     if (p.origen) t.querySelector('strong').textContent = `Revisa los ${p.requisitos.length} requisitos y aprueba la auditoría`;
     t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${listaArchivos(p.archivos)}${p.motivo ? ` — ${p.motivo}` : ''}${p.perfil === 'seremi' ? ' · clasificación SEREMI' : ''}`;
     const debeCorregir = !!(p.rango && p.origen && !p.agrupada);
+    const puedeCorregir = debeCorregir || !!(p.rango && p.origen && (p.faltantes || []).length);
     if (p.rango || (p.faltantes || []).length) {
       const r = document.createElement('div'); r.className = 'meta aud-rango';
       const total = p.rango ? p.rango.hasta - p.rango.desde + 1 : p.requisitos.length;
@@ -340,17 +341,22 @@
       const numeros = new Set(p.requisitos.map((x) => (String(x.id).match(/^\d+/) || [x.id])[0])).size;
       if (p.rango) linea(`Requisitos ${p.rango.desde} al ${p.rango.hasta}: ${numeros} de ${total} en la lista${numeros !== p.requisitos.length ? ` (en ${p.requisitos.length} filas: hay subapartados separados)` : ''}${(p.faltantes || []).length ? '' : ' · ninguno falta'}`);
       if ((p.subapartados || []).length) linea(`Subapartados dentro de su requisito: ${p.subapartados.join(' · ')}`);
-      if ((p.recuperados || []).length) linea(`Tomados literalmente del texto de la norma (la extracción no los había separado): ${p.recuperados.join(', ')}. Revisa su texto abajo.`, 'aud-aviso');
+      if ((p.recuperados || []).length) {
+        linea(`Tomados literalmente del texto guardado de la norma (la extracción no los había separado): ${p.recuperados.join(', ')}. Comprueba que el texto esté completo:`, 'aud-aviso');
+        for (const d of p.recuperados_detalle || []) linea(`${d.numero}: ${d.caracteres.toLocaleString('es-CL')} caracteres · empieza «${d.empieza}…» · termina «…${d.termina}»${d.termina_antes_de ? ` (justo antes del ${d.termina_antes_de})` : d.hasta_el_final ? ' (hasta el final del documento: revisa que no incluya texto que no es del requisito)' : ''}`, 'aud-aviso');
+      }
+      if (p.agrupada && p.texto_norma_disponible === false) linea('No encontré guardado el texto de la norma: no pude buscar los números que faltan. No descargué nada de nuevo.', 'aud-aviso');
       if ((p.faltantes || []).length) {
         linea(p.agrupada ? `No aparecen numerados en el texto de la norma: ${p.faltantes.join(', ')}. No los agregué.` : `Faltan en esta lista: ${p.faltantes.join(', ')}. Corrige la lista para comprobar si están en la norma.`, 'aud-aviso');
-        for (const m of p.menciones || []) linea(m.fragmentos.length ? `${m.numero} aparece en el texto solo así: ${m.fragmentos.map((x) => `«…${x}…»`).join(' · ')}` : `${m.numero} no aparece en ninguna parte del texto extraído de la norma.`, 'aud-aviso');
+        for (const m of p.menciones || []) linea(m.fragmentos.length ? `${m.numero} aparece en el texto así: ${m.fragmentos.map((x) => `«…${x}…»`).join(' · ')}${m.problema ? ` — no lo agregué: ${m.problema}` : ''}` : `${m.numero} no aparece en ninguna parte del texto extraído de la norma.`, 'aud-aviso');
       }
       t.querySelector('.aud-archivos').after(r);
       // Listas hechas con la versión anterior (subapartados como requisitos aparte): se corrigen sin volver a pagar.
-      if (debeCorregir) {
+      if (puedeCorregir) {
         const c = document.createElement('div'); c.className = 'aud-corregir';
         const nota = document.createElement('p'); nota.className = 'meta aud-aviso';
-        nota.textContent = 'Esta lista separa subapartados como requisitos aparte y puede omitir números. Corrígela antes de aprobar: usa la extracción ya pagada, sin llamadas nuevas a la IA.';
+        nota.textContent = debeCorregir ? 'Esta lista separa subapartados como requisitos aparte y puede omitir números. Corrígela antes de aprobar: usa la extracción ya pagada, sin llamadas nuevas a la IA.'
+          : 'Faltan números del rango. Puedes volver a buscarlos en el texto ya guardado de la norma: sin descargar nada, sin llamadas a la IA y sin costo.';
         const b = document.createElement('button'); b.type = 'button'; b.className = 'principal aud-boton-corregir'; b.textContent = 'Corregir la lista (sin costo)';
         b.addEventListener('click', async () => {
           b.disabled = true;

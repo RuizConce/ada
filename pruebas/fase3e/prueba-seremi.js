@@ -74,7 +74,7 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     const r24 = pB.requisitos.find((x) => x.id === '24'); const r38 = pB.requisitos.find((x) => x.id === '38');
     ok(/^a\) Si se usan gases.*; b\) Si se usan gases/.test(r24.texto) && /a\) .*; b\) .*; c\) .*; d\) /.test(r38.texto) && pB.subapartados.join(' · ') === '24 (24a, 24b) · 34 (34a, 34b) · 35 (35a, 35b) · 38 (38a, 38b, 38c, 38d)',
       `subapartados dentro de su requisito: ${pB.subapartados.join(' · ')}`);
-    ok(pB.recuperados.join(',') === '32,47' && pB.faltantes.length === 0 && /copiado literalmente de la norma/.test(pB.requisitos.find((x) => x.id === '47').fuente) && pB.requisitos.find((x) => x.id === '47').texto === 'Contar con un manual de bioseguridad del establecimiento.',
+    ok(pB.recuperados.join(',') === '32,47' && pB.faltantes.length === 0 && /copiado literalmente de la norma/.test(pB.requisitos.find((x) => x.id === '47').fuente) && pB.requisitos.find((x) => x.id === '47').texto === 'MANUAL DE BIOSEGURIDAD Contar con un manual de bioseguridad del establecimiento.' && pB.requisitos.find((x) => x.id === '32').texto === 'CONSENTIMIENTO INFORMADO Contar con un consentimiento informado tipo para cada procedimiento.' && pB.recuperados_detalle.find((x) => x.numero === 32).termina_antes_de === 33,
       `32 y 47 (que la IA no separó) tomados literalmente del texto de la norma, sin inventar: «${pB.requisitos.find((x) => x.id === '32').texto}»`);
     console.log('   presupuesto mínimo K1 con 30 filas agrupadas:', pB.presupuesto_minimo.K1, '· sugerido', pB.presupuesto_sugerido);
     // ---- 2b. Una tarjeta hecha con la versión anterior (34 filas, faltan 32 y 47) se corrige sin volver a pagar ----
@@ -88,7 +88,10 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     const intento = await post(`/api/auditorias/propuestas/${pB.id}/aprobar`, { presupuesto: 9, configuracion: 'K1', origen: 'tarjeta_chat' });
     ok(intento.status === 409 && /Primero corrige la lista/.test(intento.d.error) && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${pB.id}'`) === 'pendiente', 'el servidor no permite aprobar una lista sin corregir, aunque el presupuesto alcance');
     const llamadasExtr = sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${r.d.trabajo_id}'`);
+    const stAntes = await ctl('/control/stats');
     const rh = await post(`/api/auditorias/propuestas/${pB.id}/rehacer-lista`);
+    const stDespues = await ctl('/control/stats');
+    ok(descargas(stDespues, 'SREQ') === descargas(stAntes, 'SREQ') && JSON.stringify(stDespues.export) === JSON.stringify(stAntes.export), 'corregir la lista no descarga nada de Drive (usa el texto ya guardado de la norma)');
     ok(rh.status === 200 && rh.d.nueva.requisitos.length === 30 && rh.d.nueva.agrupada && rh.d.llamadas_ia_nuevas === 0 && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${r.d.trabajo_id}'`) === llamadasExtr && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${pB.id}'`) === 'descartada',
       `«Corregir la lista»: 30 filas, sin llamadas nuevas a la IA ni costo; la tarjeta anterior queda reemplazada`);
     pB = rh.d.nueva;

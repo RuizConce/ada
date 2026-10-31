@@ -22,3 +22,28 @@ ok(r.menciones[0].numero === 22 && /punto 22 del anexo/.test(r.menciones[0].frag
 const r2 = listaRango(bloques, { desde: 18, hasta: 23 }, norma.replace(' (ver también el punto 22 del anexo)', ''));
 ok(r2.menciones[0].fragmentos.length === 0, 'si el número no aparece en ninguna parte del texto, se dice así');
 setTimeout(() => process.exit(), 200);
+
+// Formato real de la guía (tabla convertida a texto): «-- 1 32 EN CASO DE QUE…», número en medio de la línea y título
+// en MAYÚSCULAS. Se recupera el texto COMPLETO hasta el siguiente requisito, sin los restos de la tabla.
+const guia = [
+  'Página 4', '-- 1 31 LIBRO DE RECLAMOS Corresponde al libro foliado de reclamos.',
+  '-- 1 32 EN CASO DE QUE SE QUIERA AUTORIZAR UN ESTABLECIMIENTO QUE ATIENDA MENORES DE EDAD Corresponde a la autorización del representante legal.',
+  'Debe adjuntar:', 'a) Protocolo de atención de menores, aprobado por el director técnico.', 'b) Registro de 2 acompañantes autorizados.',
+  '-- 1 33 REGISTRO ENO Corresponde al registro de enfermedades de notificación obligatoria.',
+  'Página 9', '-- 1 46 PROTOCOLO EPP Corresponde al protocolo de elementos de protección.',
+  '-- 1 47 MANUAL DE NORMAS Y PROCEDIMIENTOS Corresponde a un documento que describe todos los procedimientos clínicos y administrativos', 'del establecimiento, actualizado y firmado por el director técnico.',
+].join('\n');
+const b2 = [{ bloque: 1, requisitos: [
+  { referencia: '31', texto: 'Libro de reclamos foliado.', cita: 'Corresponde al libro foliado de reclamos.' },
+  { referencia: '33', texto: 'Registro ENO.', cita: 'Corresponde al registro de enfermedades de notificación obligatoria.' },
+  { referencia: '46', texto: 'Protocolo EPP.', cita: 'Corresponde al protocolo de elementos de protección.' },
+] }];
+const g = listaRango(b2, { desde: 31, hasta: 47 }, guia);
+const t32 = (g.requisitos.find((x) => x.id === '32') || {}).texto || '';
+const t47 = (g.requisitos.find((x) => x.id === '47') || {}).texto || '';
+ok(t32 === 'EN CASO DE QUE SE QUIERA AUTORIZAR UN ESTABLECIMIENTO QUE ATIENDA MENORES DE EDAD Corresponde a la autorización del representante legal. Debe adjuntar: a) Protocolo de atención de menores, aprobado por el director técnico. b) Registro de 2 acompañantes autorizados.',
+  `32 completo, con sus subapartados y sin «-- 1» ni el 33: «${t32}»`);
+ok(t47 === 'MANUAL DE NORMAS Y PROCEDIMIENTOS Corresponde a un documento que describe todos los procedimientos clínicos y administrativos del establecimiento, actualizado y firmado por el director técnico.', `47 completo (último del documento): «${t47}»`);
+const d32 = g.recuperados_detalle.find((x) => x.numero === 32); const d47 = g.recuperados_detalle.find((x) => x.numero === 47);
+ok(d32.termina_antes_de === 33 && d47.hasta_el_final && g.recuperados.join() === '32,47', 'la tarjeta puede mostrar dónde empieza y termina cada texto recuperado');
+ok(g.faltantes.join() === '34,35,36,37,38,39,40,41,42,43,44,45', 'los números que no están en la guía de prueba siguen informándose como ausentes');

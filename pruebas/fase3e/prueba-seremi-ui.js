@@ -45,7 +45,7 @@ const foto = (p, n) => p.screenshot({ path: `${os.tmpdir()}/v-seremi-${n}.png` }
     await p.click('text=Aprobar extracción');
     await p.waitForSelector('text=Revisa los 30 requisitos y aprueba la auditoría', { timeout: 30000 });
     t = await p.textContent('.tarjeta-auditoria[data-propuesta]');
-    ok(/Requisitos 18 al 47: 30 de 30 en la lista · ninguno falta/.test(t) && /Subapartados dentro de su requisito: 24 \(24a, 24b\)/.test(t) && /Tomados literalmente del texto de la norma.*: 32, 47/.test(t) && (await p.inputValue('.tarjeta-auditoria[data-propuesta] .aud-req')).split('\n')[0].startsWith('18 | '), 'tarjeta 2: rango, ningún faltante y la lista con números originales desde el 18');
+    ok(/Requisitos 18 al 47: 30 de 30 en la lista · ninguno falta/.test(t) && /Subapartados dentro de su requisito: 24 \(24a, 24b\)/.test(t) && /Tomados literalmente del texto guardado de la norma.*: 32, 47/.test(t) && (await p.inputValue('.tarjeta-auditoria[data-propuesta] .aud-req')).split('\n')[0].startsWith('18 | '), 'tarjeta 2: rango, ningún faltante y la lista con números originales desde el 18');
     ok(await p.$$eval('.tarjeta-auditoria[data-propuesta] .aud-sensible input', (l) => l.length) === 6 && /se enmascaran antes del análisis/.test(t), 'tarjeta 2: cuatro casillas de datos personales, desmarcadas');
     // Tarjeta con el formato anterior (como la de la carpeta real): botón para corregirla sin costo.
     const id0 = await p.$eval('.tarjeta-auditoria[data-propuesta]', (e) => e.dataset.propuesta);
