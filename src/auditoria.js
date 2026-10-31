@@ -1405,7 +1405,15 @@ function listaRango(bloques, rango, textoNorma) {
       recuperados.push(n);
     } else faltantes.push(n);
   }
-  return { requisitos, faltantes, recuperados, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
+  // Para cada número que falta: dónde aparece ese número en el texto (si aparece), para que se vea si es un problema
+  // de la fuente o de cómo quedó el texto (p. ej. numeración automática de Word que no pasó al texto).
+  const plano = String(textoNorma || '').replace(/\s+/g, ' ');
+  const menciones = faltantes.map((n) => {
+    const re = new RegExp(`(^|[^0-9])${n}([^0-9]|$)`, 'g'); const fr = []; let m;
+    while ((m = re.exec(plano)) && fr.length < 3) fr.push(plano.slice(Math.max(0, m.index - 40), m.index + 60).trim());
+    return { numero: n, fragmentos: fr };
+  });
+  return { requisitos, faltantes, recuperados, menciones, texto_norma_disponible: !!textoNorma, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
 }
 // Lee los resultados ya pagados de la extracción (pasos req_bloque) y el texto de la norma ya guardado.
 async function bloquesDe(trabajoId) {
@@ -1427,12 +1435,12 @@ async function crearListaParaAprobar(t, objetivo, final) {
   const lista = final && final.lista ? final.lista : null;
   if (!lista || !lista.requisitos.length) return;
   let archivos = objetivo.archivos;
-  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0; let recuperados = []; let subapartados = [];
+  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0; let recuperados = []; let subapartados = []; let menciones = []; let textoDisponible = null;
   if (objetivo.rango) {
     const { desde, hasta } = objetivo.rango;
     const r = listaRango(await bloquesDe(t.id), objetivo.rango, await textoDeNorma(t, objetivo));
     fueraDeRango = lista.requisitos.filter((x) => x.numero == null || x.numero < desde || x.numero > hasta).length;
-    reqs = r.requisitos; faltantes = r.faltantes; recuperados = r.recuperados; subapartados = r.subapartados;
+    reqs = r.requisitos; faltantes = r.faltantes; recuperados = r.recuperados; subapartados = r.subapartados; menciones = r.menciones; textoDisponible = r.texto_norma_disponible;
     // Inventarios hechos con la regla anterior: un nombre que ya no sugiere datos personales vuelve a "incluido".
     if (objetivo.inventario) for (const a of objetivo.inventario) if (a.estado === 'excluido: posible dato sensible' && !esSensible(a.nombre)) { a.estado = 'incluido'; a.motivo = ''; if (!archivos.some((x) => x.id === a.id)) archivos = archivos.concat([{ id: a.id, nombre: a.nombre }]); }
     if (!reqs.length) throw new Error(`La lista extraída no tiene requisitos numerados entre ${desde} y ${hasta}${lista.numeracion_de_la_norma ? '' : ' (la norma no parece numerar sus requisitos)'}`);
@@ -1442,7 +1450,7 @@ async function crearListaParaAprobar(t, objetivo, final) {
   const est = estimacion({ archivo_ids: e.archivo_ids, requisitos: e.requisitos, perfil: objetivo.perfil });
   const id = crypto.randomUUID();
   const datos = { tipo: 'auditoria', archivos, requisitos: e.requisitos, config: objetivo.config || CONFIG_PROVISIONAL, motivo: `Requisitos ${objetivo.rango ? `${objetivo.rango.desde} al ${objetivo.rango.hasta} ` : ''}extraídos de «${objetivo.norma.nombre}»`,
-    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, subapartados,
+    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, subapartados, menciones, texto_norma_disponible: textoDisponible,
     ...(objetivo.inventario ? { inventario: objetivo.inventario, carpeta: objetivo.carpeta, subcarpetas: objetivo.subcarpetas } : {}),
     origen: { extraccion_trabajo: t.id, extraccion_propuesta: objetivo.propuesta && objetivo.propuesta.id, norma: { id: objetivo.norma.id, nombre: objetivo.norma.nombre, version: objetivo.norma.version },
       duplicados: lista.duplicados.length, descartados: lista.descartados.length, exceso: lista.exceso } };
@@ -1477,7 +1485,7 @@ function tarjetaDe(id, datos, estado = 'pendiente') {
   return { tipo: 'auditoria', origen: datos.origen || null, id, estado, archivos: datos.archivos, requisitos: datos.requisitos, configuracion: datos.config, configuraciones: est.configuraciones,
     estimados: est.por_configuracion, estimado_usd: est.por_configuracion[datos.config],
     presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[datos.config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo,
-    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [],
+    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [], menciones: datos.menciones || [], texto_norma_disponible: datos.texto_norma_disponible,
     agrupada: !!datos.rango && Array.isArray(datos.recuperados), lotes: Math.ceil(datos.archivos.length / LOTE), ...extrasInventario(datos) };
 }
 
@@ -1562,6 +1570,9 @@ async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, or
   const via = ['tarjeta_chat', 'ajustes_pendientes'].includes(origen) ? origen : 'api';
   const deQuien = { via, usuario_id: usuario().id, app: /; wv\)/.test(cliente.ua || '') ? 'android' : cliente.ua ? 'navegador' : 'desconocida' };
   if (datos.tipo === 'extraer_requisitos') return aprobarExtraccion(p, Number(presupuesto), deQuien, enAprobacion);
+  // Una lista por rango hecha con la versión anterior (subapartados sueltos, números perdidos) no se puede aprobar:
+  // primero se corrige con «Corregir la lista (sin costo)».
+  if (datos.rango && datos.origen && datos.origen.extraccion_trabajo && !Array.isArray(datos.recuperados)) throw err('Primero corrige la lista con «Corregir la lista (sin costo)»: esta lista separa subapartados y puede omitir números.', 409);
   // Los requisitos editados en la tarjeta conservan su fuente en la norma (por id).
   const conFuente = (lista) => lista.map((r) => { const o = (datos.requisitos || []).find((x) => x.id === String(r.id || '').trim()); return o && o.fuente && !r.fuente ? { ...r, fuente: o.fuente } : r; });
   // Archivos con posible dato sensible: solo entran si Cristian los marca en la tarjeta (uno a uno).

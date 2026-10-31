@@ -300,7 +300,7 @@
     pres.value = String(p.presupuesto_sugerido);
     t.querySelector('.aud-est').textContent = `Extraer: hasta ${usdAud(p.estimado_usd)} (Sonnet; se cobra solo lo real). Al terminar verás la lista para revisarla y aprobarla junto con el presupuesto de la auditoría (referencia ~${usdAud(p.estimado_auditoria_usd)}). Nada se analiza contra tus documentos antes de eso.`;
     const botones = t.querySelectorAll('.tarjeta-botones button');
-    t.querySelector('.principal').addEventListener('click', async () => {
+    t.querySelector('.tarjeta-botones .principal').addEventListener('click', async () => {
       botones.forEach((b) => { b.disabled = true; });
       try {
         const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar`, { method: 'POST', body: JSON.stringify({ presupuesto: parseFloat(pres.value), origen }) });
@@ -332,6 +332,7 @@
     t.querySelector('.aud-estado').textContent = `${p.origen ? 'Paso 2 de 2 · ' : ''}Pendiente · ${p.id.slice(0, 8)}`;
     if (p.origen) t.querySelector('strong').textContent = `Revisa los ${p.requisitos.length} requisitos y aprueba la auditoría`;
     t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${listaArchivos(p.archivos)}${p.motivo ? ` — ${p.motivo}` : ''}${p.perfil === 'seremi' ? ' · clasificación SEREMI' : ''}`;
+    const debeCorregir = !!(p.rango && p.origen && !p.agrupada);
     if (p.rango || (p.faltantes || []).length) {
       const r = document.createElement('div'); r.className = 'meta aud-rango';
       const total = p.rango ? p.rango.hasta - p.rango.desde + 1 : p.requisitos.length;
@@ -340,14 +341,17 @@
       if (p.rango) linea(`Requisitos ${p.rango.desde} al ${p.rango.hasta}: ${numeros} de ${total} en la lista${numeros !== p.requisitos.length ? ` (en ${p.requisitos.length} filas: hay subapartados separados)` : ''}${(p.faltantes || []).length ? '' : ' · ninguno falta'}`);
       if ((p.subapartados || []).length) linea(`Subapartados dentro de su requisito: ${p.subapartados.join(' · ')}`);
       if ((p.recuperados || []).length) linea(`Tomados literalmente del texto de la norma (la extracción no los había separado): ${p.recuperados.join(', ')}. Revisa su texto abajo.`, 'aud-aviso');
-      if ((p.faltantes || []).length) linea(`No aparecen numerados en el texto de la norma: ${p.faltantes.join(', ')}. No los agregué; revisa el documento original.`, 'aud-aviso');
+      if ((p.faltantes || []).length) {
+        linea(p.agrupada ? `No aparecen numerados en el texto de la norma: ${p.faltantes.join(', ')}. No los agregué.` : `Faltan en esta lista: ${p.faltantes.join(', ')}. Corrige la lista para comprobar si están en la norma.`, 'aud-aviso');
+        for (const m of p.menciones || []) linea(m.fragmentos.length ? `${m.numero} aparece en el texto solo así: ${m.fragmentos.map((x) => `«…${x}…»`).join(' · ')}` : `${m.numero} no aparece en ninguna parte del texto extraído de la norma.`, 'aud-aviso');
+      }
       t.querySelector('.aud-archivos').after(r);
       // Listas hechas con la versión anterior (subapartados como requisitos aparte): se corrigen sin volver a pagar.
-      if (p.rango && p.origen && !p.agrupada) {
+      if (debeCorregir) {
         const c = document.createElement('div'); c.className = 'aud-corregir';
         const nota = document.createElement('p'); nota.className = 'meta aud-aviso';
         nota.textContent = 'Esta lista separa subapartados como requisitos aparte y puede omitir números. Corrígela antes de aprobar: usa la extracción ya pagada, sin llamadas nuevas a la IA.';
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'principal'; b.textContent = 'Corregir la lista (sin costo)';
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'principal aud-boton-corregir'; b.textContent = 'Corregir la lista (sin costo)';
         b.addEventListener('click', async () => {
           b.disabled = true;
           try {
@@ -387,7 +391,11 @@
     sel.addEventListener('change', pintarEst);
     pintarEst();
     const botones = t.querySelectorAll('.tarjeta-botones button');
-    t.querySelector('.principal').addEventListener('click', async () => {
+    // Aprobar SOLO desde el botón «Aprobar y empezar» (nunca otro botón principal de la tarjeta).
+    const aprobar = t.querySelector('.tarjeta-botones .principal');
+    if (debeCorregir) { aprobar.disabled = true; aprobar.title = 'Primero corrige la lista'; }
+    aprobar.addEventListener('click', async () => {
+      if (debeCorregir) return;
       const requisitos = t.querySelector('.aud-req').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l, i) => {
         const [a, ...b] = l.split('|'); return b.length ? { id: a.trim(), texto: b.join('|').trim() } : { id: `R${i + 1}`, texto: l };
       });

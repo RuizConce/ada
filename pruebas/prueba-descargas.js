@@ -19,7 +19,7 @@ const B = 'http://localhost:3200';
     const docId = sql('SELECT MAX(id) FROM documentos');
     const H = await fetch(`${B}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tk}` },
       body: JSON.stringify({ mensaje: `[${Date.now()}] HERR ${JSON.stringify({ llamadas: [{ name: 'crear_archivo', input: { tipo: 'excel', titulo: 'Costos de prueba', hojas: [{ nombre: 'Hoja1', columnas: ['Ítem', 'Monto'], filas: [['A', 1000]] }] } }] })}` }) });
-    await H.text();
+    const respuestaChat = await H.text(); if (process.env.DEPURAR) console.log(respuestaChat.slice(-800));
     const archId = sql('SELECT MAX(id) FROM archivos');
     ok(Number(archId) > 0, `hay un archivo creado por ADA (${archId})`);
 

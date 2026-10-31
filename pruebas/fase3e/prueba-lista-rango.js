@@ -4,7 +4,7 @@ process.env.ADA_CLAVE_DATOS = 'x'.repeat(40); process.env.DATABASE_URL = 'mysql:
 const { _listaRango: listaRango } = require('../../src/auditoria');
 const ok = (c, m) => { console.log((c ? 'ok - ' : 'FALLA: ') + m); if (!c) process.exitCode = 1; };
 const norma = ['Página 1', '18. Contar con nómina del personal.', '19. Contar con registro de capacitaciones.', '20. Contar con registro de capacitaciones.',
-  '21. Equipos:', 'a) Programa de mantención.', 'b) Registro de mantenciones.', '23. Contar con plan de emergencia.', 'Nota final: fin.'].join('\n');
+  '21. Equipos:', 'a) Programa de mantención.', 'b) Registro de mantenciones.', '23. Contar con plan de emergencia (ver también el punto 22 del anexo).', 'Nota final: fin.'].join('\n');
 const bloques = [{ bloque: 1, requisitos: [
   { referencia: '18', texto: 'Contar con nómina del personal.', cita: 'Contar con nómina del personal.' },
   { referencia: '19', texto: 'Contar con registro de capacitaciones.', cita: 'Contar con registro de capacitaciones.' },
@@ -18,4 +18,7 @@ ok(r.requisitos.find((x) => x.id === '20'), '19 y 20 tienen el mismo texto: ning
 ok(r.requisitos.find((x) => x.id === '21').texto === 'a) Programa de mantención; b) Registro de mantenciones.' && r.subapartados.join() === '21 (21a, 21b)', '21 a) y 21 b) en una sola fila');
 ok(r.recuperados.join() === '23' && /copiado literalmente/.test(r.requisitos.find((x) => x.id === '23').fuente), '23 (no extraído por la IA) se toma literalmente de la norma');
 ok(r.faltantes.join() === '22', '22 no está en la norma: se informa como ausente, no se inventa');
+ok(r.menciones[0].numero === 22 && /punto 22 del anexo/.test(r.menciones[0].fragmentos[0]), `y se muestra dónde aparece el número en el texto: «${r.menciones[0].fragmentos[0]}»`);
+const r2 = listaRango(bloques, { desde: 18, hasta: 23 }, norma.replace(' (ver también el punto 22 del anexo)', ''));
+ok(r2.menciones[0].fragmentos.length === 0, 'si el número no aparece en ninguna parte del texto, se dice así');
 setTimeout(() => process.exit(), 200);

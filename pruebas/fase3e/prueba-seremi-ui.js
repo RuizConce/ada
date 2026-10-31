@@ -56,12 +56,19 @@ const foto = (p, n) => p.screenshot({ path: `${os.tmpdir()}/v-seremi-${n}.png` }
     await p.reload(); await p.waitForTimeout(1500); await p.$eval('.hoja-fondo', (e) => e.click()).catch(() => {});
     await p.waitForSelector('text=Corregir la lista (sin costo)', { timeout: 8000 });
     t = await p.textContent('.tarjeta-auditoria[data-propuesta]');
-    ok(/28 de 30 en la lista/.test(t) && /No aparecen numerados.*32, 47/.test(t) && (await p.inputValue('.tarjeta-auditoria[data-propuesta] .aud-req')).split('\n').length === 34, 'tarjeta anterior: 34 filas, faltan 32 y 47, y ofrece «Corregir la lista (sin costo)»');
+    ok(/28 de 30 en la lista/.test(t) && /Faltan en esta lista: 32, 47\. Corrige la lista/.test(t) && (await p.inputValue('.tarjeta-auditoria[data-propuesta] .aud-req')).split('\n').length === 34, 'tarjeta anterior: 34 filas, faltan 32 y 47, y ofrece «Corregir la lista (sin costo)»');
     await p.$eval('.aud-corregir', (e) => e.scrollIntoView()); await foto(p, '2a-corregir');
+    ok(await p.$eval('.tarjeta-auditoria[data-propuesta] .tarjeta-botones .principal', (b) => b.disabled), '«Aprobar y empezar» queda deshabilitado mientras la lista no esté corregida');
+    const aprobaciones = []; p.on('request', (rq) => { if (/\/aprobar$/.test(rq.url())) aprobaciones.push(rq.url()); });
+    const trabajosAntes = sql("SELECT COUNT(*) FROM trabajos WHERE tipo='auditoria'");
+    await p.fill('.tarjeta-auditoria[data-propuesta] .aud-pres', '9'); // aunque el presupuesto alcanzara, corregir no aprueba nada
     await p.click('text=Corregir la lista (sin costo)');
     await p.waitForFunction(() => /30 de 30 en la lista/.test(document.querySelector('#entregas').textContent), null, { timeout: 8000 });
     ok((await p.inputValue('.tarjeta-auditoria[data-propuesta] .aud-req')).split('\n').length === 30 && !(await p.$('text=Corregir la lista (sin costo)')) && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${id0}'`) === 'descartada',
       'al corregir: 30 filas del 18 al 47 y la tarjeta anterior queda reemplazada');
+    await p.waitForTimeout(800);
+    ok(!aprobaciones.length && sql("SELECT COUNT(*) FROM trabajos WHERE tipo='auditoria'") === trabajosAntes && !(await p.$eval('.tarjeta-auditoria[data-propuesta] .tarjeta-botones .principal', (b) => b.disabled)),
+      `«Corregir la lista» no envía ninguna aprobación ni crea trabajos (${aprobaciones.length} solicitudes de aprobación); en la tarjeta nueva «Aprobar» vuelve a estar habilitado`);
     await p.check('.tarjeta-auditoria[data-propuesta] .aud-sensible input[value="C_SIS"]');
     await p.$eval('.tarjeta-auditoria[data-propuesta]', (e) => e.scrollIntoView()); await foto(p, '2-lista');
     const propId = await p.$eval('.tarjeta-auditoria[data-propuesta]', (e) => e.dataset.propuesta);

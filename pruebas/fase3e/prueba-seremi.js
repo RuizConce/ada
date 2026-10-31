@@ -85,6 +85,8 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     sql(`UPDATE auditoria_propuestas SET datos_cifrado='${Cifrado.cifrarJSON(viejo)}' WHERE id='${pB.id}'`);
     const viejaCard = (await api('/api/auditorias/propuestas')).d.find((x) => x.id === pB.id);
     ok(viejaCard.requisitos.length === 34 && !viejaCard.agrupada, `tarjeta con el formato anterior: ${viejaCard.requisitos.length} filas, faltan 32 y 47 (como en la carpeta real)`);
+    const intento = await post(`/api/auditorias/propuestas/${pB.id}/aprobar`, { presupuesto: 9, configuracion: 'K1', origen: 'tarjeta_chat' });
+    ok(intento.status === 409 && /Primero corrige la lista/.test(intento.d.error) && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${pB.id}'`) === 'pendiente', 'el servidor no permite aprobar una lista sin corregir, aunque el presupuesto alcance');
     const llamadasExtr = sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${r.d.trabajo_id}'`);
     const rh = await post(`/api/auditorias/propuestas/${pB.id}/rehacer-lista`);
     ok(rh.status === 200 && rh.d.nueva.requisitos.length === 30 && rh.d.nueva.agrupada && rh.d.llamadas_ia_nuevas === 0 && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${r.d.trabajo_id}'`) === llamadasExtr && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${pB.id}'`) === 'descartada',
