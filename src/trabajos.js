@@ -182,8 +182,10 @@ async function cancelar(id) {
 async function reintentar(id) {
   const t = await propio(id);
   if (t.estado !== 'bloqueado') throw err(`El encargo está "${t.estado}"`, 409);
+  const fallidos = await qPrincipal("SELECT clave FROM trabajo_pasos WHERE trabajo_id = ? AND estado IN ('fallido', 'revision') ORDER BY orden", [id]);
   await qPrincipal("UPDATE trabajo_pasos SET estado = 'pendiente', intentos = 0, error = NULL WHERE trabajo_id = ? AND estado IN ('fallido', 'revision')", [id]);
-  await cambiar(id, ['bloqueado'], 'ejecutando', { tipo: 'reintentar', extra: { motivo: null } });
+  // Queda constancia de QUÉ se vuelve a ejecutar (lo hecho no se toca): así la tarjeta puede decir si empezó y cómo terminó.
+  await cambiar(id, ['bloqueado'], 'ejecutando', { tipo: 'reintentar', detalle: fallidos.length ? `se vuelve a ejecutar: ${fallidos.map((f) => f.clave).join(', ')}` : 'sin pasos fallidos: se repite la verificación final', extra: { motivo: null } });
   despertar();
   return ver(id);
 }

@@ -76,7 +76,7 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     const stB = await ctl('/control/stats');
     ok(rh.status === 200 && rh.d.nueva.requisitos.length === 22 && rh.d.nueva.tabla && rh.d.nueva.tabla.filas === 22 && rh.d.llamadas_ia_nuevas === 0 && sql('SELECT COUNT(*) FROM llamadas_ia') === llamA
       && JSON.stringify(stA.export) === JSON.stringify(stB.export) && rh.d.nueva.requisitos[3].texto.includes('responsable del botiquín'),
-      `«Corregir la lista»: 22 de 22 desde la tabla, sin llamadas a la IA ni descargas (${rh.status} ${rh.d.error || ''})`);
+      `«Corregir la lista»: 22 de 22 desde la tabla, sin llamadas a la IA ni descargas (${rh.status} ${rh.d.error || ''} n=${rh.d.nueva && rh.d.nueva.requisitos.length} ia=${rh.d.llamadas_ia_nuevas} llam=${llamA}→${sql('SELECT COUNT(*) FROM llamadas_ia')} exp=${JSON.stringify(stA.export) === JSON.stringify(stB.export)} r4=${rh.d.nueva && rh.d.nueva.requisitos[3].texto.slice(0, 120)})`);
     if (rh.status === 200) pL = rh.d.nueva;
     // ---- Aprobación 3: auditoría (incluyo el RUT, sensible, para leerlo) ----
     r = await post(`/api/auditorias/propuestas/${pL.id}/aprobar`, { presupuesto: pL.presupuesto_sugerido, configuracion: 'K1', origen: 'tarjeta_chat', incluir_ids: ['D_RUT'] });
@@ -90,6 +90,33 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     ok(filas.find((f) => f.requisito === '9').clasificacion === 'PARCIAL' && filas.find((f) => f.requisito === '15').clasificacion === 'NO ENCONTRADO' && filas.find((f) => f.requisito === '1').clasificacion === 'REQUIERE REVISIÓN', 'estados del expediente: LISTO, PARCIAL, NO ENCONTRADO, NO APLICA, REQUIERE REVISIÓN (la firma no se da por verificada)');
     st = await ctl('/control/stats');
     ok(!Object.keys(st.escrituras_en || {}).length, 'el análisis no escribió nada en Drive');
+    // ---- Caso real dd8008fd: el informe (último paso) falla y el trabajo queda bloqueado. «Reintentar» repite SOLO ese
+    // paso (sin IA, sin descargas), la tarjeta explica dónde se detuvo y qué pasó, y al terminar aparece el plan de copias.
+    {
+      const planAntes = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias');
+      sql(`DELETE FROM auditoria_propuestas WHERE id='${planAntes.id}'`);
+      sql(`UPDATE trabajo_pasos SET estado='fallido', intentos=3, error='el informe salió incompleto y no se entrega: termina a media frase: «…Plano del local»' WHERE trabajo_id='${tAud}' AND tipo='aud_informe'`);
+      sql(`UPDATE trabajos SET estado='bloqueado', motivo='paso informe: el informe salió incompleto y no se entrega: termina a media frase', resultado_cifrado=NULL, terminado_en=NULL WHERE id='${tAud}'`);
+      sql(`INSERT INTO trabajo_eventos (trabajo_id, tipo, detalle, actor, creado_en) VALUES ('${tAud}', 'bloqueado', 'paso informe: el informe salió incompleto y no se entrega: termina a media frase', 'ejecutor', NOW())`);
+      const finAntes = sql(`SELECT GROUP_CONCAT(fin ORDER BY orden) FROM trabajo_pasos WHERE trabajo_id='${tAud}' AND tipo<>'aud_informe'`);
+      const llamAntes = sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${tAud}'`); const gastoAntes = sql(`SELECT gastado_usd FROM trabajos WHERE id='${tAud}'`);
+      const stR = await ctl('/control/stats');
+      const av = (await api(`/api/auditorias/${tAud}/avance`)).d;
+      ok(av && av.paso_fallido && av.paso_fallido.tipo === 'aud_informe' && !av.paso_fallido.usa_ia && av.conservado && av.conservado.pasos === av.pasos_total - 1,
+        `bloqueado: la tarjeta dice en qué paso se detuvo («${av && av.paso_fallido && av.paso_fallido.nombre}»), por qué, y que ${av && av.conservado && av.conservado.pasos} pasos están guardados`);
+      const rr = await post(`/api/trabajos/${tAud}/reintentar`);
+      ok(rr.status === 200, `reintento aceptado (${rr.status} ${rr.d.error || ''})`);
+      const fin = await esperar(tAud);
+      const av2 = (await api(`/api/auditorias/${tAud}/avance`)).d;
+      ok(fin.estado === 'completado' && av2.reintento && av2.reintento.resultado === 'resuelto' && /aud_informe|informe/.test(av2.reintento.detalle || ''), `tras el reintento: ${fin.estado}; constancia «${av2.reintento && av2.reintento.detalle}»`);
+      const stR2 = await ctl('/control/stats');
+      ok(sql(`SELECT GROUP_CONCAT(fin ORDER BY orden) FROM trabajo_pasos WHERE trabajo_id='${tAud}' AND tipo<>'aud_informe'`) === finAntes && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${tAud}'`) === llamAntes
+        && sql(`SELECT gastado_usd FROM trabajos WHERE id='${tAud}'`) === gastoAntes && JSON.stringify(stR.export) === JSON.stringify(stR2.export),
+        'solo se repitió el informe: los demás pasos intactos, sin llamadas a la IA, sin gasto nuevo y sin descargas');
+      await dormir(800);
+      const planes = (await api('/api/auditorias/propuestas')).d.filter((x) => x.tipo === 'plan_copias' && x.auditoria_trabajo === tAud);
+      ok(planes.length === 1, `al terminar aparece el plan de copias para aprobar (una sola tarjeta: ${planes.length})`);
+    }
     // ---- Aprobación 4: plan de copias (vista previa completa) ----
     const plan = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias');
     const nombres = plan.plan.map((f) => f.nombre_copia);

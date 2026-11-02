@@ -677,11 +677,38 @@
         accion(b, 'ampliar', { monto: 1 });
       }, 'principal');
     }
+    // Reintento con explicación: dónde se detuvo, qué se conserva, qué pasó con el último reintento.
+    const hora = (x) => { try { return new Date(x).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } };
+    const r = a.reintento;
+    if (r && r.resultado === 'en_curso' && a.estado === 'ejecutando') {
+      const n = document.createElement('p'); n.className = 'meta aud-aviso aud-reintento';
+      n.textContent = `Reintento en curso (empezó a las ${hora(r.en)}): ${r.detalle || 'se vuelve a ejecutar el paso que falló'}. Lo ya hecho se conserva y no se vuelve a pagar.`;
+      t.querySelector('.aud-matriz').before(n);
+    }
     if (a.estado === 'bloqueado') {
-      boton('Reintentar desde el paso que falló', (b) => {
-        if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar reintento (lo hecho no se vuelve a pagar)'; return; }
-        accion(b, 'reintentar');
+      const pf = a.paso_fallido; const c = a.conservado;
+      const n = document.createElement('div'); n.className = 'meta aud-aviso aud-reintento';
+      const linea = (txt) => { const p = document.createElement('p'); p.textContent = txt; n.appendChild(p); return p; };
+      if (pf) linea(`Se detuvo en el paso «${pf.nombre}» (${pf.clave}${pf.intentos ? `, ${pf.intentos} intento${pf.intentos === 1 ? '' : 's'}` : ''}). Motivo: ${pf.error || a.motivo || 'sin detalle'}`);
+      else linea(`Se detuvo: ${a.motivo || 'sin detalle'}`);
+      if (c) linea(`Lo ya hecho está guardado: ${c.pasos} de ${a.pasos_total} pasos (${usdAud(c.costo_usd)}). Al reintentar solo se repite ${pf ? `«${pf.nombre}»` : 'la verificación final'}${pf && !pf.usa_ia ? ', que no usa IA (sin costo)' : ''}.`);
+      if (r && r.resultado === 'volvio_a_fallar') {
+        linea(`Último reintento: ${hora(r.en)} — volvió a fallar${r.mismo_error ? ' con el mismo error' : ''} (reintentos: ${r.veces}).`).className = 'aud-reintento-fallo';
+        if (r.mismo_error && pf && !pf.usa_ia) linea('Este paso no usa IA: repetirlo sin una corrección de ADA daría el mismo resultado. Hay que corregir ADA antes de reintentar.');
+      }
+      t.querySelector('.aud-matriz').before(n);
+      const clave = `${a.id}:reintentar`;
+      const b = boton(confirmando.has(clave) ? 'Confirmar reintento (lo hecho no se vuelve a pagar)' : 'Reintentar desde el paso que falló', async (b) => {
+        // La confirmación sobrevive al refresco de la tarjeta (antes se perdía y el botón «no hacía nada»).
+        if (!confirmando.has(clave)) { confirmando.set(clave, Date.now()); setTimeout(() => confirmando.delete(clave), 20000); b.textContent = 'Confirmar reintento (lo hecho no se vuelve a pagar)'; return; }
+        confirmando.delete(clave); b.disabled = true; b.textContent = 'Reintentando…';
+        try {
+          await api(`/api/trabajos/${a.id}/reintentar`, { method: 'POST', body: '{}' });
+          aviso(`Reintento iniciado a las ${hora(new Date())}: se vuelve a ejecutar solo ${pf ? `«${pf.nombre}»` : 'la verificación final'}. Te muestro el resultado aquí.`);
+          seguirAuditorias();
+        } catch (e) { b.disabled = false; b.textContent = 'Reintentar desde el paso que falló'; aviso(`No se pudo iniciar el reintento: ${e.message}`, true); }
       }, 'principal');
+      void b;
     }
     if (['ejecutando', 'pausado', 'pausado_presupuesto', 'bloqueado'].includes(a.estado)) {
       boton('Cancelar', (b) => {
@@ -707,6 +734,7 @@
     if (estado !== 'mostrada') aviso('No pude mostrar la tarjeta de la auditoría. Está guardada en Ajustes → Auditoría → Propuestas pendientes.', true);
   }
 
+  const confirmando = new Map(); // confirmaciones de dos toques que deben sobrevivir al refresco de la tarjeta
   // Una tarjeta cerrada no vuelve a aparecer al recargar (preferencia de este navegador).
   const cerradasAud = () => { try { return JSON.parse(localStorage.getItem('ada_aud_cerradas') || '[]'); } catch (_) { return []; } };
   function cerrarAuditoria(id) {

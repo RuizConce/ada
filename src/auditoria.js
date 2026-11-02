@@ -619,7 +619,7 @@ const EJECUTORES = {
     // Comprobación antes de entregar: el Word trae cada línea completa y ningún párrafo termina a media frase.
     const c = await comprobarWord(buf, { titulo, contenido: md }, { estricto: true });
     if (!c.ok) throw new Error(`el informe salió incompleto y no se entrega: ${c.problemas.slice(0, 3).join('; ')}`);
-    return { resultado: { nombre: 'informe.docx', docx_b64: buf.toString('base64'), huella: hash(buf.toString('base64')), md_huella: hash(md), md, hallazgos: pendientes.length, recomendaciones: recomendaciones.length, origen_recomendaciones: origenRec, comprobacion: { parrafos: c.parrafos, completo: true } },
+    return { resultado: { nombre: 'informe.docx', docx_b64: buf.toString('base64'), huella: hash(buf.toString('base64')), md_huella: hash(md), md, hallazgos: pendientes.length, recomendaciones: recomendaciones.length, origen_recomendaciones: origenRec, comprobacion: { parrafos: c.parrafos, completo: true, lineas_cerradas_con_punto: (informeMarkdown.ultimasCerradas || []).length } },
       costo, llamadasRegistradas: true };
   },
 };
@@ -739,21 +739,40 @@ async function recomendar(pendientes, ctx, config) {
 // Textos que vienen de otros (requisitos escritos a mano, justificaciones) se cierran con punto si no lo traen,
 // para que el informe nunca muestre una frase abierta. Los textos de la IA ya llegan completos (se validan antes).
 const frase = (t) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return !x || /[.!?…:;)\]»"”]$/.test(x) ? x : `${x}.`; };
-function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada, docs }) {
+// Texto de los documentos o de los datos (citas, nombres de archivo, expediente) en UNA línea: un salto de línea dentro
+// de una cita partía la línea del informe en dos, y la primera mitad quedaba «a media frase» (bloqueaba el informe).
+const una = (t) => String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+function informeMarkdown(datos) {
+  const md = informeMarkdownBase(datos);
+  // Cierre final: toda línea de texto (no títulos ni tablas) termina en un cierre de frase. Son líneas armadas por el
+  // código con datos ya verificados; si alguna no trae cierre se le agrega el punto (y queda anotado), en vez de
+  // bloquear el trabajo entero por un signo. Los cortes REALES se siguen detectando al releer el Word.
+  const cerradas = [];
+  const lineas = md.split('\n').map((l, i) => {
+    const t = l.trim();
+    if (!t || /^#{1,6}\s/.test(t) || /^\|.*\|$/.test(t) || /^-{3,}$/.test(t)) return l;
+    if (/[.!?…:;)\]»"”'%]$|\d$/.test(t.replace(/\*+$/, ''))) return l;
+    cerradas.push(i + 1);
+    return `${l.replace(/\s+$/, '')}.`;
+  });
+  informeMarkdown.ultimasCerradas = cerradas;
+  return lineas.join('\n');
+}
+function informeMarkdownBase({ filas, recomendaciones, origenRec, trabajoId, entrada, docs }) {
   const conteo = conteoEstados(filas);
   const pendientes = filas.filter(esPendiente);
   const seremi = CLASIFICA(entrada.perfil);
   const etiqueta = (f) => (seremi && f.presentacion ? etiquetaDe(entrada.perfil, f.presentacion) : ETIQUETA[f.estado]);
-  const ref = (x) => `${x.archivo || 'documento'}${x.ubicacion ? `, ${x.ubicacion}` : ''}`;
+  const ref = (x) => `${una(x.archivo) || 'documento'}${x.ubicacion ? `, ${una(x.ubicacion)}` : ''}`;
   const l = [];
-  if (entrada.expediente) l.push(`Expediente: ${entrada.expediente}${entrada.carpeta ? ` · Carpeta de origen: ${entrada.carpeta.nombre || ''} (id ${entrada.carpeta.id || ''})` : ''}${entrada.lista ? ` · Lista: ${entrada.lista.nombre}` : ''}`);
+  if (entrada.expediente) l.push(`Expediente: ${una(entrada.expediente)}${entrada.carpeta ? ` · Carpeta de origen: ${una(entrada.carpeta.nombre)} (id ${una(entrada.carpeta.id)})` : ''}${entrada.lista ? ` · Lista: ${una(entrada.lista.nombre)}` : ''}.`);
   l.push(`Trabajo ${trabajoId} · Configuración ${entrada.config} · Requisitos aprobados: ${filas.length} (huella ${String(entrada.requisitos_hash || '').slice(0, 12)})`);
   l.push(`Generado por ADA el ${new Date().toISOString().slice(0, 10)}.`);
   l.push('', '## 1. Alcance');
   if (docs.length > 25) l.push(`Se revisaron ${docs.length} documentos con texto contra ${filas.length} requisito(s) aprobados. La lista completa de archivos, con el estado de cada uno, está en la hoja Inventario del Excel.`);
   else {
     l.push(`Se revisaron ${docs.length} documento(s) contra ${filas.length} requisito(s) aprobados:`);
-    for (const d of docs) l.push(`- ${d.nombre} (versión ${d.version})`);
+    for (const d of docs) l.push(`- ${una(d.nombre)} (versión ${una(d.version)})`);
   }
   l.push('', '## 2. Resumen');
   if (seremi) {
@@ -769,20 +788,20 @@ function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada
   l.push('Hechos verificados: cada uno se apoya en citas encontradas textualmente en los documentos.');
   if (!pendientes.length) l.push('- No hay hallazgos: todos los requisitos se cumplen o no aplican.');
   for (const f of pendientes) {
-    l.push(`### ${f.requisito} — ${etiqueta(f)}`);
+    l.push(`### ${una(f.requisito)} — ${etiqueta(f)}`);
     l.push(`Requisito: ${frase(f.texto_requisito)}`);
     l.push(`Hallazgo: ${frase(f.justificacion)}`);
-    for (const x of f.evidencias || []) l.push(`- Evidencia ${x.aporta === 'en_contra' ? 'en contra' : 'a favor'} (${ref(x)}): «${x.cita}»`);
+    for (const x of f.evidencias || []) l.push(`- Evidencia ${x.aporta === 'en_contra' ? 'en contra' : 'a favor'} (${ref(x)}): «${una(x.cita)}»`);
   }
   const cumplen = filas.filter((f) => !esPendiente(f));
   if (cumplen.length) {
     l.push('', seremi ? '### Listos para subir o que no aplican' : '### Requisitos cumplidos o que no aplican');
-    for (const f of cumplen) l.push(`- ${f.requisito} — ${etiqueta(f)}: ${frase(f.justificacion)}${seremi && f.archivo ? ` Archivo: ${f.archivo}.` : ''}`);
+    for (const f of cumplen) l.push(`- ${f.requisito} — ${etiqueta(f)}: ${frase(f.justificacion)}${seremi && f.archivo ? ` Archivo: ${una(f.archivo)}.` : ''}`);
   }
   l.push('', '## 4. Recomendaciones');
   l.push(seremi ? `Acciones concretas para dejar cada requisito listo para subir (origen: ${origenRec}). Son propuestas de ADA: revísalas antes de presentar.` : `Propuestas de ADA para subsanar los hallazgos (origen: ${origenRec}). No son hallazgos ni hechos verificados: son sugerencias para decidir.`);
   if (!recomendaciones.length) l.push('- Sin recomendaciones: no hay hallazgos que subsanar.');
-  for (const r of recomendaciones) l.push(`- ${r.requisito} (prioridad ${r.prioridad}${r.generica ? ', genérica' : ''}): ${r.accion}`);
+  for (const r of recomendaciones) l.push(`- ${una(r.requisito)} (prioridad ${r.prioridad}${r.generica ? ', genérica' : ''}): ${frase(r.accion)}`);
   l.push('', '## 5. Método y límites');
   l.push(seremi ? '- La evaluación usa solo el texto de los documentos auditados. "Listo para subir" exige una cita verificada que acredite el requisito; si falta comprobar firma, timbre, imagen, vigencia o versión, el requisito queda en "Requiere revisión" con lo que hay que comprobar.' : '- La evaluación usa solo los documentos indicados; lo que no está en ellos figura como sin evidencia.');
   if (seremi) l.push('- Los archivos no analizados (posibles datos personales, imágenes, escaneos sin texto, duplicados) figuran en la hoja Inventario del Excel con su motivo; si su nombre se relaciona con un requisito sin evidencia, ese requisito queda en "Requiere revisión", no en "No encontrado".');
@@ -1267,7 +1286,7 @@ Object.assign(EJECUTORES, {
     const filas = (await Trabajos.ver(o.auditoria_trabajo, { conResultado: true })).resultado.matriz.filas;
     const de = (k) => filas.filter((f) => f.presentacion === k);
     const l = [];
-    l.push(`Expediente: ${o.expediente} · Carpeta de resultados: «${res.nombre}».`);
+    l.push(`Expediente: ${una(o.expediente)} · Carpeta de resultados: «${una(res.nombre)}».`);
     l.push(`Copias creadas: ${ver.copias_ok} de ${ver.copias}. Los documentos originales no se modificaron (${ver.originales_intactos} comprobados).`);
     l.push('', '## 1. Resumen');
     l.push('| Estado | N.º | Requisitos |', '| --- | --- | --- |');
@@ -1275,7 +1294,7 @@ Object.assign(EJECUTORES, {
     l.push('', '## 2. Documentos aprovechados');
     const acr = copias.filter((c) => c.clase === 'acredita');
     if (!acr.length) l.push('- Ninguno acredita por sí solo un requisito.');
-    for (const c of acr) l.push(`- ${c.copia_nombre} (requisito ${c.requisito}): «${c.cita}».`);
+    for (const c of acr) l.push(`- ${una(c.copia_nombre)} (requisito ${c.requisito}): «${una(c.cita)}».`);
     l.push('', '## 3. Pendientes de completar');
     const pend = filas.filter((f) => ['modificar', 'revisar'].includes(f.presentacion));
     if (!pend.length) l.push('- No hay requisitos pendientes de completar.');
@@ -2344,6 +2363,9 @@ async function crearPlanCopias(t, objetivo, final) {
   const filas = final && final.matriz ? final.matriz.filas : [];
   if (!filas.length) return;
   const { plan, sinCopia } = planDeCopias(filas, objetivo.inventario);
+  // Un solo plan por auditoría (si el trabajo vuelve a terminar tras un reintento, no se duplica la tarjeta).
+  const previas = await qPrincipal("SELECT datos_cifrado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]);
+  if (previas.some((x) => { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); return d.tipo === 'plan_copias' && d.auditoria_trabajo === t.id; } catch (_) { return false; } })) return;
   const expediente = objetivo.expediente || (objetivo.carpeta && objetivo.carpeta.nombre) || 'Expediente';
   const datos = { tipo: 'plan_copias', auditoria_trabajo: t.id, expediente, perfil: objetivo.perfil || null, carpeta_docs: objetivo.carpeta,
     resultados_nombre: (objetivo.organizar && objetivo.organizar.nombre) || `ADA — ${expediente} — Documentos organizados`, plan, sin_copia: sinCopia, requisitos: filas.length };
@@ -2562,6 +2584,20 @@ async function avance(trabajoId) {
   // La respuesta sencilla: qué requisitos se pueden subir, cuáles modificar, cuáles faltan, cuáles no aplican y cuáles revisar.
   const resumenSeremi = r.matriz && r.matriz.filas.some((f) => f.presentacion)
     ? Object.fromEntries(PRESENTACION.map((k) => [k, r.matriz.filas.filter((f) => f.presentacion === k).map((f) => f.requisito)])) : null;
+  // Dónde se detuvo y qué pasó con el último reintento (para que nadie quede pulsando «Reintentar» sin saber qué ocurre).
+  const NOMBRE_PASO = { aud_informe: 'Informe (Word)', aud_excel: 'Excel', aud_consolidar: 'Consolidación de resultados', aud_verificar: 'Evaluación de un requisito', aud_extraer: 'Lectura de un archivo', aud_seleccionar_lote: 'Selección de documentos', org_informe: 'Resumen (Word)', org_excel: 'Excel', org_copiar: 'Copia de un archivo', org_carpeta: 'Carpeta de resultados', org_verificar: 'Verificación de copias' };
+  const pf = v.detalle_pasos.find((p) => ['fallido', 'revision'].includes(p.estado));
+  const pasoFallido = pf ? { clave: pf.clave, tipo: pf.tipo, nombre: NOMBRE_PASO[pf.tipo] || pf.tipo, intentos: pf.intentos, error: pf.error ? String(pf.error).slice(0, 400) : null, usa_ia: !['aud_informe', 'aud_excel', 'aud_consolidar', 'org_informe', 'org_excel', 'org_copiar', 'org_carpeta', 'org_verificar'].includes(pf.tipo) || Number(pf.costo_usd) > 0 } : null;
+  const iR = v.eventos.map((e) => e.tipo).lastIndexOf('reintentar');
+  let reintento = null;
+  if (iR >= 0) {
+    const e = v.eventos[iR]; const despues = v.eventos.slice(iR + 1);
+    const bloq = despues.filter((x) => x.tipo === 'bloqueado').pop();
+    reintento = { en: e.creado_en, detalle: e.detalle, veces: v.eventos.filter((x) => x.tipo === 'reintentar').length,
+      resultado: v.estado === 'completado' ? 'resuelto' : bloq && v.estado === 'bloqueado' ? 'volvio_a_fallar' : v.estado === 'ejecutando' ? 'en_curso' : v.estado,
+      ...(bloq ? { motivo: bloq.detalle, mismo_error: !!(v.motivo && bloq.detalle === v.motivo && v.eventos.slice(0, iR).some((x) => x.tipo === 'bloqueado' && x.detalle === bloq.detalle)) } : {}) };
+  }
+  const conservado = { pasos: v.pasos.hechos, costo_usd: Number(v.detalle_pasos.filter((p) => p.estado === 'hecho').reduce((a, p) => a + (Number(p.costo_usd) || 0), 0).toFixed(5)) };
   const errorLista = bloques.length && v.estado === 'completado' && !siguiente ? (v.eventos.filter((e) => e.tipo === 'lista_error').pop() || {}).detalle || null : null;
   return {
     modo: bloques.length ? 'requisitos' : objetivoAv.modo === 'copias' ? 'copias' : 'auditoria', perfil: objetivoAv.perfil || null, ...(objetivoAv.organizar ? { organizar: true } : {}), ...(errorLista ? { lista_error: errorLista } : {}),
@@ -2574,6 +2610,7 @@ async function avance(trabajoId) {
     conteo: r.conteo || null,
     hay: true, id: v.id, propuesta_id: prop ? prop.id : null, conversacion_id: prop ? prop.conversacion_id : null,
     estado: v.estado, estado_real: v.estado_real, motivo: v.motivo, etapa: v.etapa,
+    ...(pasoFallido ? { paso_fallido: pasoFallido } : {}), ...(reintento ? { reintento } : {}), ...(v.estado === 'bloqueado' ? { conservado } : {}),
     pasos_hechos: v.pasos.hechos, pasos_total: v.pasos.total,
     requisitos_evaluados: verif.filter((p) => p.estado === 'hecho').length, requisitos_total: verif.length,
     costo_real_usd: Number(costos.real_usd.toFixed(5)), presupuesto_usd: v.presupuesto_usd, reserva_activa_usd: v.reservado_usd,
@@ -2718,4 +2755,4 @@ async function textosGuardados(trabajoId, objetivo) {
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

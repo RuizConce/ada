@@ -52,6 +52,27 @@ const PASS = 'clave-org-ui';
     await p.click('.tarjeta-auditoria[data-propuesta] >> text=Aprobar y empezar');
     // 4. Plan de copias.
     await p.waitForSelector('text=Plan de copias — Botiquín Andaluz (ficticio)', { timeout: 120000 });
+    // 3b. El informe falla (caso dd8008fd): la tarjeta explica dónde se detuvo; «Reintentar» (dos toques, aunque la
+    // tarjeta se refresque entre medio) avisa que empezó y al terminar vuelve el plan de copias.
+    {
+      const tAud = sql("SELECT t.id FROM trabajos t WHERE EXISTS (SELECT 1 FROM trabajo_pasos p WHERE p.trabajo_id = t.id AND p.tipo = 'aud_informe') ORDER BY t.creado_en DESC LIMIT 1");
+      sql(`DELETE FROM auditoria_propuestas WHERE estado='pendiente'`);
+      sql(`UPDATE trabajo_pasos SET estado='fallido', intentos=3, error='el informe salió incompleto y no se entrega: termina a media frase' WHERE trabajo_id='${tAud}' AND tipo='aud_informe'`);
+      sql(`UPDATE trabajos SET estado='bloqueado', motivo='paso informe: el informe salió incompleto', resultado_cifrado=NULL, terminado_en=NULL WHERE id='${tAud}'`);
+      sql(`INSERT INTO trabajo_eventos (trabajo_id, tipo, detalle, actor, creado_en) VALUES ('${tAud}', 'bloqueado', 'paso informe: el informe salió incompleto', 'ejecutor', NOW())`);
+      await p.reload(); await p.waitForTimeout(1500); await p.$eval('.hoja-fondo', (e) => e.click()).catch(() => {});
+      await p.waitForSelector('text=Se detuvo en el paso «Informe (Word)»', { timeout: 30000 });
+      const tb = p.locator('.tarjeta-auditoria[data-trabajo]', { hasText: 'Se detuvo en el paso' });
+      t = await tb.textContent();
+      ok(/Lo ya hecho está guardado: \d+ de \d+ pasos/.test(t) && /que no usa IA \(sin costo\)/.test(t), '3b: bloqueado: dónde se detuvo, por qué y qué se conserva');
+      await tb.locator('text=Reintentar desde el paso que falló').click();
+      await p.waitForTimeout(3500); // la tarjeta se refresca entre los dos toques
+      await p.locator('text=Confirmar reintento (lo hecho no se vuelve a pagar)').click();
+      await p.waitForSelector('text=/Reintento iniciado a las/', { timeout: 10000 });
+      ok(true, '3b: el segundo toque inicia el reintento y lo avisa');
+      await p.waitForSelector('text=Plan de copias — Botiquín Andaluz (ficticio)', { timeout: 60000 });
+      ok(sql(`SELECT estado FROM trabajos WHERE id='${tAud}'`) === 'completado', '3b: tras el reintento la auditoría termina y vuelve el plan de copias');
+    }
     t = await p.textContent('.tarjeta-plan');
     ok(/Se creará la carpeta «ADA — Botiquín Andaluz — Documentos organizados» en la raíz de Mi unidad/.test(t) && /04_Contrato_QF_y_nombramiento\.pdf/.test(t) && /09_PENDIENTE_Procedimiento_recepcion\.pdf/.test(t) && /Sin documento para copiar \(3\)/.test(t), '4: vista previa completa: destino, nombres, PENDIENTE y lo que falta');
     ok(!(await p.isChecked('.tarjeta-plan input[value="2:D_RUT"]')) && /Crear carpeta y copiar \(19\)/.test(t), 'el RUT (sensible) viene desmarcado: 19 copias por defecto');
