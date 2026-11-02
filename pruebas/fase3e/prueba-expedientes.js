@@ -64,14 +64,33 @@ const GRANDE = [{ id: 'carpeta-grande-x', name: 'Carpeta_grande', mimeType: 'app
   sql('DELETE FROM carpetas_autorizadas'); sql('DELETE FROM listas_requisitos');
   srv.kill(); await dormir(500); await arrancar(); // reinicia con la tabla vacía (la caché de carpetas se carga al arrancar)
   try {
-    // ---- 0. La lista SEREMI 18–47 de Andaluz: extracción (una vez), corrección y GUARDADO como referencia ----
+    // ---- 0. Andaluz como en la realidad: extracción → lista corregida → auditoría TERMINADA. La tarjeta de la lista ya
+    // no existe (se aprobó). La lista se guarda desde la auditoría terminada, sin IA ni costo.
     let c = await chat({ norma_id: D.norma_id, carpeta_id: 'carpeta-seremi', rango: { desde: 18, hasta: 47 }, perfil: 'seremi' });
     let r = await post(`/api/auditorias/propuestas/${c.tarjeta.id}/aprobar`, { presupuesto: c.tarjeta.presupuesto_sugerido, origen: 'tarjeta_chat' });
     const ext = await esperar(r.d.trabajo_id);
     const pB = (await api('/api/auditorias/propuestas')).d.find((x) => x.id === ext.lista_propuesta.propuesta_id);
-    r = await post(`/api/auditorias/propuestas/${pB.id}/guardar-lista`, { nombre: 'SEREMI 18–47', nota: 'La frase sobre evaluación anestésica no apareció en el texto guardado: cotejar con el original.' });
-    ok(r.status === 200 && r.d.requisitos === 30 && r.d.fuente.id === D.norma_id && r.d.validada_en, `lista «SEREMI 18–47» guardada: ${r.d.requisitos} requisitos, fuente «${r.d.fuente && r.d.fuente.nombre}»`);
-    ok((await post(`/api/auditorias/propuestas/${pB.id}/guardar-lista`, { nombre: 'SEREMI 18–47' })).status === 409, 'no se guardan dos listas activas con el mismo nombre');
+    await post(`/api/auditorias/propuestas/${pB.id}/buscar-en-norma`, { frase: 'Contar con señalética de vías de evacuación.' });
+    r = await post(`/api/auditorias/propuestas/${pB.id}/aprobar`, { presupuesto: pB.presupuesto_sugerido, configuracion: 'K1', origen: 'tarjeta_chat' });
+    const tAndaluz = r.d.trabajo_id;
+    ok((await esperar(tAndaluz)).estado === 'completado', `auditoría de Andaluz terminada (trabajo ${tAndaluz.slice(0, 8)}); su tarjeta de lista ya no está pendiente`);
+    const term = (await api('/api/auditorias/terminadas')).d;
+    ok(term[0].id === tAndaluz && term[0].excel && term[0].informe && term[0].requisitos === 30 && term[0].expediente, `«Auditorías terminadas» la muestra con Excel e informe: ${term[0] && term[0].expediente} · ${term[0] && term[0].ids}`);
+    const v = (await api(`/api/auditorias/${tAndaluz}/requisitos`)).d;
+    ok(v.total === 30 && v.completo && v.rango.desde === 18 && v.rango.hasta === 47 && v.fuente.id === D.norma_id && v.requisitos.find((x) => x.id === '47').texto.startsWith('MANUAL DE BIOSEGURIDAD') && v.notas.some((x) => /señalética/.test(x)),
+      `en la base: ${v.total} requisitos del ${v.rango.desde} al ${v.rango.hasta} completos, textos íntegros (32 y 47 incluidos), fuente y observaciones`);
+    const llamadas0 = sql('SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id IS NOT NULL'); const trabajos0 = sql('SELECT COUNT(*) FROM trabajos');
+    r = await post(`/api/auditorias/${tAndaluz}/guardar-lista`, { nombre: 'SEREMI 18–47', nota: 'La frase sobre evaluación anestésica no apareció en el texto guardado: cotejar con el original.' });
+    ok(r.status === 200 && r.d.requisitos === 30 && r.d.fuente.id === D.norma_id && sql('SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id IS NOT NULL') === llamadas0 && sql('SELECT COUNT(*) FROM trabajos') === trabajos0,
+      `lista «SEREMI 18–47» guardada desde la auditoría terminada: ${r.d.requisitos} requisitos, sin llamadas a la IA ni trabajos nuevos`);
+    ok((await post(`/api/auditorias/${tAndaluz}/guardar-lista`, { nombre: 'SEREMI 18–47' })).status === 409, 'no se guardan dos listas activas con el mismo nombre');
+    // En OTRA conversación, ADA encuentra la auditoría y ofrece sus descargas (no la busca en Drive).
+    const rv = await fetch('http://localhost:3200/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tk}` },
+      body: JSON.stringify({ mensaje: `[${Date.now()}-v] HERR ${JSON.stringify({ llamadas: [{ name: 'ver_auditoria', input: {} }, { name: 'ver_auditoria', input: { trabajo_id: tAndaluz } }, { name: 'listas_requisitos', input: {} }] })}`, tarjetas: ['auditoria_propuesta@1'] }) });
+    const tv = await rv.text();
+    ok(/auditorias_terminadas_de_otras_conversaciones/.test(tv) && /NO los busques en Drive/.test(tv) && tv.includes(`event: auditoria_trabajo\ndata: {"trabajo_id":"${tAndaluz}"}`), 'en otra conversación, ver_auditoria lista las auditorías terminadas y muestra la tarjeta con las descargas');
+    ok(/Railway/.test(tv) && /carpeta-seremi/.test(tv) && /SEREMI 18–47/.test(tv), 'listas_requisitos informa la lista y también la carpeta de Andaluz como «configurada en Railway» (sin contradicciones)');
+    r = { d: { id: (await api('/api/listas')).d[0].id } };
     const listaId = r.d.id;
     const llamadasAntes = Number(sql('SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id IS NOT NULL')); const trabajosAntes = sql("SELECT COUNT(*) FROM trabajos");
     let st0 = await ctl('/control/stats');

@@ -100,7 +100,7 @@ async function esperarFin(id, ms = 40000) {
     ok(!JSON.stringify(ver).includes(vieja.id), 'ver_auditoria no menciona el trabajo antiguo');
     c = await chat([{ name: 'ver_auditoria', input: {} }]);
     ver = c.datos[0] || {};
-    ok(ver.hay === false && !JSON.stringify(ver).includes(vieja.id) && c.conv !== conv, `en una conversación sin propuestas, ver_auditoria dice que no hay ninguna (no trae la antigua) [conv ${c.conv} vs ${conv}: ${JSON.stringify(ver).slice(0, 160)}]`);
+    ok(ver.hay === false && ver.esta_conversacion === 'sin auditoría propia' && !('trabajo' in ver) && /NO hay una propuesta/.test(ver.nota) && c.conv !== conv, `en una conversación sin propuestas, ver_auditoria dice que no hay ninguna propia; las antiguas solo aparecen como «de otras conversaciones» [conv ${c.conv} vs ${conv}: ${JSON.stringify(ver).slice(0, 160)}]`);
 
     // ---- App antigua: no declara la tarjeta → la propuesta se guarda, pero ADA no dice que hay tarjeta ----
     c = await chat([{ name: 'proponer_auditoria', input: { archivo_ids: ['AUD1'], requisitos: REQ.slice(0, 1) } }], { tarjetas: [] });

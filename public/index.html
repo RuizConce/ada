@@ -164,6 +164,19 @@
         <h2>Ajustes</h2>
       </header>
       <div class="panel-cuerpo ajustes">
+        <section id="ajuste-expedientes" class="ajuste" hidden>
+          <h3>Auditorías, listas y carpetas</h3>
+          <h4>Auditorías terminadas</h4>
+          <p class="meta">Los Excel e informes quedan guardados aquí, dentro de ADA (no en Drive). Desde una auditoría terminada puedes guardar su lista de requisitos para reutilizarla, sin extraer de nuevo ni pagar.</p>
+          <div id="exp-terminadas" class="aud-gestion"></div>
+          <h4>Listas de requisitos</h4>
+          <p class="meta">Listas revisadas que puedes usar en una carpeta nueva sin volver a extraerlas.</p>
+          <div id="aud-listas" class="aud-gestion"></div>
+          <h4>Carpetas autorizadas</h4>
+          <p class="meta">Todas las carpetas que ADA puede leer: las que autorizaste desde el chat (revocables aquí) y las configuradas en Railway. ADA nunca escribe, mueve ni borra en ellas, y cada auditoría usa solo los archivos de su carpeta.</p>
+          <div id="aud-carpetas" class="aud-gestion"></div>
+          <div class="ajuste-botones"><button id="exp-actualizar" type="button">Actualizar</button></div>
+        </section>
         <section class="ajuste">
           <h3>Google (Calendar, Drive y Gmail)</h3>
           <p id="google-estado" class="meta">Revisando…</p>
@@ -219,12 +232,6 @@
           <h4>Propuestas pendientes (desde el chat)</h4>
           <p class="meta">Propuestas que ADA preparó en la conversación y esperan tu aprobación. Nada empieza ni se cobra hasta tocar "Aprobar".</p>
           <div id="aud-pendientes" class="entregas"></div>
-          <h4>Carpetas autorizadas (solo lectura)</h4>
-          <p class="meta">Carpetas de Drive que autorizaste desde el chat, con su expediente. ADA solo puede leerlas (nunca escribe, mueve ni borra) y cada auditoría usa únicamente los archivos de su carpeta. Revocar corta el acceso de inmediato.</p>
-          <div id="aud-carpetas" class="aud-gestion"></div>
-          <h4>Listas de requisitos guardadas</h4>
-          <p class="meta">Listas revisadas que puedes reutilizar en nuevas carpetas sin volver a extraerlas ni pagar.</p>
-          <div id="aud-listas" class="aud-gestion"></div>
           <h4>Constancia de aprobación</h4>
           <p class="meta">Revisa en los registros guardados quién aprobó una propuesta, cuándo, con qué requisitos, modelo y presupuesto, y que fue antes del primer paso. Solo lectura: no ejecuta nada.</p>
           <label class="campo">Id de la propuesta (al menos 8 caracteres)<input id="aud-constancia-id" type="text" autocomplete="off" placeholder="2ad1ceb6"></label>

@@ -614,3 +614,20 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-gestion { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .aud-fila-gestion { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; }
 .aud-fila-gestion span { overflow-wrap: anywhere; flex: 1; }
+
+.aud-terminada { border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 8px 10px; }
+.aud-terminada-txt { margin: 0 0 6px; font-size: 13px; overflow-wrap: anywhere; }
+.aud-terminada .tarjeta-botones { flex-wrap: wrap; }
+.aud-guardar-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.aud-guardar-panel p { margin: 2px 0; overflow-wrap: anywhere; }
+.aud-guardar-panel input, .aud-guardar-panel textarea { width: 100%; box-sizing: border-box; }
+.aud-ok { color: #4ade80; }
+.aud-textos { max-height: 220px; overflow-y: auto; font-size: 12px; padding-left: 18px; }
+.aud-textos li { margin: 3px 0; overflow-wrap: anywhere; }
+.aud-fila-gestion { flex-wrap: wrap; }
+
+/* Filas de gestión (listas y carpetas): texto arriba, botones abajo, sin salirse de la pantalla en el teléfono */
+.aud-fila-gestion { flex-direction: column; align-items: stretch; gap: 6px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 8px 10px; }
+.aud-fila-gestion span { flex: none; }
+.aud-fila-gestion button { align-self: flex-start; }
+.aud-fila-gestion .principal { align-self: stretch; }

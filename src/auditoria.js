@@ -1801,6 +1801,65 @@ async function guardarLista(propuestaId, { nombre, nota } = {}, cliente = {}) {
   await qPrincipal('INSERT INTO listas_requisitos (id, usuario_id, nombre, estado, datos_cifrado, validada_en, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, usuario().id, n, 'activa', Cifrado.cifrarJSON(datos), ahora, ahora]);
   return { id, nombre: n, requisitos: d.requisitos.length, fuente: datos.fuente, validada_en: datos.validada.en, notas: datos.notas.length };
 }
+// --- Reutilizar una auditoría TERMINADA: comprobar sus requisitos y guardarlos como lista (sin IA ni costo) ---
+async function trabajoAuditoria(trabajoId) {
+  const [t] = await qPrincipal("SELECT id, estado, objetivo_cifrado, terminado_en, creado_en FROM trabajos WHERE id = ? AND usuario_id = ? AND tipo = 'auditoria'", [trabajoId, usuario().id]);
+  if (!t) throw err('No existe esa auditoría', 404);
+  const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  if (objetivo.modo === 'requisitos') throw err('Ese trabajo es una extracción de requisitos, no una auditoría', 409);
+  let prop = null;
+  if (objetivo.propuesta && objetivo.propuesta.id) { try { prop = await propuesta(objetivo.propuesta.id); } catch (_) { prop = null; } }
+  return { t, objetivo, prop };
+}
+// Comprueba en la base los requisitos con que se auditó: cuántos, qué números, si el rango está completo.
+async function requisitosDeTrabajo(trabajoId) {
+  const { t, objetivo, prop } = await trabajoAuditoria(trabajoId);
+  const reqs = objetivo.requisitos || [];
+  const ids = reqs.map((r) => String(r.id));
+  const nums = ids.map((x) => (/^\d+$/.test(x) ? Number(x) : null));
+  const rango = (prop && prop.datos.rango) || (objetivo.lista && objetivo.lista.rango) || (nums.every((n) => n != null) && nums.length ? { desde: Math.min(...nums), hasta: Math.max(...nums) } : null);
+  const faltan = []; const repetidos = ids.filter((x, i) => ids.indexOf(x) !== i);
+  if (rango) for (let n = rango.desde; n <= rango.hasta; n++) if (!ids.includes(String(n))) faltan.push(n);
+  const sobran = rango ? ids.filter((x) => !(/^\d+$/.test(x) && Number(x) >= rango.desde && Number(x) <= rango.hasta)) : [];
+  const fuente = prop && prop.datos.origen && prop.datos.origen.norma ? { id: prop.datos.origen.norma.id, nombre: prop.datos.origen.norma.nombre, version: prop.datos.origen.norma.version }
+    : objetivo.lista && objetivo.lista.fuente ? objetivo.lista.fuente : null;
+  const notas = [...new Set([...(objetivo.notas_lista || []), ...(prop ? notasLista(prop.datos) : [])])];
+  return { trabajo_id: t.id, estado: t.estado, terminado_en: t.terminado_en, expediente: objetivo.expediente || (objetivo.carpeta && objetivo.carpeta.nombre) || null, perfil: objetivo.perfil || null,
+    total: reqs.length, ids, rango, completo: !!rango && !faltan.length && !repetidos.length && !sobran.length, faltan, sobran, repetidos: [...new Set(repetidos)],
+    fuente, notas, requisitos: reqs.map((r) => ({ id: r.id, texto: r.texto, caracteres: String(r.texto).length })), propuesta_id: prop ? prop.id : null };
+}
+async function guardarListaDeTrabajo(trabajoId, { nombre, nota } = {}, cliente = {}) {
+  if (usuario().id !== 1) throw err('Solo la cuenta principal guarda listas', 403);
+  const v = await requisitosDeTrabajo(trabajoId);
+  if (v.estado !== 'completado') throw err('La auditoría todavía no terminó', 409);
+  if (!v.total) throw err('Esa auditoría no tiene requisitos guardados', 409);
+  if (v.rango && !v.completo) throw err(`Los requisitos de esa auditoría no están completos del ${v.rango.desde} al ${v.rango.hasta}${v.faltan.length ? ` (faltan ${v.faltan.join(', ')})` : ''}${v.repetidos.length ? ` (repetidos ${v.repetidos.join(', ')})` : ''}: no la guardo como referencia.`, 409);
+  const n = String(nombre || '').trim().slice(0, 120);
+  if (n.length < 3) throw err('Ponle un nombre a la lista (p. ej. «SEREMI 18–47»)');
+  const [dup] = await qPrincipal("SELECT id FROM listas_requisitos WHERE usuario_id = ? AND estado = 'activa' AND nombre = ?", [usuario().id, n]);
+  if (dup) throw err(`Ya hay una lista activa llamada «${n}». Archívala o usa otro nombre.`, 409);
+  const id = crypto.randomUUID(); const ahora = new Date();
+  const datos = { nombre: n, requisitos: v.requisitos.map((r) => ({ id: r.id, texto: r.texto })), perfil: v.perfil, rango: v.rango, fuente: v.fuente,
+    notas: [...v.notas, ...(String(nota || '').trim() ? [`Observación: ${String(nota).trim().slice(0, 500)}`] : [])],
+    desde_trabajo: trabajoId, desde_propuesta: v.propuesta_id, validada: { en: ahora.toISOString(), via: 'auditoria_terminada', app: /; wv\)/.test(cliente.ua || '') ? 'android' : 'navegador' } };
+  await qPrincipal('INSERT INTO listas_requisitos (id, usuario_id, nombre, estado, datos_cifrado, validada_en, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, usuario().id, n, 'activa', Cifrado.cifrarJSON(datos), ahora, ahora]);
+  return { id, nombre: n, requisitos: datos.requisitos.length, rango: v.rango, fuente: v.fuente, notas: datos.notas.length, validada_en: datos.validada.en };
+}
+// Auditorías terminadas (para reutilizarlas: descargar, guardar su lista), sin límite de horas.
+async function terminadas() {
+  const filas = await qPrincipal("SELECT id, objetivo_cifrado, terminado_en, gastado_usd FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria' AND estado = 'completado' ORDER BY terminado_en DESC LIMIT 20", [usuario().id]);
+  const out = [];
+  for (const f of filas) {
+    let o; try { o = Cifrado.descifrarJSON(f.objetivo_cifrado) || {}; } catch (_) { continue; }
+    if (o.modo === 'requisitos') continue;
+    const ent = await qPrincipal("SELECT tipo FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('aud_excel','aud_informe') AND estado = 'hecho'", [f.id]);
+    out.push({ id: f.id, expediente: o.expediente || (o.carpeta && o.carpeta.nombre) || null, terminado_en: f.terminado_en, requisitos: (o.requisitos || []).length,
+      ids: (o.requisitos || []).length ? `${o.requisitos[0].id}…${o.requisitos[o.requisitos.length - 1].id}` : '', gastado_usd: Number(f.gastado_usd || 0),
+      excel: ent.some((x) => x.tipo === 'aud_excel'), informe: ent.some((x) => x.tipo === 'aud_informe'), lista: o.lista ? o.lista.nombre : null, propuesta_id: o.propuesta ? o.propuesta.id : null });
+  }
+  return out;
+}
+
 async function listas() {
   const filas = await qPrincipal("SELECT id, nombre, estado, datos_cifrado, validada_en FROM listas_requisitos WHERE usuario_id = ? AND estado = 'activa' ORDER BY validada_en DESC", [usuario().id]);
   return filas.map((f) => { const d = Cifrado.descifrarJSON(f.datos_cifrado); return { id: f.id, nombre: f.nombre, requisitos: d.requisitos.length, rango: d.rango, perfil: d.perfil, fuente: d.fuente ? d.fuente.nombre : null, validada_en: f.validada_en, notas: d.notas }; });
@@ -1875,9 +1934,18 @@ async function autorizarCarpeta(propuestaId, { expediente, lista, password } = {
   const n = await propuesta(r2.propuesta_id);
   return { ...out, propuesta: tarjetaDe(n.id, n.datos) };
 }
+// Todas las carpetas que ADA puede leer, en un solo lugar: las autorizadas desde ADA y las configuradas en Railway.
 async function carpetas() {
   const filas = await qPrincipal('SELECT id, nombre, expediente, estado, autorizada_en, revocada_en FROM carpetas_autorizadas WHERE usuario_id = ? ORDER BY autorizada_en DESC', [usuario().id]);
-  return filas.map((f) => ({ id: f.id, nombre: f.nombre, expediente: f.expediente, estado: f.estado, autorizada_en: f.autorizada_en, revocada_en: f.revocada_en, permiso: 'solo lectura' }));
+  const out = filas.map((f) => ({ id: f.id, nombre: f.nombre, expediente: f.expediente, estado: f.estado, autorizada_en: f.autorizada_en, revocada_en: f.revocada_en, permiso: 'solo lectura', origen: 'ADA', revocable: f.estado === 'activa' }));
+  const listaIds = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const env = [...listaIds(process.env.ADA_DRIVE_CARPETAS_LECTURA).map((id) => ({ id, permiso: 'solo lectura' })), ...listaIds(process.env.ADA_DRIVE_CARPETA_PRUEBA).map((id) => ({ id, permiso: 'lectura y escritura (carpeta de prueba ficticia)' }))];
+  for (const c of env) {
+    if (out.some((x) => x.id === c.id && x.estado === 'activa')) continue;
+    let nombre = null; try { nombre = (await require('./drive').metadatos(c.id)).name; } catch (_) { nombre = null; }
+    out.push({ id: c.id, nombre, expediente: nombre, estado: 'activa', permiso: c.permiso, origen: 'Railway (variable de configuración)', revocable: false, nota: 'Se quita desde la variable en Railway, no desde aquí.' });
+  }
+  return out;
 }
 async function revocarCarpeta(id) {
   const r = await qPrincipal("UPDATE carpetas_autorizadas SET estado = 'revocada', revocada_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'activa'", [new Date(), id, usuario().id]);
@@ -2089,11 +2157,15 @@ async function estadoParaConversacion({ propuesta_id, trabajo_id } = {}, ctx = {
   else if (trabajo_id) {
     const [f] = await qPrincipal('SELECT id FROM auditoria_propuestas WHERE trabajo_id = ? AND usuario_id = ?', [trabajo_id, usuario().id]);
     if (f) p = await propuesta(f.id);
-    else return { ...(await avance(trabajo_id)), nota: 'Este trabajo no nació de una propuesta del chat (se lanzó desde Ajustes).' };
+    else { if (typeof ctx.emitir === 'function') ctx.emitir('auditoria_trabajo', { trabajo_id }); return { ...(await avance(trabajo_id)), nota: 'Este trabajo no nació de una propuesta del chat (se lanzó desde Ajustes). Sus entregables están en ADA, no en Drive.' }; }
   } else {
     if (!ctx.conversacionId) return { hay: false, nota: 'No sé en qué conversación estamos; pide el id de la propuesta.' };
     const [f] = await qPrincipal('SELECT id FROM auditoria_propuestas WHERE usuario_id = ? AND conversacion_id = ? ORDER BY creado_en DESC LIMIT 1', [usuario().id, ctx.conversacionId]);
-    if (!f) return { hay: false, nota: 'En esta conversación no hay ninguna propuesta de auditoría. No informes auditorías de otras conversaciones como si fueran esta.' };
+    if (!f) {
+      const rec = await terminadas();
+      return { hay: false, esta_conversacion: 'sin auditoría propia', auditorias_terminadas_de_otras_conversaciones: rec.slice(0, 8),
+        nota: `En esta conversación NO hay una propuesta de auditoría (no presentes ninguna de la lista como si fuera de esta conversación), pero ADA guarda las auditorías terminadas${rec.length ? ` (${rec.length}; la más reciente: ${rec[0].expediente || rec[0].id.slice(0, 8)}, trabajo ${rec[0].id.slice(0, 8)})` : ''}. Sus Excel e informes Word están DENTRO de ADA, no en Google Drive: NO los busques en Drive. Si Cristian pide uno, llama ver_auditoria con su trabajo_id: le aparece la tarjeta con los botones de descarga. También están en Ajustes → «Auditorías, listas y carpetas».` };
+    }
     try { p = await propuesta(f.id); } catch (e) {
       if (e.sinClave) return { hay: false, propuesta_id: f.id, nota: 'Hay una propuesta en esta conversación, pero está cifrada con una clave anterior y no se puede leer. No hay ningún trabajo asociado en ejecución.' };
       throw e;
@@ -2107,7 +2179,8 @@ async function estadoParaConversacion({ propuesta_id, trabajo_id } = {}, ctx = {
       nota: p.estado === 'pendiente' ? 'Sigue pendiente de aprobación: no hay ningún trabajo en ejecución ni gasto. Empieza solo con el botón Aprobar de la tarjeta.' : `La propuesta está "${p.estado}"; no hay trabajo asociado.` };
   }
   const a = await avance(p.trabajo_id);
-  return { ...base, aprobado: p.aprobacion ? { configuracion: p.aprobacion.configuracion, presupuesto_usd: p.aprobacion.presupuesto, requisitos: (p.aprobacion.requisitos || []).length } : null, trabajo: a,
+  if (typeof ctx.emitir === 'function' && a.modo !== 'requisitos') ctx.emitir('auditoria_trabajo', { trabajo_id: p.trabajo_id });
+  return { ...base, nota_entregables: 'El Excel y el informe de esta auditoría están en ADA (tarjeta con botones de descarga), no en Google Drive.', aprobado: p.aprobacion ? { configuracion: p.aprobacion.configuracion, presupuesto_usd: p.aprobacion.presupuesto, requisitos: (p.aprobacion.requisitos || []).length } : null, trabajo: a,
     ...(a.modo === 'requisitos' && a.lista_propuesta ? { nota: `La extracción terminó: la lista de ${a.lista_propuesta.requisitos} requisitos es la propuesta ${a.lista_propuesta.propuesta_id.slice(0, 8)} (${a.lista_propuesta.estado}). Cristian la revisa y aprueba en su tarjeta.` } : {}) };
 }
 
@@ -2153,7 +2226,7 @@ H.registrar([
   },
   {
     name: 'listas_requisitos',
-    description: 'Listas de requisitos guardadas y revisadas por Cristian (nombre, cuántos requisitos, documento de origen, fecha de validación), y carpetas autorizadas con su expediente. Úsala para ofrecerle qué lista usar.',
+    description: 'Listas de requisitos guardadas (nombre, requisitos, documento de origen, validación) y TODAS las carpetas que ADA puede leer, con su origen: autorizadas desde ADA (con expediente, revocables en Ajustes) o configuradas en Railway (p. ej. Andaluz). Úsala para saber qué lista usar y qué carpetas están autorizadas; no contradigas lo que dice.',
     input_schema: { type: 'object', properties: {} },
   },
   {
@@ -2207,4 +2280,4 @@ async function textosGuardados(trabajoId, objetivo) {
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

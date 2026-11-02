@@ -373,6 +373,9 @@ app.post('/api/auditorias/propuestas/:id/aprobar', auth, soloAdmin, envolver((re
 app.get('/api/auditorias/propuestas/:id/constancia', auth, soloAdmin, envolver((req) => Auditoria.constancia(req.params.id)));
 app.post('/api/auditorias/propuestas/:id/descartar', auth, soloAdmin, envolver((req) => Auditoria.descartarPropuesta(req.params.id)));
 app.get('/api/auditorias/activas', auth, soloAdmin, envolver(() => Auditoria.activas()));
+app.get('/api/auditorias/terminadas', auth, soloAdmin, envolver(() => Auditoria.terminadas()));
+app.get('/api/auditorias/:id/requisitos', auth, soloAdmin, envolver((req) => Auditoria.requisitosDeTrabajo(req.params.id)));
+app.post('/api/auditorias/:id/guardar-lista', auth, soloAdmin, envolver((req) => Auditoria.guardarListaDeTrabajo(req.params.id, req.body || {}, { ua: String(req.get('user-agent') || '').slice(0, 300) })));
 app.get('/api/auditorias/propuestas', auth, soloAdmin, envolver((req) => Auditoria.pendientes({ conversacionId: parseInt(req.query.conversacion_id, 10) || null })));
 app.post('/api/auditorias/propuestas/:id/tarjeta', auth, soloAdmin, envolver((req) => Auditoria.marcarTarjeta(req.params.id, req.body || {})));
 app.get('/api/auditorias/:id/avance', auth, soloAdmin, envolver((req) => Auditoria.avance(req.params.id)));

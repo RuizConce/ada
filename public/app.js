@@ -575,6 +575,7 @@
     if (terminado && a.excel_listo) {
       boton('Descargar Excel', (b) => descargar('auditoria', a.id, b), 'principal');
       if (a.informe_listo) boton('Descargar informe', (b) => descargar('auditoria_informe', a.id, b), 'principal');
+      boton('Guardar lista de requisitos', (b) => { if (t.querySelector('.aud-guardar-panel')) return; botones.after(panelGuardarLista(a.id)); b.disabled = true; });
       if (a.textos_guardados > 0) {
         boton('Borrar textos extraídos de esta auditoría', async (b) => {
           if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = `Confirmar: borrar ${a.textos_guardados} textos guardados (Excel e informe se conservan)`; return; }
@@ -715,7 +716,68 @@
   });
   $('#cierre-copiar').addEventListener('click', async (ev) => { const ok = await copiar($('#cierre-salida').textContent); ev.target.textContent = ok ? 'Copiado ✓' : 'No se pudo'; setTimeout(() => { ev.target.textContent = 'Copiar resultado'; }, 1800); });
 
+  // Muestra en el chat la tarjeta de una auditoría (terminada o no), con sus descargas: ADA la pide con ver_auditoria.
+  async function mostrarTrabajoAuditoria(id) {
+    try { const a = await api(`/api/auditorias/${id}/avance`); encargosAuditoria.set(a.id || id, { id, ...a }); pintarEntregas(); } catch (_) {}
+  }
+  // Guardar la lista de requisitos de una auditoría terminada: primero muestra la comprobación (números, fuente,
+  // observaciones), luego se confirma. Sin IA ni costo.
+  function panelGuardarLista(trabajoId) {
+    const d = document.createElement('div'); d.className = 'aud-guardar-panel';
+    d.innerHTML = '<p class="meta aud-comprob">Comprobando los requisitos guardados…</p>';
+    api(`/api/auditorias/${trabajoId}/requisitos`).then((v) => {
+      d.innerHTML = '';
+      const ln = (txt, clase) => { const e = document.createElement('p'); e.className = `meta ${clase || ''}`; e.textContent = txt; d.appendChild(e); return e; };
+      ln(v.rango ? (v.completo ? `✓ ${v.total} requisitos, del ${v.rango.desde} al ${v.rango.hasta}, completos y sin repetidos.` : `✗ No están completos del ${v.rango.desde} al ${v.rango.hasta}${v.faltan.length ? `: faltan ${v.faltan.join(', ')}` : ''}${v.repetidos.length ? `; repetidos ${v.repetidos.join(', ')}` : ''}.`) : `${v.total} requisitos.`, v.completo ? 'aud-ok' : 'aud-aviso');
+      ln(v.fuente ? `Fuente: «${v.fuente.nombre}» (versión ${String(v.fuente.version).slice(0, 24)})` : 'Sin documento de origen registrado.');
+      for (const n of v.notas) ln(n, 'aud-aviso');
+      const det = document.createElement('details'); det.innerHTML = '<summary>Ver los textos completos</summary><ol class="aud-textos"></ol>';
+      for (const r of v.requisitos) { const li = document.createElement('li'); li.textContent = `${r.id} | ${r.texto}`; det.querySelector('ol').appendChild(li); }
+      d.appendChild(det);
+      if (v.rango && !v.completo) return;
+      const nombre = document.createElement('label'); nombre.className = 'campo'; nombre.innerHTML = 'Nombre de la lista<input type="text" class="aud-lista-nombre" maxlength="120">';
+      nombre.querySelector('input').value = v.perfil === 'seremi' && v.rango ? `SEREMI ${v.rango.desde}–${v.rango.hasta}` : '';
+      const nota = document.createElement('label'); nota.className = 'campo'; nota.innerHTML = 'Observación (opcional)<textarea rows="2" class="aud-lista-nota"></textarea>';
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'principal aud-lista-guardar'; b.textContent = 'Confirmar y guardar la lista';
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try { const r = await api(`/api/auditorias/${trabajoId}/guardar-lista`, { method: 'POST', body: JSON.stringify({ nombre: nombre.querySelector('input').value, nota: nota.querySelector('textarea').value }) }); aviso(`Lista «${r.nombre}» guardada (${r.requisitos} requisitos). Sin costo.`); b.textContent = 'Lista guardada ✓'; pintarGestionExpedientes(); }
+        catch (e) { b.disabled = false; aviso(e.message, true); }
+      });
+      d.appendChild(nombre); d.appendChild(nota); d.appendChild(b);
+    }).catch((e) => { d.textContent = e.message; });
+    return d;
+  }
+  // «Usar en una carpeta nueva»: deja escrito el pedido en el chat; solo falta pegar el enlace de la carpeta.
+  function usarLista(nombre) {
+    $$('.panel').forEach((x) => { x.hidden = true; }); // vuelve al chat
+    if ($('#mensaje').offsetParent === null && $('#teclado')) $('#teclado').click();
+    $('#mensaje').value = `Audita esta carpeta con la lista «${nombre}»: `;
+    $('#mensaje').focus();
+    aviso('Pega el enlace de la carpeta de Drive y envía el mensaje.');
+  }
+
   async function pintarGestionExpedientes() {
+    const ct = $('#exp-terminadas');
+    if (ct) {
+      try {
+        const ts = await api('/api/auditorias/terminadas');
+        ct.innerHTML = ts.length ? '' : '<p class="meta">Todavía no hay auditorías terminadas.</p>';
+        for (const a of ts) {
+          const f = document.createElement('div'); f.className = 'aud-terminada';
+          const txt = document.createElement('p'); txt.className = 'aud-terminada-txt';
+          txt.textContent = `${a.expediente || 'Auditoría'} · ${String(a.terminado_en).slice(0, 10)} · ${a.requisitos} requisitos (${a.ids}) · trabajo ${a.id.slice(0, 8)}${a.lista ? ` · lista «${a.lista}»` : ''}`;
+          f.appendChild(txt);
+          const bs = document.createElement('div'); bs.className = 'tarjeta-botones';
+          const boton = (t2, fn, clase) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t2; if (clase) b.className = clase; b.addEventListener('click', () => fn(b)); bs.appendChild(b); };
+          if (a.excel) boton('Excel', (b) => descargar('auditoria', a.id, b));
+          if (a.informe) boton('Informe', (b) => descargar('auditoria_informe', a.id, b));
+          boton('Guardar lista de requisitos', (b) => { if (f.querySelector('.aud-guardar-panel')) return; f.appendChild(panelGuardarLista(a.id)); b.disabled = true; }, 'principal');
+          f.appendChild(bs);
+          ct.appendChild(f);
+        }
+      } catch (e) { ct.textContent = e.message; }
+    }
     const cc = $('#aud-carpetas'); const cl = $('#aud-listas');
     if (!cc || !cl) return;
     try {
@@ -723,8 +785,8 @@
       cc.innerHTML = cs.length ? '' : '<p class="meta">Ninguna todavía. Pega el enlace de una carpeta de Drive en el chat para autorizarla.</p>';
       for (const c of cs) {
         const f = document.createElement('div'); f.className = 'aud-fila-gestion';
-        const txt = document.createElement('span'); txt.textContent = `${c.expediente} · «${c.nombre}» · ${c.estado === 'activa' ? 'solo lectura' : 'revocada'}`; f.appendChild(txt);
-        if (c.estado === 'activa') {
+        const txt = document.createElement('span'); txt.textContent = `${c.expediente || c.nombre || c.id} · «${c.nombre || c.id}» · ${c.estado === 'activa' ? c.permiso : 'revocada'} · ${c.origen === 'ADA' ? 'autorizada desde ADA' : 'configurada en Railway'}`; f.appendChild(txt);
+        if (c.revocable) {
           const b = document.createElement('button'); b.type = 'button'; b.className = 'descartar'; b.textContent = 'Revocar';
           b.addEventListener('click', async () => {
             if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar revocación'; return; }
@@ -740,6 +802,8 @@
       for (const l of ls) {
         const f = document.createElement('div'); f.className = 'aud-fila-gestion';
         const txt = document.createElement('span'); txt.textContent = `${l.nombre} · ${l.requisitos} requisitos${l.fuente ? ` · de «${l.fuente}»` : ''} · validada ${String(l.validada_en).slice(0, 10)}`; f.appendChild(txt);
+        const u = document.createElement('button'); u.type = 'button'; u.className = 'principal'; u.textContent = 'Usar en una carpeta nueva';
+        u.addEventListener('click', () => usarLista(l.nombre)); f.appendChild(u);
         const b = document.createElement('button'); b.type = 'button'; b.className = 'descartar'; b.textContent = 'Archivar';
         b.addEventListener('click', async () => {
           if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar'; return; }
@@ -753,7 +817,6 @@
   }
 
   async function pintarPendientesAjustes() {
-    pintarGestionExpedientes();
     const cont = $('#aud-pendientes');
     cont.innerHTML = '';
     try {
@@ -1538,6 +1601,8 @@
           if (window.AdaAndroid) llamarDirecto(d);
         } else if (tipo === 'auditoria_propuesta') {
           recibirPropuestaAuditoria(d);
+        } else if (tipo === 'auditoria_trabajo') {
+          mostrarTrabajoAuditoria(d.trabajo_id);
         } else if (tipo === 'consentimiento_extracciones') {
           consentimientoPendiente = d;
           pintarEntregas();
@@ -2225,7 +2290,8 @@
       $('#ajuste-lab').hidden = !a.usuario.admin;
       $('#ajuste-cifrado').hidden = !a.usuario.admin;
       $('#ajuste-auditoria').hidden = !a.usuario.admin;
-      if (a.usuario.admin) { pintarCifrado(); pintarDocumentosGuardados(); pintarAuditorias(); pintarPendientesAjustes(); }
+      $('#ajuste-expedientes').hidden = !a.usuario.admin;
+      if (a.usuario.admin) { pintarCifrado(); pintarDocumentosGuardados(); pintarAuditorias(); pintarPendientesAjustes(); pintarGestionExpedientes(); }
       if (a.usuario.admin) pintarPersonas();
     }
     $('#ia-estado').textContent = `Modelos: ${a.modelo} · Búsqueda en internet: ${a.internet ? 'activa ✓' : 'desactivada'}`;
@@ -2320,6 +2386,7 @@
     catch (err) { aviso(err.message, true); }
   });
   $('#aud-actualizar').addEventListener('click', () => { pintarAuditorias(); pintarPendientesAjustes(); });
+  $('#exp-actualizar').addEventListener('click', () => pintarGestionExpedientes());
   let audTimer = null;
   async function pintarAuditorias() {
     const cont = $('#aud-lista');

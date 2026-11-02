@@ -38,17 +38,31 @@ const txt = Object.fromEntries(D.archivos.map((a) => [a.id, a.texto]));
     await p.goto('http://localhost:3200/');
     await p.fill('#nombre', 'Cristian'); await p.fill('#password', PASS); await p.click('button[type=submit]');
     await p.waitForTimeout(1200); await p.$eval('.hoja-fondo', (e) => e.click()).catch(() => {});
-    // Preparación: la lista SEREMI 18–47 (extracción de Andaluz) guardada desde su tarjeta.
+    // Preparación como en la realidad: Andaluz extraído, lista corregida y auditoría TERMINADA (la tarjeta de la lista ya no está).
     await enviar(herr({ norma_id: D.norma_id, carpeta_id: 'carpeta-seremi', rango: { desde: 18, hasta: 47 }, perfil: 'seremi' }));
     await p.waitForSelector('text=Aprobar extracción', { timeout: 10000 }); await p.click('text=Aprobar extracción');
-    await p.waitForSelector('text=Guardar esta lista para reutilizarla', { timeout: 30000 });
-    await p.click('text=Guardar esta lista para reutilizarla');
-    ok(await p.inputValue('.aud-lista-nombre') === 'SEREMI 18–47', 'la tarjeta de la lista propone el nombre «SEREMI 18–47»');
-    await p.fill('.aud-lista-nota', 'Cotejar con el original la frase sobre evaluación anestésica.');
-    await p.click('text=Confirmar y guardar la lista');
-    await p.waitForSelector('text=Lista guardada', { timeout: 8000 });
-    ok(sql("SELECT nombre FROM listas_requisitos WHERE estado='activa'") === 'SEREMI 18–47', 'lista guardada desde el teléfono');
-    await p.click('.tarjeta-auditoria[data-propuesta] >> text=Descartar').catch(() => {});
+    await p.waitForSelector('.tarjeta-auditoria[data-propuesta] >> text=Aprobar y empezar', { timeout: 30000 });
+    await p.click('.tarjeta-auditoria[data-propuesta] >> text=Aprobar y empezar');
+    await p.waitForFunction(() => /Auditoría terminada/.test(document.querySelector('#entregas').textContent), null, { timeout: 120000 });
+    ok(/Guardar lista de requisitos/.test(await p.textContent('#entregas')), 'la tarjeta de la auditoría terminada tiene «Guardar lista de requisitos»');
+    // Ajustes → «Auditorías, listas y carpetas» → la auditoría terminada → «Guardar lista de requisitos».
+    await p.$eval('#abrir-ajustes', (e) => e.click()); await p.waitForTimeout(800);
+    await p.waitForSelector('#exp-terminadas >> text=Guardar lista de requisitos', { timeout: 8000 });
+    ok(/Andaluz \(ficticia\) · \d{4}-\d{2}-\d{2} · 30 requisitos \(18…47\)/.test(await p.textContent('#exp-terminadas')), 'Ajustes → «Auditorías terminadas»: Andaluz con 30 requisitos (18…47), Excel e Informe');
+    await p.click('#exp-terminadas >> text=Guardar lista de requisitos');
+    await p.waitForSelector('#exp-terminadas >> text=Confirmar y guardar la lista', { timeout: 8000 });
+    const comp = await p.textContent('#exp-terminadas .aud-guardar-panel');
+    ok(/✓ 30 requisitos, del 18 al 47, completos y sin repetidos/.test(comp) && /Fuente: «Requisitos SEREMI/.test(comp) && await p.inputValue('#exp-terminadas .aud-lista-nombre') === 'SEREMI 18–47', 'comprobación antes de guardar: 30 del 18 al 47, fuente, nombre «SEREMI 18–47»');
+    await p.fill('#exp-terminadas .aud-lista-nota', 'Cotejar con el original la frase sobre evaluación anestésica.');
+    await p.$eval('#exp-terminadas .aud-guardar-panel', (e) => e.scrollIntoView()); await foto(p, '0-guardar-lista');
+    await p.click('#exp-terminadas >> text=Confirmar y guardar la lista');
+    await p.waitForSelector('#aud-listas >> text=SEREMI 18–47', { timeout: 8000 });
+    ok(sql("SELECT nombre FROM listas_requisitos WHERE estado='activa'") === 'SEREMI 18–47', 'lista guardada desde la auditoría terminada, sin costo');
+    await p.$eval('#aud-listas', (e) => e.scrollIntoView()); await foto(p, '0b-listas');
+    // «Usar en una carpeta nueva» → vuelve al chat con el pedido escrito; solo falta pegar el enlace.
+    await p.click('#aud-listas >> text=Usar en una carpeta nueva');
+    await p.waitForTimeout(400);
+    ok(await p.inputValue('#mensaje') === 'Audita esta carpeta con la lista «SEREMI 18–47»: ' && await p.isHidden('#vista-ajustes'), '«Usar en una carpeta nueva» deja escrito el pedido en el chat');
 
     // 1. Pego el enlace (como lo haría ADA con el mensaje) → tarjeta de autorización.
     await enviar(herr({ carpeta: 'https://drive.google.com/drive/folders/carpeta-cliente2?usp=sharing', lista: 'SEREMI 18–47' }));
@@ -74,19 +88,20 @@ const txt = Object.fromEntries(D.archivos.map((a) => [a.id, a.texto]));
     await p.$eval('.tarjeta-auditoria[data-propuesta]', (e) => e.scrollIntoView()); await foto(p, '2-propuesta');
     // 3. Apruebo y recibo.
     await p.click('.tarjeta-auditoria[data-propuesta] >> text=Aprobar y empezar');
-    await p.waitForFunction(() => /Auditoría terminada/.test(document.querySelector('#entregas').textContent), null, { timeout: 90000 });
-    t = await p.textContent('#entregas');
+    await p.waitForFunction(() => [...document.querySelectorAll('.tarjeta-auditoria[data-trabajo]')].some((x) => /Expediente: Clínica Ficticia Dos/.test(x.textContent) && /Auditoría terminada/.test(x.textContent)), null, { timeout: 90000 });
+    const fin = p.locator('.tarjeta-auditoria[data-trabajo]', { hasText: 'Expediente: Clínica Ficticia Dos' });
+    t = await fin.textContent();
     ok(/Expediente: Clínica Ficticia Dos · Trabajo/.test(t) && /Puedes subir/.test(t), 'tarjeta final con el expediente y la respuesta sencilla');
-    await p.$$eval('.tarjeta-auditoria', (l) => l[l.length - 1].scrollIntoView()); await foto(p, '3-final');
-    const [dx] = await Promise.all([p.waitForEvent('download'), p.click('#entregas >> text=Descargar Excel')]);
-    const [dw] = await Promise.all([p.waitForEvent('download'), p.click('#entregas >> text=Descargar informe')]);
+    await fin.scrollIntoViewIfNeeded(); await foto(p, '3-final');
+    const [dx] = await Promise.all([p.waitForEvent('download'), fin.locator('text=Descargar Excel').click()]);
+    const [dw] = await Promise.all([p.waitForEvent('download'), fin.locator('text=Descargar informe').click()]);
     ok(/^auditoria-clinica-ficticia-dos-.*\.xlsx$/.test(dx.suggestedFilename()) && /^informe-auditoria-clinica-ficticia-dos-.*\.docx$/.test(dw.suggestedFilename()), `descargas con el expediente: ${dx.suggestedFilename()} · ${dw.suggestedFilename()}`);
     // 4. Ajustes: la carpeta aparece y se revoca.
     await p.$eval('#abrir-ajustes', (e) => e.click()); await p.waitForTimeout(800);
-    await p.$eval('#ajuste-auditoria', (e) => { e.hidden = false; e.scrollIntoView(); });
-    await p.evaluate(() => document.querySelector('#aud-actualizar') && document.querySelector('#aud-actualizar').click());
+    await p.evaluate(() => document.querySelector('#exp-actualizar').click());
     await p.waitForSelector('#aud-carpetas >> text=Clínica Ficticia Dos', { timeout: 8000 });
-    ok(/Clínica Ficticia Dos · «Clinica_Dos_SEREMI» · solo lectura/.test(await p.textContent('#aud-carpetas')) && /SEREMI 18–47 · 30 requisitos/.test(await p.textContent('#aud-listas')), 'Ajustes: carpeta autorizada (solo lectura) y lista guardada');
+    const cts = await p.textContent('#aud-carpetas');
+    ok(/Clínica Ficticia Dos · «Clinica_Dos_SEREMI» · solo lectura · autorizada desde ADA/.test(cts) && /Andaluz \(ficticia\).*solo lectura · configurada en Railway/.test(cts) && /SEREMI 18–47 · 30 requisitos/.test(await p.textContent('#aud-listas')), 'Ajustes: la carpeta nueva (desde ADA) y Andaluz (Railway) en una sola lista, y la lista guardada');
     await p.$eval('#aud-carpetas', (e) => e.scrollIntoView()); await foto(p, '4-ajustes');
     await p.click('#aud-carpetas >> text=Revocar'); await p.click('#aud-carpetas >> text=Confirmar revocación');
     await p.waitForFunction(() => /revocada/.test(document.querySelector('#aud-carpetas').textContent), null, { timeout: 8000 });
