@@ -66,8 +66,29 @@ const b3 = [{ bloque: 1, requisitos: [
 ] }];
 const g3 = listaRango(b3, { desde: 32, hasta: 35 }, guia3);
 const t34 = g3.requisitos.find((x) => x.id === '34');
-ok(g3.ubicacion.reubicados.length === 1 && g3.ubicacion.reubicados[0].referencia === '34 a)' && g3.ubicacion.reubicados[0].esta_en === 32 && !/reprocesamiento/.test(t34.texto) && /carta de aceptación/i.test(t34.texto) && /certificado de título/i.test(t34.texto),
-  `«34 a)» con texto del 32 se quita del 34 y se informa; 34 queda: «${t34.texto}»`);
+ok(g3.ubicacion.reubicados.length === 1 && g3.ubicacion.reubicados[0].referencia === '34 a)' && g3.ubicacion.reubicados[0].esta_en === 32 && g3.ubicacion.reubicados[0].destino === 'ya_estaba' && !g3.requisitos.find((x) => x.id === '32').subapartados && /^a\) Carta de aceptación.*; b\) Certificado de título/.test(t34.texto) && !/reprocesamiento/.test(t34.texto) && /carta de aceptación/i.test(t34.texto) && /certificado de título/i.test(t34.texto),
+  `«34 a)» con texto del 32 sale del 34 y, como el 32 ya lo pide, no se repite; 34 queda: «${t34.texto}»`);
 ok(g3.ubicacion.comprobados === 5 && !g3.ubicacion.sin_comprobar.length && g3.requisitos.length === 4, `los demás apartados se comprobaron en su número (${g3.ubicacion.comprobados})`);
 // Y en la guía anterior (sin errores) no se quita nada.
 ok(!listaRango(b2, { desde: 31, hasta: 47 }, guia).ubicacion.reubicados.length, 'si cada cita está en su número, no se quita nada');
+
+// Caso real 2: «24 b)» (pabellón de cirugía mayor ambulatoria) está en el original dentro del 25. Se MUEVE al 25 (no
+// desaparece). Y si el 25 no tuviera ítems extraídos, queda dentro de su texto completo tomado de la norma.
+const guia4 = [
+  '-- 1 24 CARRO DE PARO Contar con un procedimiento de uso y revisión del carro de paro.',
+  '-- 1 25 PABELLÓN DE CIRUGÍA MAYOR AMBULATORIA Contar con sala de recuperación.', 'Todo establecimiento de salud que quiera autorizar una unidad de pabellón de cirugía mayor ambulatoria deberá contar con evaluación anestésica y evaluación de condiciones sociales del paciente.',
+  '-- 1 26 ESTERILIZACIÓN Contar con registro de esterilización.',
+].join('\n');
+const item24b = { referencia: '24 b)', texto: 'Evaluación anestésica y de condiciones sociales del paciente para cirugía mayor ambulatoria.', cita: 'Todo establecimiento de salud que quiera autorizar una unidad de pabellón de cirugía mayor ambulatoria' };
+const b4 = [{ bloque: 1, requisitos: [
+  { referencia: '24 a)', texto: 'Procedimiento del carro de paro.', cita: 'Contar con un procedimiento de uso y revisión del carro de paro.' }, item24b,
+  { referencia: '25', texto: 'Sala de recuperación.', cita: 'Contar con sala de recuperación.' },
+  { referencia: '26', texto: 'Registro de esterilización.', cita: 'Contar con registro de esterilización.' },
+] }];
+const g4 = listaRango(b4, { desde: 24, hasta: 26 }, guia4);
+const r25 = g4.requisitos.find((x) => x.id === '25'); const r24 = g4.requisitos.find((x) => x.id === '24');
+ok(r24.texto === 'Procedimiento del carro de paro.' && /Sala de recuperación/.test(r25.texto) && /evaluación anestésica/i.test(r25.texto) && g4.ubicacion.reubicados[0].destino === 'movido' && /25 PABELLÓN DE CIRUGÍA/.test(g4.ubicacion.reubicados[0].encabezado),
+  `«24 b)» se mueve al 25 (donde está en el original), no desaparece: 25 = «${r25.texto}»`);
+const b5 = [{ bloque: 1, requisitos: b4[0].requisitos.filter((x) => x.referencia !== '25') }];
+const g5 = listaRango(b5, { desde: 24, hasta: 26 }, guia4);
+ok(g5.ubicacion.reubicados[0].destino === 'en_texto_completo' && /evaluación anestésica/.test(g5.requisitos.find((x) => x.id === '25').texto), 'si el 25 no tenía ítems extraídos, la exigencia queda dentro de su texto completo tomado de la norma');

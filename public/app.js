@@ -348,7 +348,13 @@
       if (p.ubicacion) {
         const u = p.ubicacion;
         linea(`Comprobé en el texto original que cada apartado pertenece a su número: ${u.comprobados} comprobados.`);
-        for (const x of u.reubicados || []) linea(`Quité ${x.referencia} del ${x.numero}: ese texto está dentro del requisito ${x.esta_en} del documento («${x.texto}»).`, 'aud-aviso');
+        const DESTINO = { movido: (x) => `lo moví al ${x.esta_en}`, ya_estaba: (x) => `ya estaba en el ${x.esta_en}, no lo repito`, en_texto_completo: (x) => `queda dentro del texto completo del ${x.esta_en}`,
+          fuera_de_rango: (x) => `el ${x.esta_en} está fuera del rango pedido: no lo incluyo`, revisar: (x) => `no pude confirmarlo en el ${x.esta_en}: revísalo` };
+        for (const x of u.reubicados || []) {
+          linea(`${x.referencia} (estaba en el ${x.numero}): en el original está dentro del requisito ${x.esta_en}; ${(DESTINO[x.destino] || (() => 'revísalo'))(x)}. «${x.texto}»`, 'aud-aviso');
+          if (x.encabezado) linea(`   El ${x.esta_en} empieza así en el original: «${x.encabezado}…»`);
+          if (x.contexto) linea(`   Texto original donde aparece: «…${x.contexto}…»`);
+        }
         if ((u.sin_comprobar || []).length) linea(`No pude ubicar en el texto original la cita de: ${u.sin_comprobar.join(', ')}. Revisa esos apartados.`, 'aud-aviso');
       }
       if (p.agrupada && p.texto_norma_disponible === false) linea('No encontré guardado el texto de la norma: no pude buscar los números que faltan. No descargué nada de nuevo.', 'aud-aviso');

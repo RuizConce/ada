@@ -1438,7 +1438,8 @@ function posicionCita(texto, cita, desde = 0, hasta = Infinity) {
   return m && m.index < hasta ? m.index : (desde > 0 || hasta < Infinity ? -1 : (m ? m.index : -1));
 }
 // Comprueba que la cita de cada ítem extraído esté DENTRO del texto de su número en la norma. Si está dentro de
-// otro número (p. ej. «34 a)» cuyo texto es del 32), el ítem se quita de ese número y se informa.
+// otro número (p. ej. «34 a)» cuyo texto es del 32), se MUEVE a ese número (nunca se pierde) y se informa, con el texto
+// original donde aparece para poder comprobarlo.
 function comprobarUbicacion(bloques, rango, textoNorma) {
   const pos = iniciosDeNumeros(textoNorma, rango.desde, rango.hasta);
   const numeros = Object.keys(pos).map(Number).sort((a, b) => a - b);
@@ -1458,7 +1459,9 @@ function comprobarUbicacion(bloques, rango, textoNorma) {
     const d = duenoDe(c);
     if (d == null || d === n) { comprobados += 1; return true; }
     if (pos[n] == null) { sinComprobar.push(r.referencia); return true; } // sin ubicar su propio número no se mueve nada
-    reubicados.push({ referencia: r.referencia, numero: n, esta_en: d, texto: String(r.texto).slice(0, 160) });
+    const plano = (a, b) => String(textoNorma).slice(Math.max(0, a), b).replace(/\s+/g, ' ').trim();
+    reubicados.push({ referencia: r.referencia, numero: n, esta_en: d, texto: String(r.texto).slice(0, 160), item: r,
+      encabezado: plano(pos[d], pos[d] + 110), contexto: plano(c - 60, c + 140) });
     return false;
   }) }));
   return { bloques: limpios, comprobados, reubicados, sin_comprobar: sinComprobar };
@@ -1476,12 +1479,27 @@ function listaRango(bloquesOriginales, rango, textoNorma) {
     const g = porNumero.get(n);
     if (!g.some((x) => limpia(x.texto) === limpia(r.texto))) g.push(r); // duplicado solo si es el MISMO número y el mismo texto
   }
+  // Lo que estaba en otro número se agrega a ese número (si ya está ahí, no se repite). Si ese número no tiene ítems
+  // extraídos, su texto completo se toma de la norma más abajo y debe contener lo movido (se comprueba).
+  const conAI = new Set(porNumero.keys());
+  for (const x of ubic.reubicados) {
+    const d = x.esta_en;
+    if (d < desde || d > hasta) { x.destino = 'fuera_de_rango'; continue; }
+    if (!conAI.has(d)) { x.destino = 'texto_completo'; continue; }
+    const g = porNumero.get(d);
+    const parecido = (a, b) => { const ra = raices(a); const rb = raices(b); if (!ra.size || !rb.size) return false; let k = 0; for (const w of ra) if (rb.has(w)) k += 1; return k / Math.min(ra.size, rb.size) >= 0.6; };
+    const ya = g.some((y) => limpia(y.texto) === limpia(x.item.texto) || parecido(y.texto, x.item.texto) || limpia(y.cita || '').includes(limpia(x.item.cita).slice(0, 60)) || limpia(x.item.cita).includes(limpia(y.cita || '').slice(0, 60)));
+    if (ya) { x.destino = 'ya_estaba'; continue; }
+    g.push({ ...x.item, referencia: String(d), movido_desde: x.referencia });
+    x.destino = 'movido';
+  }
   const literales = textoNorma ? itemsDeNorma(textoNorma) : [];
   const requisitos = []; const faltantes = []; const recuperados = []; const detalle = []; const problemas = [];
   for (let n = desde; n <= hasta; n++) {
     const g = porNumero.get(n) || [];
     if (g.length) {
-      const letras = g.map((r, i) => letraRef(r.referencia) || String.fromCharCode(97 + i));
+      const reletrar = g.some((r) => r.movido_desde) || ubic.reubicados.some((x) => x.numero === n);
+      const letras = reletrar ? g.map((r, i) => String.fromCharCode(97 + i)) : g.map((r, i) => letraRef(r.referencia) || String.fromCharCode(97 + i));
       const subapartados = g.length > 1 ? g.map((r, i) => ({ id: `${n}${letras[i]}`, texto: r.texto, fuente: `${r.referencia}: «${r.cita}»` })) : [];
       requisitos.push({ id: String(n), numero: n,
         texto: g.length > 1 ? g.map((r, i) => `${letras[i]}) ${r.texto.replace(/[.\s]+$/, '')}`).join('; ') + '.' : g[0].texto,
@@ -1511,7 +1529,11 @@ function listaRango(bloquesOriginales, rango, textoNorma) {
     while ((m = re.exec(plano)) && fr.length < 3) fr.push(plano.slice(Math.max(0, m.index - 40), m.index + 60).trim());
     return { numero: n, fragmentos: fr };
   });
-  return { ubicacion: { comprobados: ubic.comprobados, reubicados: ubic.reubicados, sin_comprobar: ubic.sin_comprobar }, requisitos, faltantes, recuperados, recuperados_detalle: detalle, problemas, menciones: menciones.map((m) => ({ ...m, problema: (problemas.find((x) => x.numero === m.numero) || {}).problema || null })), texto_norma_disponible: !!textoNorma, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
+  for (const x of ubic.reubicados) if (x.destino === 'texto_completo') {
+    const req = requisitos.find((r) => r.numero === x.esta_en);
+    x.destino = req && limpia(req.texto).includes(limpia(x.item.cita).slice(0, 60)) ? 'en_texto_completo' : 'revisar';
+  }
+  return { ubicacion: { comprobados: ubic.comprobados, reubicados: ubic.reubicados.map(({ item, ...x }) => x), sin_comprobar: ubic.sin_comprobar }, requisitos, faltantes, recuperados, recuperados_detalle: detalle, problemas, menciones: menciones.map((m) => ({ ...m, problema: (problemas.find((x) => x.numero === m.numero) || {}).problema || null })), texto_norma_disponible: !!textoNorma, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
 }
 // Lee los resultados ya pagados de la extracción (pasos req_bloque) y el texto de la norma ya guardado.
 async function bloquesDe(trabajoId) {
