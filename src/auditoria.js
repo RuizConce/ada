@@ -1666,8 +1666,48 @@ function comprobarUbicacion(bloques, rango, textoNorma) {
 const CABECERA = /^(n\s*[°º.]*\s*|n[uú]m(ero)?\.?|#|[ií]tem|requisito|descripci[oó]n|documento|qu[eé] (subir|presentar|adjuntar)|antecedente|estado|situaci[oó]n|observaci[oó]n|criterio|puntaje|verificador|medio de verificaci[oó]n|cumple)/i;
 const esCabecera = (t) => CABECERA.test(String(t).trim()) && String(t).trim().length <= 60;
 const celdasDe = (l) => (l.includes('\t') ? l.split('\t') : l.includes(' | ') ? l.split(' | ') : null);
+// Pie o encabezado de página («Page 1 of 3», «Página 2 de 3», «Pág. 1/3»), solo o pegado a otra celda y seguido del
+// título del documento («Listo Page 1 of 3 Botiquín Andaluz — requisitos…»).
+const PIE_PAGINA = /(?:^|\s)(?:page|p[áa]g(?:ina)?\.?)\s*(\d{1,3})\s*(?:of|de|\/)\s*(\d{1,3})\b/i;
+const normaLinea = (t) => String(t).toLowerCase().replace(/\d+/g, '#').replace(/[\s\-–—|·.]+/g, ' ').trim();
+// Una línea continúa la celda anterior si empieza en minúscula o con un signo que no abre frase, o si la anterior
+// quedó cortada (termina en «de», «del», «con», coma, dos puntos…). Así «Plano con ubicación del» + «botiquín» es UNA celda.
+const CORTADA = /(?:^|\s)(de|del|la|las|el|los|lo|con|y|e|o|u|en|para|por|a|al|su|sus|un|una|que|sin|seg[uú]n|sobre|entre|desde|hasta|ante|tras|cuyo|cuya)$/i;
+const continua = (prev, l) => /^[\p{Ll}(\[),;:%]/u.test(l) || /^\d/.test(l) && /[:,(]$/.test(prev) || CORTADA.test(prev) || /[,;:(\-–\/]$/.test(prev);
+function segmentosDeCelda(lineas) {
+  const segs = [];
+  for (const l of lineas) { if (segs.length && continua(segs[segs.length - 1], l)) segs[segs.length - 1] += ` ${l}`; else segs.push(l); }
+  return segs;
+}
+function limpiarPaginas(lineas) {
+  // 1. Pies con número de página: se cambian por una marca de salto; lo que venía antes en la misma línea se conserva
+  //    («Listo») y lo que venía después (título del documento) se anota como título repetido.
+  const titulos = new Set(); const salida = [];
+  for (const l of lineas) {
+    const t = l.trim(); const m = t !== '<<PAGINA>>' && t.match(PIE_PAGINA);
+    if (!m) { salida.push(l); continue; }
+    const antes = t.slice(0, m.index).trim(); const despues = t.slice(m.index + m[0].length).replace(/^[\s\-–—|·]+/, '').trim();
+    if (antes) salida.push(antes);
+    salida.push(`<<PIE ${m[1]}>>`);
+    if (despues) titulos.add(normaLinea(despues));
+  }
+  // 2. Encabezados/pies sin número: líneas que se repiten junto a los saltos de página (título del documento, nombre de
+  //    la institución). Solo se quitan si están pegadas a un salto, para no borrar celdas que se repiten dentro de la tabla.
+  const cuenta = {}; for (const l of salida) { const k = normaLinea(l); if (k) cuenta[k] = (cuenta[k] || 0) + 1; }
+  const esSalto = (t) => /^<<(PAGINA|PIE \d+)>>$/.test(String(t).trim());
+  const cerca = {};
+  // El comienzo del documento cuenta como un salto (el título suele estar arriba de la primera página). Las cabeceras de la
+  // tabla nunca se quitan: su repetición marca la página siguiente.
+  const primeras = salida.map((l, i) => [l, i]).filter(([l]) => l.trim()).slice(0, 2).map(([, i]) => i);
+  salida.forEach((l, i) => { const k = normaLinea(l); if (k && !esSalto(l) && !(esCabecera(l) && l.trim().length <= 30) && (primeras.includes(i) || [-2, -1, 1, 2].some((d) => esSalto(salida[i + d] || '')))) cerca[k] = (cerca[k] || 0) + 1; });
+  // Todas sus apariciones junto a un salto (un estado como «Listo» también aparece lejos de los saltos y se conserva).
+  for (const k of Object.keys(cerca)) if (cuenta[k] >= 2 && cerca[k] === cuenta[k] && k.length >= 8) titulos.add(k);
+  // El título del documento al inicio (antes de la tabla) también es un título repetido si coincide con el del pie.
+  return { lineas: salida.filter((l) => !titulos.has(normaLinea(l)) || esSalto(l)), titulos: titulos.size };
+}
 function tablaDeNorma(texto) {
-  const lineas = String(texto || '').replace(/\r/g, '').replace(/\f/g, '\n<<PAGINA>>\n').split('\n').map((x) => x.replace(/\s+$/, ''));
+  const crudas = String(texto || '').replace(/\r/g, '').replace(/\f/g, '\n<<PAGINA>>\n').split('\n').map((x) => x.replace(/\s+$/, ''));
+  const { lineas, titulos: pies } = limpiarPaginas(crudas);
   // 1. Encabezado: una línea con columnas separadas (tab o « | »), o varias líneas cortas seguidas (una celda por línea).
   let i0 = -1; let columnas = null; let formato = null;
   for (let i = 0; i < lineas.length && i0 < 0; i++) {
@@ -1684,14 +1724,21 @@ function tablaDeNorma(texto) {
   const cabeceraRepetida = (i) => (formato === 'tab' ? (celdasDe(lineas[i]) || []).map((x) => x.trim()).join('|') === columnas.join('|') : columnas.every((c, k) => (lineas[i + k] || '').trim() === c));
   // 2. Filas: un número suelto (o primera celda) que sigue el orden 1, 2, 3… (se tolera un salto de hasta 2).
   const numeroFila = (l) => { const c = formato === 'tab' ? celdasDe(l) : null; const v = (c ? c[0] : l).trim().replace(/[.)]$/, ''); return /^\d{1,3}$/.test(v) ? Number(v) : null; };
-  const filas = []; let pagina = 1; let actual = null; let esperado = null;
+  const filas = []; let pagina = 1; let actual = null; let esperado = null; let recienSalto = false;
+  // Un pie «página N de M» y el encabezado repetido de la página siguiente son UN solo salto.
+  const salto = (abs) => { if (abs != null) pagina = abs; else if (!recienSalto) pagina += 1; recienSalto = true; };
   for (let i = i0; i < lineas.length; i++) {
     const l = lineas[i]; const t = l.trim();
-    if (t === '<<PAGINA>>' || /^p[áa]gina\s+\d+(\s+de\s+\d+)?$/i.test(t) || /^--\s*\d+\s*(de|of)\s*\d+\s*--$/i.test(t)) { pagina += t === '<<PAGINA>>' || /^p[áa]gina/i.test(t) ? 1 : 0; continue; }
-    if (cabeceraRepetida(i)) { pagina += 1; i += formato === 'tab' ? 0 : C - 1; continue; }
+    const pie = t.match(/^<<PIE (\d+)>>$/);
+    if (pie) { if (actual || filas.length) salto(Number(pie[1]) + 1); continue; }
+    if (t === '<<PAGINA>>') { if (actual || filas.length) salto(); continue; }
+    const pg = t.match(/^p[áa]gina\s+(\d+)$/i);
+    if (pg || /^--\s*\d+\s*(de|of)\s*\d+\s*--$/i.test(t)) { if (pg && (actual || filas.length)) salto(Number(pg[1])); continue; }
+    if (cabeceraRepetida(i)) { salto(); i += formato === 'tab' ? 0 : C - 1; continue; }
     const n = numeroFila(l);
     if (n != null && (esperado == null ? n <= 3 : n >= esperado && n <= esperado + 2)) {
       if (actual) filas.push(actual);
+      recienSalto = false;
       actual = { numero: n, pagina, celdas: formato === 'tab' ? celdasDe(l).slice(1).map((x) => x.trim()) : [], lineas: [] }; esperado = n + 1; continue;
     }
     if (!actual) continue;
@@ -1709,24 +1756,32 @@ function tablaDeNorma(texto) {
   // 3. Columna de estado (la última, con valores cortos que se repiten): marca el fin de cada fila y de la tabla.
   const idxEstado = columnas.findIndex((c) => /estado|situaci|cumple/i.test(c));
   if (formato === 'lineas') {
+    const conEstado = idxEstado === C - 1;
     const finales = {}; for (const f of filas.slice(0, -1)) { const u = f.lineas[f.lineas.length - 1]; if (u && u.length <= 30) finales[u.toLowerCase()] = (finales[u.toLowerCase()] || 0) + 1; }
     const vocab = Object.keys(finales).filter((k) => finales[k] >= 2);
+    const esEstado = (x) => vocab.includes(String(x).toLowerCase());
     const ultima = filas[filas.length - 1];
-    const corte = idxEstado === C - 1 && vocab.length ? ultima.lineas.findIndex((x) => vocab.includes(x.toLowerCase())) : -1;
+    const corte = conEstado && vocab.length ? ultima.lineas.findIndex(esEstado) : -1;
     ultima.resto = corte >= 0 ? ultima.lineas.slice(corte + 1) : ultima.lineas.slice(C - 1);
     ultima.lineas = corte >= 0 ? ultima.lineas.slice(0, corte + 1) : ultima.lineas.slice(0, C - 1);
+    const D = conEstado ? C - 2 : C - 1; // columnas descriptivas (sin N.º ni Estado)
     for (const f of filas) {
       const ls = f.lineas;
-      if (ls.length === C - 1) { f.celdas = ls; continue; }
-      f.inferida = true;
-      const tieneEstado = idxEstado === C - 1 && ls.length && vocab.includes(ls[ls.length - 1].toLowerCase());
+      const tieneEstado = conEstado && ls.length && esEstado(ls[ls.length - 1]);
       const cuerpo = tieneEstado ? ls.slice(0, -1) : ls;
-      f.celdas = C - 1 === 1 ? [cuerpo.join(' ')] : [cuerpo[0] || '', cuerpo.slice(1).join(' '), ...Array(Math.max(0, C - 4)).fill('')].slice(0, C - 2);
-      if (idxEstado === C - 1) f.celdas.push(tieneEstado ? ls[ls.length - 1] : '');
+      // Celdas de varias líneas: se unen las continuaciones; si queda una celda por columna, la fila es segura.
+      let segs = segmentosDeCelda(cuerpo);
+      if (segs.length < D && cuerpo.length === D) segs = cuerpo.slice();
+      let celdas;
+      if (segs.length === D) celdas = segs;
+      else if (segs.length > D) { celdas = [...segs.slice(0, D - 1), segs.slice(D - 1).join(' ')]; f.inferida = true; }
+      else { celdas = [...segs, ...Array(D - segs.length).fill('')]; f.inferida = true; }
+      if (conEstado) { celdas.push(tieneEstado ? ls[ls.length - 1] : ''); if (!tieneEstado) f.inferida = true; }
+      f.celdas = celdas;
     }
   }
   const nombres = columnas.slice(1);
-  return { formato, columnas, paginas: Math.max(...filas.map((f) => f.pagina)), filas: filas.map((f) => {
+  return { formato, columnas, paginas: Math.max(...filas.map((f) => f.pagina)), pies_quitados: pies, filas: filas.map((f) => {
     const valores = Object.fromEntries(nombres.map((c, k) => [c, String(f.celdas[k] || '').replace(/\s+/g, ' ').trim()]));
     const estadoCol = idxEstado > 0 ? columnas[idxEstado] : null;
     const descriptivas = nombres.filter((c) => c !== estadoCol && valores[c]);

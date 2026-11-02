@@ -137,7 +137,8 @@ ok(tb.paginas === 2 && tb.filas.find((f) => f.numero === 9).pagina === 1 && tb.f
 const f22 = tb.filas.find((f) => f.numero === 22);
 ok(f22.estado_declarado === 'No aplica' && !/DATOS BASE|Juan|Pendientes|Firmar/.test(JSON.stringify(f22)), 'la última fila termina en su estado: los datos base y los pendientes (página 3) no se mezclan');
 ok(tb.filas.find((f) => f.numero === 12).texto.includes('Copias: 2') && tb.filas.filter((f) => f.numero === 2).length === 1, 'un «2» suelto dentro de una celda no crea una fila nueva');
-ok(tb.filas.find((f) => f.numero === 4).inferida && /Nombramiento del químico farmacéutico/.test(tb.filas.find((f) => f.numero === 4).texto) && /Resolución de nombramiento firmada/.test(tb.filas.find((f) => f.numero === 4).texto), 'celda en dos líneas: el texto completo se conserva y la fila queda marcada para revisar las columnas');
+const f4 = tb.filas.find((f) => f.numero === 4);
+ok(!f4.inferida && f4.columnas.Requisito === 'Nombramiento del químico farmacéutico responsable del botiquín (Ley 20.584).' && f4.columnas['Qué subir para Andaluz'] === 'Resolución de nombramiento firmada.', `celda en dos líneas: la continuación queda en su columna («${f4.columnas.Requisito}»)`);
 ok(tb.filas.find((f) => f.numero === 3).texto === 'Requisito: Requisito 3 del botiquín, con su exigencia completa. Qué subir para Andaluz: Documento 3 que se sube para Andaluz.' && tb.filas.find((f) => f.numero === 3).estado_declarado === 'Listo', 'texto = Requisito + Qué subir; el estado declarado queda aparte (solo referencia)');
 const estados = tb.filas.reduce((m, f) => { (m[f.estado_declarado] = m[f.estado_declarado] || []).push(f.numero); return m; }, {});
 ok(estados.Listo.join() === '2,3,4,8,9,10,17,18,19,20' && estados['Por preparar'].join() === '1,5,12,15,16,21' && estados['No aplica'].join() === '6,7,11,13,14,22', 'estados declarados por fila iguales a los del PDF');
@@ -149,3 +150,25 @@ const tabs = [['N.º', 'Requisito', 'Qué subir', 'Estado'].join('\t'), ...Array
 const tt = tablaDeNorma(tabs);
 ok(tt && tt.formato === 'tab' && tt.filas.length === 22 && tt.filas[21].estado_declarado === 'No aplica' && !/RUT/.test(JSON.stringify(tt.filas[21])), 'tabla con tabuladores: 22 filas, sin mezclar lo que sigue');
 ok(tablaDeNorma('1. Contar con nómina.\n2. Contar con plan.') === null, 'una lista numerada sin tabla no se trata como tabla');
+
+// Errores reales informados (filas 5 a 9 del PDF del botiquín): títulos partidos en dos líneas, pie de página «Page 1 of 3»
+// con el título del documento, pegado o no al estado. Cada palabra vuelve a su columna y el pie desaparece.
+const QS = { 5: 'Plano a escala con la ubicación.', 6: 'No corresponde: local en arriendo con recepción vigente.', 7: 'No corresponde.', 8: 'Declaración TC6 firmada (no hay instalación de gas)', 9: 'Nómina firmada por el representante.' };
+const real = (pieEnLinea) => ['Botiquín Andaluz — requisitos y documentos', ...cab,
+  ...[1, 2, 3, 4].flatMap((n) => [String(n), `Requisito ${n} del botiquín.`, `Documento ${n}.`, est(n)]),
+  '5', 'Plano con ubicación del', 'botiquín', QS[5], est(5),
+  '6', 'Recepción definitiva', 'municipal', QS[6], est(6),
+  '7', 'Certificado de número', 'municipal', QS[7], est(7),
+  '8', 'Certificado de instalación de gas', 'Declaración TC6 firmada (no hay', 'instalación de gas)', est(8),
+  '9', 'Nómina del personal del', 'botiquín', QS[9], ...(pieEnLinea ? [`${est(9)} Page 1 of 3 Botiquín Andaluz — requisitos y documentos`] : [est(9), 'Page 1 of 3', 'Botiquín Andaluz — requisitos y documentos']),
+  '\f', ...cab, ...Array.from({ length: 13 }, (_, i) => i + 10).flatMap((n) => [String(n), `Requisito ${n} del botiquín.`, `Documento ${n}.`, est(n)]),
+  'Page 2 of 3', 'Botiquín Andaluz — requisitos y documentos', '\f', 'DATOS BASE', 'RUT 12.345.678-9', 'Page 3 of 3', 'Botiquín Andaluz — requisitos y documentos'].join('\n');
+for (const pieEnLinea of [false, true]) {
+  const tr = tablaDeNorma(real(pieEnLinea)); const F = (n) => tr.filas.find((f) => f.numero === n).columnas;
+  if (process.env.VER) console.log(tr.filas.filter((f) => (f.numero >= 5 && f.numero <= 10) || f.inferida).map((f) => JSON.stringify([f.numero, f.pagina, f.columnas, f.inferida])).join('\n'), tr.paginas);
+  const req = [5, 6, 7, 8, 9].map((n) => F(n).Requisito).join(' / ');
+  ok(req === 'Plano con ubicación del botiquín / Recepción definitiva municipal / Certificado de número municipal / Certificado de instalación de gas / Nómina del personal del botiquín', `${pieEnLinea ? 'pie pegado al estado' : 'pie en líneas aparte'}: títulos completos en su columna (${req})`);
+  ok([5, 6, 7, 9].every((n) => F(n)['Qué subir para Andaluz'] === QS[n]) && F(8)['Qué subir para Andaluz'] === 'Declaración TC6 firmada (no hay instalación de gas)', '«Qué subir» sin palabras del título ni restos');
+  ok(F(9).Estado === 'Listo' && F(8).Estado === 'Listo' && !/Page|of 3|requisitos y documentos/.test(JSON.stringify(tr.filas)), 'el estado queda en su columna y el pie de página («Page 1 of 3» y el título) se elimina');
+  ok(tr.filas.length === 22 && !tr.filas.some((f) => f.inferida) && tr.filas.find((f) => f.numero === 9).pagina === 1 && tr.filas.find((f) => f.numero === 10).pagina === 2 && tr.paginas === 2, '22 filas, ninguna dudosa, páginas 1 y 2 correctas (pie + encabezado repetido cuentan como un salto)');
+}

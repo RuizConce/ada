@@ -66,7 +66,9 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     const txtL = JSON.stringify(pL);
     ok(pL.requisitos.map((x) => x.id).join() === Array.from({ length: 22 }, (_, i) => String(i + 1)).join() && pL.tabla && pL.tabla.filas === 22 && /Procedimientos de recepción/.test(pL.requisitos[8].texto)
       && pL.requisitos[1].estado_declarado === 'Listo' && pL.requisitos[5].estado_declarado === 'No aplica' && /Copias/.test(pL.requisitos[11].texto) && pL.perfil === 'expediente'
-      && !/12\.345\.678|juan\.perez|1234 5678|Firmar la solicitud/.test(txtL),
+      && !/12\.345\.678|juan\.perez|1234 5678|Firmar la solicitud|Page \d|requisitos y documentos»?\s*\|/.test(txtL) && !pL.tabla.inferidas.filter((n) => n !== 12).length
+      && /Requisito: Contrato de trabajo del químico farmacéutico responsable\. \| Qué subir/.test(pL.requisitos[4].fuente) && /Requisito: Plano del local del botiquín con sus medidas\. \| Qué subir/.test(pL.requisitos[6].fuente)
+      && /\| Estado: Listo$/.test(pL.requisitos[8].fuente),
       `lista desde la tabla: 22 de 22 (páginas ${pL.tabla && pL.tabla.paginas}), columnas y estado de referencia por fila, el «2» suelto no es requisito y la página 3 queda fuera sin datos personales`);
     // «Corregir la lista (sin costo)» sobre la tabla: texto ya guardado, sin descargas ni llamadas a la IA
     const stA = await ctl('/control/stats'); const llamA = sql('SELECT COUNT(*) FROM llamadas_ia');

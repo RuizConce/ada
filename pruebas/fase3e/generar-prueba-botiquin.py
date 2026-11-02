@@ -37,8 +37,11 @@ def celdas(n):
     subir = "El documento correspondiente de Andaluz, legible y completo."
     if n == 12: return [str(n), REQ[n], "Copias:", "2", subir, ESTADO[n]]    # «2» suelto dentro de una celda
     if n == 4: return [str(n), "Nombramiento del químico farmacéutico", "responsable del botiquín.", subir, ESTADO[n]]  # celda en dos líneas
+    if n == 5: return [str(n), "Contrato de trabajo del químico", "farmacéutico responsable.", subir, ESTADO[n]]  # título partido (minúscula)
+    if n == 7: return [str(n), "Plano del local del", "botiquín con sus medidas.", subir, ESTADO[n]]  # título partido tras «del»
+    if n == 9: return [str(n), REQ[n], subir, ESTADO[n] + " Page 1 of 3 Botiquín Andaluz — requisitos y documentos"]  # pie pegado al estado
     return [str(n), REQ[n], subir, ESTADO[n]]
-norma = "\n".join(["BOTIQUÍN ANDALUZ — REQUISITOS Y DOCUMENTOS (FICTICIO)", *CAB, *[c for n in range(1, 10) for c in celdas(n)], *CAB, *[c for n in range(10, 23) for c in celdas(n)],
+norma = "\n".join(["BOTIQUÍN ANDALUZ — REQUISITOS Y DOCUMENTOS (FICTICIO)", *CAB, *[c for n in range(1, 10) for c in celdas(n)], *CAB, *[c for n in range(10, 23) for c in celdas(n)], "Page 2 of 3", "Botiquín Andaluz — requisitos y documentos",
   "DATOS BASE DEL BOTIQUÍN", "Nombre: Botiquín Andaluz (ficticio)", "Representante legal: Juan Pérez Soto, RUT 12.345.678-9, teléfono +56 9 1234 5678, correo juan.perez@ejemplo.cl",
   "Pendientes", "1. Firmar la solicitud.", "2. Conseguir la póliza de seguro.", "3. Completar el procedimiento de almacenamiento."])
 archivos = []
