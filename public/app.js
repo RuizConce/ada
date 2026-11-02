@@ -333,7 +333,7 @@
     if (p.origen) t.querySelector('strong').textContent = `Revisa los ${p.requisitos.length} requisitos y aprueba la auditoría`;
     t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${listaArchivos(p.archivos)}${p.motivo ? ` — ${p.motivo}` : ''}${p.perfil === 'seremi' ? ' · clasificación SEREMI' : ''}`;
     const debeCorregir = !!(p.rango && p.origen && !p.agrupada);
-    const puedeCorregir = debeCorregir || !!(p.rango && p.origen && (p.faltantes || []).length);
+    const puedeCorregir = !!(p.rango && p.origen);
     if (p.rango || (p.faltantes || []).length) {
       const r = document.createElement('div'); r.className = 'meta aud-rango';
       const total = p.rango ? p.rango.hasta - p.rango.desde + 1 : p.requisitos.length;
@@ -344,6 +344,12 @@
       if ((p.recuperados || []).length) {
         linea(`Tomados literalmente del texto guardado de la norma (la extracción no los había separado): ${p.recuperados.join(', ')}. Comprueba que el texto esté completo:`, 'aud-aviso');
         for (const d of p.recuperados_detalle || []) linea(`${d.numero}: ${d.caracteres.toLocaleString('es-CL')} caracteres · empieza «${d.empieza}…» · termina «…${d.termina}»${d.termina_antes_de ? ` (justo antes del ${d.termina_antes_de})` : d.hasta_el_final ? ' (hasta el final del documento: revisa que no incluya texto que no es del requisito)' : ''}`, 'aud-aviso');
+      }
+      if (p.ubicacion) {
+        const u = p.ubicacion;
+        linea(`Comprobé en el texto original que cada apartado pertenece a su número: ${u.comprobados} comprobados.`);
+        for (const x of u.reubicados || []) linea(`Quité ${x.referencia} del ${x.numero}: ese texto está dentro del requisito ${x.esta_en} del documento («${x.texto}»).`, 'aud-aviso');
+        if ((u.sin_comprobar || []).length) linea(`No pude ubicar en el texto original la cita de: ${u.sin_comprobar.join(', ')}. Revisa esos apartados.`, 'aud-aviso');
       }
       if (p.agrupada && p.texto_norma_disponible === false) linea('No encontré guardado el texto de la norma: no pude buscar los números que faltan. No descargué nada de nuevo.', 'aud-aviso');
       if ((p.faltantes || []).length) {
@@ -356,8 +362,8 @@
         const c = document.createElement('div'); c.className = 'aud-corregir';
         const nota = document.createElement('p'); nota.className = 'meta aud-aviso';
         nota.textContent = debeCorregir ? 'Esta lista separa subapartados como requisitos aparte y puede omitir números. Corrígela antes de aprobar: usa la extracción ya pagada, sin llamadas nuevas a la IA.'
-          : 'Faltan números del rango. Puedes volver a buscarlos en el texto ya guardado de la norma: sin descargar nada, sin llamadas a la IA y sin costo.';
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'principal aud-boton-corregir'; b.textContent = 'Corregir la lista (sin costo)';
+          : 'Puedes volver a revisar la lista contra el texto ya guardado de la norma: sin descargar nada, sin llamadas a la IA y sin costo.';
+        const b = document.createElement('button'); b.type = 'button'; b.className = debeCorregir ? 'principal aud-boton-corregir' : 'aud-boton-corregir'; b.textContent = 'Corregir la lista (sin costo)';
         b.addEventListener('click', async () => {
           b.disabled = true;
           try {

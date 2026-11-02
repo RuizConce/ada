@@ -1381,7 +1381,8 @@ function itemsDeNorma(texto) {
 // con formato «33.»). Si no se encuentra dónde termina, o queda demasiado largo, NO se recupera (se informa).
 const MAX_TEXTO_REQUISITO = 5000;
 const MAYUS = 'A-ZÁÉÍÓÚÑÜ';
-const ENCABEZADO = (n) => new RegExp(`(?:^|[^0-9.,/])(${n})\\s+([${MAYUS}][${MAYUS}0-9,()/°º-]*(?:\\s+[${MAYUS}0-9,()/°º-]+){1,}[${MAYUS}])`, 'g');
+// Título: una palabra en mayúsculas de 4+ letras («PLANO») o varias («EN CASO DE…»).
+const ENCABEZADO = (n) => new RegExp(`(?:^|[^0-9.,/])(${n})\\s+((?:[${MAYUS}]{4,}[${MAYUS}0-9,()/°º-]*|[${MAYUS}]{2,}[${MAYUS}0-9,()/°º-]*(?:\\s+[${MAYUS}0-9,()/°º-]+)+))(?=\\s|$)`, 'g');
 function itemEncabezado(texto, n, desdePos = 0) {
   const t = String(texto || '');
   const re = ENCABEZADO(n); re.lastIndex = desdePos;
@@ -1416,7 +1417,56 @@ function itemEncabezado(texto, n, desdePos = 0) {
   return { numero: n, texto: cuerpo, pagina: pg ? pg[1] : null, termina_antes_de: siguiente, hasta_el_final: hastaElFinal, inicio };
 }
 
-function listaRango(bloques, rango, textoNorma) {
+// Dónde empieza cada número en el texto de la norma (formato «32.» al inicio de línea o «-- 1 32 TÍTULO»), en orden.
+function iniciosDeNumeros(texto, desde, hasta) {
+  const t = String(texto || ''); const pos = {}; let cursor = 0;
+  for (let n = Math.max(1, desde - 3); n <= hasta + 3; n++) {
+    const a = ENCABEZADO(n); a.lastIndex = cursor; const ma = a.exec(t);
+    const b = new RegExp(`(?:^|\n)\\s*(${n})\\s*[.)\\-–:]\\s`, 'g'); b.lastIndex = cursor; const mb = b.exec(t);
+    const cands = [ma, mb].filter(Boolean).map((x) => x.index + x[0].indexOf(x[1]));
+    if (cands.length) { pos[n] = Math.min(...cands); cursor = pos[n] + 1; }
+  }
+  return pos;
+}
+// Posición de una cita en el texto (tolera saltos de línea y espacios distintos).
+function posicionCita(texto, cita, desde = 0, hasta = Infinity) {
+  const palabras = String(cita || '').replace(/[«»"“”…]/g, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 25);
+  if (palabras.length < 3) return -1;
+  const re = new RegExp(palabras.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'gi');
+  re.lastIndex = desde;
+  const m = re.exec(String(texto || ''));
+  return m && m.index < hasta ? m.index : (desde > 0 || hasta < Infinity ? -1 : (m ? m.index : -1));
+}
+// Comprueba que la cita de cada ítem extraído esté DENTRO del texto de su número en la norma. Si está dentro de
+// otro número (p. ej. «34 a)» cuyo texto es del 32), el ítem se quita de ese número y se informa.
+function comprobarUbicacion(bloques, rango, textoNorma) {
+  const pos = iniciosDeNumeros(textoNorma, rango.desde, rango.hasta);
+  const numeros = Object.keys(pos).map(Number).sort((a, b) => a - b);
+  const duenoDe = (c) => { let d = null; for (const n of numeros) if (pos[n] <= c) d = n; return d; };
+  const reubicados = []; const sinComprobar = []; let comprobados = 0;
+  const limpios = bloques.map((b) => ({ ...b, requisitos: (b.requisitos || []).filter((r) => {
+    const n = numeroRef(r.referencia);
+    if (n == null || n < rango.desde || n > rango.hasta) return true;
+    if (!numeros.length) { sinComprobar.push(r.referencia); return true; }
+    // Primero dentro del propio número (dos números pueden tener el mismo texto); si no está ahí, en todo el documento.
+    if (pos[n] != null) {
+      const sig = numeros.find((k) => k > n);
+      if (posicionCita(textoNorma, r.cita, pos[n], sig != null ? pos[sig] : Infinity) >= 0) { comprobados += 1; return true; }
+    }
+    const c = posicionCita(textoNorma, r.cita);
+    if (c < 0) { sinComprobar.push(r.referencia); return true; }
+    const d = duenoDe(c);
+    if (d == null || d === n) { comprobados += 1; return true; }
+    if (pos[n] == null) { sinComprobar.push(r.referencia); return true; } // sin ubicar su propio número no se mueve nada
+    reubicados.push({ referencia: r.referencia, numero: n, esta_en: d, texto: String(r.texto).slice(0, 160) });
+    return false;
+  }) }));
+  return { bloques: limpios, comprobados, reubicados, sin_comprobar: sinComprobar };
+}
+
+function listaRango(bloquesOriginales, rango, textoNorma) {
+  const ubic = textoNorma ? comprobarUbicacion(bloquesOriginales, rango, textoNorma) : { bloques: bloquesOriginales, comprobados: 0, reubicados: [], sin_comprobar: [] };
+  const bloques = ubic.bloques;
   const { desde, hasta } = rango;
   const porNumero = new Map();
   for (const b of bloques) for (const r of b.requisitos || []) {
@@ -1461,7 +1511,7 @@ function listaRango(bloques, rango, textoNorma) {
     while ((m = re.exec(plano)) && fr.length < 3) fr.push(plano.slice(Math.max(0, m.index - 40), m.index + 60).trim());
     return { numero: n, fragmentos: fr };
   });
-  return { requisitos, faltantes, recuperados, recuperados_detalle: detalle, problemas, menciones: menciones.map((m) => ({ ...m, problema: (problemas.find((x) => x.numero === m.numero) || {}).problema || null })), texto_norma_disponible: !!textoNorma, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
+  return { ubicacion: { comprobados: ubic.comprobados, reubicados: ubic.reubicados, sin_comprobar: ubic.sin_comprobar }, requisitos, faltantes, recuperados, recuperados_detalle: detalle, problemas, menciones: menciones.map((m) => ({ ...m, problema: (problemas.find((x) => x.numero === m.numero) || {}).problema || null })), texto_norma_disponible: !!textoNorma, subapartados: requisitos.filter((r) => r.subapartados).map((r) => `${r.id} (${r.subapartados.map((x) => x.id).join(', ')})`) };
 }
 // Lee los resultados ya pagados de la extracción (pasos req_bloque) y el texto de la norma ya guardado.
 async function bloquesDe(trabajoId) {
@@ -1490,12 +1540,12 @@ async function crearListaParaAprobar(t, objetivo, final, opciones = {}) {
   const lista = final && final.lista ? final.lista : null;
   if (!lista || !lista.requisitos.length) return;
   let archivos = objetivo.archivos;
-  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0; let recuperados = []; let subapartados = []; let menciones = []; let textoDisponible = null; let recuperadosDetalle = [];
+  let reqs = lista.requisitos; let faltantes = []; let fueraDeRango = 0; let recuperados = []; let subapartados = []; let menciones = []; let textoDisponible = null; let recuperadosDetalle = []; let ubicacion = null;
   if (objetivo.rango) {
     const { desde, hasta } = objetivo.rango;
     const r = listaRango(await bloquesDe(t.id), objetivo.rango, await textoDeNorma(t, objetivo, { soloGuardado: !!opciones.soloGuardado }));
     fueraDeRango = lista.requisitos.filter((x) => x.numero == null || x.numero < desde || x.numero > hasta).length;
-    reqs = r.requisitos; faltantes = r.faltantes; recuperados = r.recuperados; recuperadosDetalle = r.recuperados_detalle; subapartados = r.subapartados; menciones = r.menciones; textoDisponible = r.texto_norma_disponible;
+    reqs = r.requisitos; faltantes = r.faltantes; recuperados = r.recuperados; recuperadosDetalle = r.recuperados_detalle; subapartados = r.subapartados; menciones = r.menciones; textoDisponible = r.texto_norma_disponible; ubicacion = r.ubicacion;
     // Inventarios hechos con la regla anterior: un nombre que ya no sugiere datos personales vuelve a "incluido".
     if (objetivo.inventario) for (const a of objetivo.inventario) if (a.estado === 'excluido: posible dato sensible' && !esSensible(a.nombre)) { a.estado = 'incluido'; a.motivo = ''; if (!archivos.some((x) => x.id === a.id)) archivos = archivos.concat([{ id: a.id, nombre: a.nombre }]); }
     if (!reqs.length) throw new Error(`La lista extraída no tiene requisitos numerados entre ${desde} y ${hasta}${lista.numeracion_de_la_norma ? '' : ' (la norma no parece numerar sus requisitos)'}`);
@@ -1505,7 +1555,7 @@ async function crearListaParaAprobar(t, objetivo, final, opciones = {}) {
   const est = estimacion({ archivo_ids: e.archivo_ids, requisitos: e.requisitos, perfil: objetivo.perfil });
   const id = crypto.randomUUID();
   const datos = { tipo: 'auditoria', archivos, requisitos: e.requisitos, config: objetivo.config || CONFIG_PROVISIONAL, motivo: `Requisitos ${objetivo.rango ? `${objetivo.rango.desde} al ${objetivo.rango.hasta} ` : ''}extraídos de «${objetivo.norma.nombre}»`,
-    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, recuperados_detalle: recuperadosDetalle, subapartados, menciones, texto_norma_disponible: textoDisponible,
+    estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, recuperados_detalle: recuperadosDetalle, subapartados, menciones, ubicacion, texto_norma_disponible: textoDisponible,
     ...(objetivo.inventario ? { inventario: objetivo.inventario, carpeta: objetivo.carpeta, subcarpetas: objetivo.subcarpetas } : {}),
     origen: { extraccion_trabajo: t.id, extraccion_propuesta: objetivo.propuesta && objetivo.propuesta.id, norma: { id: objetivo.norma.id, nombre: objetivo.norma.nombre, version: objetivo.norma.version },
       duplicados: lista.duplicados.length, descartados: lista.descartados.length, exceso: lista.exceso } };
@@ -1540,7 +1590,7 @@ function tarjetaDe(id, datos, estado = 'pendiente') {
   return { tipo: 'auditoria', origen: datos.origen || null, id, estado, archivos: datos.archivos, requisitos: datos.requisitos, configuracion: datos.config, configuraciones: est.configuraciones,
     estimados: est.por_configuracion, estimado_usd: est.por_configuracion[datos.config],
     presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[datos.config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo,
-    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [], menciones: datos.menciones || [], recuperados_detalle: datos.recuperados_detalle || [], texto_norma_disponible: datos.texto_norma_disponible,
+    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [], menciones: datos.menciones || [], recuperados_detalle: datos.recuperados_detalle || [], ubicacion: datos.ubicacion || null, texto_norma_disponible: datos.texto_norma_disponible,
     agrupada: !!datos.rango && Array.isArray(datos.recuperados), lotes: Math.ceil(datos.archivos.length / LOTE), ...extrasInventario(datos) };
 }
 

@@ -47,3 +47,27 @@ ok(t47 === 'MANUAL DE NORMAS Y PROCEDIMIENTOS Corresponde a un documento que des
 const d32 = g.recuperados_detalle.find((x) => x.numero === 32); const d47 = g.recuperados_detalle.find((x) => x.numero === 47);
 ok(d32.termina_antes_de === 33 && d47.hasta_el_final && g.recuperados.join() === '32,47', 'la tarjeta puede mostrar dónde empieza y termina cada texto recuperado');
 ok(g.faltantes.join() === '34,35,36,37,38,39,40,41,42,43,44,45', 'los números que no están en la guía de prueba siguen informándose como ausentes');
+
+// Caso real: la IA etiquetó como «34 a)» un texto que en el documento está dentro del 32 (servicio externo de
+// reprocesamiento). Se comprueba la ubicación de cada cita en el texto original y se quita del 34.
+const guia3 = [
+  '-- 1 32 SERVICIO EXTERNO DE REPROCESAMIENTO Si el reprocesamiento de dispositivos médicos se realiza en un servicio externo, presentar la autorización sanitaria de ese servicio externo.',
+  '-- 1 33 REGISTRO ENO Corresponde al registro de enfermedades de notificación obligatoria.',
+  '-- 1 34 DIRECTOR TÉCNICO Presentar la carta de aceptación del director técnico.', 'b) Presentar el certificado de título del director técnico.',
+  '-- 1 35 PLANO Presentar el plano de evacuación.',
+].join('\n');
+const b3 = [{ bloque: 1, requisitos: [
+  { referencia: '32', texto: 'Autorización sanitaria del servicio externo de reprocesamiento.', cita: 'presentar la autorización sanitaria de ese servicio externo' },
+  { referencia: '33', texto: 'Registro ENO.', cita: 'Corresponde al registro de enfermedades de notificación obligatoria.' },
+  { referencia: '34 a)', texto: 'Autorización sanitaria del servicio externo de reprocesamiento de dispositivos médicos.', cita: 'Si el reprocesamiento de dispositivos médicos se realiza en un servicio externo' },
+  { referencia: '34 b)', texto: 'Carta de aceptación del director técnico.', cita: 'Presentar la carta de aceptación del director técnico.' },
+  { referencia: '34 c)', texto: 'Certificado de título del director técnico.', cita: 'Presentar el certificado de título del director técnico.' },
+  { referencia: '35', texto: 'Plano de evacuación.', cita: 'Presentar el plano de evacuación.' },
+] }];
+const g3 = listaRango(b3, { desde: 32, hasta: 35 }, guia3);
+const t34 = g3.requisitos.find((x) => x.id === '34');
+ok(g3.ubicacion.reubicados.length === 1 && g3.ubicacion.reubicados[0].referencia === '34 a)' && g3.ubicacion.reubicados[0].esta_en === 32 && !/reprocesamiento/.test(t34.texto) && /carta de aceptación/i.test(t34.texto) && /certificado de título/i.test(t34.texto),
+  `«34 a)» con texto del 32 se quita del 34 y se informa; 34 queda: «${t34.texto}»`);
+ok(g3.ubicacion.comprobados === 5 && !g3.ubicacion.sin_comprobar.length && g3.requisitos.length === 4, `los demás apartados se comprobaron en su número (${g3.ubicacion.comprobados})`);
+// Y en la guía anterior (sin errores) no se quita nada.
+ok(!listaRango(b2, { desde: 31, hasta: 47 }, guia).ubicacion.reubicados.length, 'si cada cita está en su número, no se quita nada');

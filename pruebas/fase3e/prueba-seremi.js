@@ -77,6 +77,7 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     ok(pB.recuperados.join(',') === '32,47' && pB.faltantes.length === 0 && /copiado literalmente de la norma/.test(pB.requisitos.find((x) => x.id === '47').fuente) && pB.requisitos.find((x) => x.id === '47').texto === 'MANUAL DE BIOSEGURIDAD Contar con un manual de bioseguridad del establecimiento.' && pB.requisitos.find((x) => x.id === '32').texto === 'CONSENTIMIENTO INFORMADO Contar con un consentimiento informado tipo para cada procedimiento.' && pB.recuperados_detalle.find((x) => x.numero === 32).termina_antes_de === 33,
       `32 y 47 (que la IA no separó) tomados literalmente del texto de la norma, sin inventar: «${pB.requisitos.find((x) => x.id === '32').texto}»`);
     console.log('   presupuesto mínimo K1 con 30 filas agrupadas:', pB.presupuesto_minimo.K1, '· sugerido', pB.presupuesto_sugerido);
+    ok(pB.ubicacion && !pB.ubicacion.reubicados.length && pB.ubicacion.comprobados >= 30 && !pB.ubicacion.sin_comprobar.length, `cada apartado extraído está dentro de su número en el texto original (${pB.ubicacion && pB.ubicacion.comprobados} comprobados, nada reubicado)`);
     // ---- 2b. Una tarjeta hecha con la versión anterior (34 filas, faltan 32 y 47) se corrige sin volver a pagar ----
     const fila0 = sql(`SELECT datos_cifrado FROM auditoria_propuestas WHERE id='${pB.id}'`);
     const viejo = Cifrado.descifrarJSON(fila0);

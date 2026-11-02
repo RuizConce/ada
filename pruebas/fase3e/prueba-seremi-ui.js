@@ -64,7 +64,7 @@ const foto = (p, n) => p.screenshot({ path: `${os.tmpdir()}/v-seremi-${n}.png` }
     await p.fill('.tarjeta-auditoria[data-propuesta] .aud-pres', '9'); // aunque el presupuesto alcanzara, corregir no aprueba nada
     await p.click('text=Corregir la lista (sin costo)');
     await p.waitForFunction(() => /30 de 30 en la lista/.test(document.querySelector('#entregas').textContent), null, { timeout: 8000 });
-    ok((await p.inputValue('.tarjeta-auditoria[data-propuesta] .aud-req')).split('\n').length === 30 && !(await p.$('text=Corregir la lista (sin costo)')) && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${id0}'`) === 'descartada',
+    ok((await p.inputValue('.tarjeta-auditoria[data-propuesta] .aud-req')).split('\n').length === 30 && !(await p.$('.aud-boton-corregir.principal')) && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${id0}'`) === 'descartada',
       'al corregir: 30 filas del 18 al 47 y la tarjeta anterior queda reemplazada');
     await p.waitForTimeout(800);
     ok(!aprobaciones.length && sql("SELECT COUNT(*) FROM trabajos WHERE tipo='auditoria'") === trabajosAntes && !(await p.$eval('.tarjeta-auditoria[data-propuesta] .tarjeta-botones .principal', (b) => b.disabled)),
