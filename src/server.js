@@ -393,6 +393,7 @@ for (const accion of ['aprobar', 'pausar', 'reanudar', 'cancelar', 'reintentar']
   app.post(`/api/trabajos/:id/${accion}`, auth, soloAdmin, envolver((req) => Trabajos[accion](req.params.id)));
 }
 app.post('/api/trabajos/:id/aprobar-paso', auth, soloAdmin, envolver((req) => Trabajos.aprobarPaso(req.params.id, { lista: (req.body || {}).lista })));
+app.post('/api/auditorias/propuestas/:id/aprobar-copias', auth, soloAdmin, envolver((req) => Auditoria.aprobarCopias(req.params.id, req.body || {}, { ua: String(req.get('user-agent') || '').slice(0, 300) })));
 app.post('/api/auditorias/propuestas/:id/autorizar-carpeta', auth, soloAdmin, envolver((req) => Auditoria.autorizarCarpeta(req.params.id, req.body || {}, { ua: String(req.get('user-agent') || '').slice(0, 300) })));
 app.post('/api/auditorias/propuestas/:id/guardar-lista', auth, soloAdmin, envolver((req) => Auditoria.guardarLista(req.params.id, req.body || {}, { ua: String(req.get('user-agent') || '').slice(0, 300) })));
 app.get('/api/listas', auth, soloAdmin, envolver(() => Auditoria.listas()));

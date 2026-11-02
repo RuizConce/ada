@@ -334,13 +334,22 @@
       + '<p class="meta aud-est">Al autorizar, ADA solo lista los archivos (sin abrirlos) y te muestra el inventario, el alcance y el presupuesto. Nada se lee ni se cobra hasta que apruebes la auditoría.</p>'
       + '<div class="tarjeta-botones"><button type="button" class="principal">Autorizar solo lectura</button><button type="button" class="descartar">Descartar</button></div>';
     t.querySelector('.aud-estado').textContent = `Pendiente · ${p.id.slice(0, 8)}`;
-    t.querySelector('.aud-carpeta').textContent = `Carpeta: ${p.carpeta.nombre}${p.carpeta.propietario ? ` · propietario en Drive: ${p.carpeta.propietario}` : ''}`;
+    const cs = p.carpetas && p.carpetas.length ? p.carpetas : [p.carpeta];
+    t.querySelector('.aud-carpeta').textContent = cs.map((c) => `${cs.length > 1 ? (c.rol === 'requisitos' ? 'Requisitos: ' : 'Documentos: ') : 'Carpeta: '}${c.nombre}${c.propietario ? ` · propietario en Drive: ${c.propietario}` : ''}`).join('\n');
+    if (cs.length > 1) { t.querySelector('strong').textContent = `Autorizar ${cs.length} carpetas (solo lectura)`; t.querySelector('.aud-carpeta').style.whiteSpace = 'pre-line'; }
     const bor = borradorCarpeta.get(p.id) || {};
     const exp = t.querySelector('.aud-exp');
     exp.value = bor.expediente != null ? bor.expediente : (p.carpeta.nombre || '');
     exp.addEventListener('input', () => { borradorCarpeta.set(p.id, { ...(borradorCarpeta.get(p.id) || {}), expediente: exp.value }); });
     const sel = t.querySelector('.aud-lista');
-    api('/api/listas').then((ls) => {
+    const conDocumento = !!(p.documento_requisitos || p.organizar);
+    if (conDocumento) {
+      sel.closest('label').hidden = true;
+      const x = document.createElement('p'); x.className = 'meta';
+      x.textContent = `${p.documento_requisitos ? `Requisitos: se extraen de «${p.documento_requisitos}» (con su propia aprobación y costo). ` : ''}${p.organizar ? 'Al final te propondré una carpeta NUEVA con copias de los documentos útiles, numeradas por requisito; las copias necesitan otra aprobación tuya.' : ''}`;
+      sel.closest('label').after(x);
+    }
+    if (!conDocumento) api('/api/listas').then((ls) => {
       sel.innerHTML = '';
       if (!ls.length) { const o = document.createElement('option'); o.value = ''; o.textContent = 'No hay listas guardadas'; sel.appendChild(o); return; }
       for (const l of ls) { const o = document.createElement('option'); o.value = l.id; o.textContent = `${l.nombre} (${l.requisitos} requisitos)`; sel.appendChild(o); }
@@ -353,12 +362,12 @@
     t.querySelector('.tarjeta-botones .principal').addEventListener('click', async () => {
       botones.forEach((b) => { b.disabled = true; });
       try {
-        const r = await api(`/api/auditorias/propuestas/${p.id}/autorizar-carpeta`, { method: 'POST', body: JSON.stringify({ expediente: t.querySelector('.aud-exp').value, lista: sel.value || null, password: t.querySelector('.aud-clave').value }) });
+        const r = await api(`/api/auditorias/propuestas/${p.id}/autorizar-carpeta`, { method: 'POST', body: JSON.stringify({ expediente: t.querySelector('.aud-exp').value, lista: conDocumento ? null : (sel.value || null), password: t.querySelector('.aud-clave').value }) });
         t.querySelector('.aud-clave').value = '';
         propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
         if (r.propuesta) propuestasAuditoria.push(r.propuesta);
         pintarEntregas();
-        aviso(r.propuesta ? `Carpeta autorizada (solo lectura) para «${r.carpeta.expediente}». Revisa el inventario y el presupuesto.` : (r.nota || 'Carpeta autorizada.'));
+        aviso(r.propuesta ? `${(r.carpetas || []).length > 1 ? 'Carpetas autorizadas' : 'Carpeta autorizada'} (solo lectura) para «${r.carpeta.expediente}». ${r.propuesta.tipo === 'extraer_requisitos' ? 'Revisa la extracción de requisitos.' : 'Revisa el inventario y el presupuesto.'}` : (r.nota || 'Carpeta autorizada.'));
       } catch (e) { botones.forEach((b) => { b.disabled = false; }); t.querySelector('.aud-clave').value = ''; aviso(e.message, true); }
     });
     t.querySelector('.descartar').addEventListener('click', async () => {
@@ -370,7 +379,68 @@
     return t;
   }
 
+  // Paso 4 (organizar expediente): vista previa de TODAS las copias y aprobación con contraseña.
+  const borradorPlan = new Map();
+  function tarjetaPlanCopias(p) {
+    const t = document.createElement('div');
+    t.className = 'tarjeta tarjeta-auditoria tarjeta-plan';
+    t.dataset.propuesta = p.id;
+    t.innerHTML = '<div class="tarjeta-cab"><span><strong>Plan de copias</strong></span><em class="aud-estado"></em></div>'
+      + '<p class="meta aud-plan-destino"></p><ul class="aud-plan"></ul><div class="aud-plan-falta"></div>'
+      + '<label class="campo">Tu contraseña de ADA (autoriza crear la carpeta y copiar)<input type="password" class="aud-clave" autocomplete="current-password"></label>'
+      + '<div class="tarjeta-botones"><button type="button" class="principal"></button><button type="button" class="descartar">Descartar</button></div>';
+    t.querySelector('.aud-estado').textContent = `Paso 4 · ${p.id.slice(0, 8)}`;
+    t.querySelector('strong').textContent = `Plan de copias — ${p.expediente}`;
+    t.querySelector('.aud-plan-destino').textContent = `Se creará la carpeta «${p.resultados_nombre}» en la raíz de Mi unidad. ADA solo escribe ahí: los originales no se modifican, mueven ni borran. Desmarca lo que no quieras copiar.`;
+    const bor = borradorPlan.get(p.id) || { omitir: [], sensibles: [] };
+    const ul = t.querySelector('.aud-plan');
+    const boton = t.querySelector('.tarjeta-botones .principal');
+    const contar = () => { const n = [...ul.querySelectorAll('input:checked')].length; boton.textContent = `Crear carpeta y copiar (${n})`; boton.disabled = !n; };
+    for (const f of p.plan) {
+      const li = document.createElement('li'); li.className = `aud-plan-fila ${f.clase === 'pendiente' ? 'aud-pendiente' : ''} ${f.sensible ? 'aud-sensible-fila' : ''}`;
+      const l = document.createElement('label'); const c = document.createElement('input'); c.type = 'checkbox'; c.value = f.clave;
+      c.checked = f.sensible ? bor.sensibles.includes(f.clave) : !bor.omitir.includes(f.clave);
+      c.addEventListener('change', () => {
+        const b = borradorPlan.get(p.id) || { omitir: [], sensibles: [] };
+        if (f.sensible) b.sensibles = c.checked ? [...new Set([...b.sensibles, f.clave])] : b.sensibles.filter((x) => x !== f.clave);
+        else b.omitir = c.checked ? b.omitir.filter((x) => x !== f.clave) : [...new Set([...b.omitir, f.clave])];
+        borradorPlan.set(p.id, b); contar();
+      });
+      const tx = document.createElement('span');
+      tx.textContent = `${f.nombre_copia}  ← «${f.archivo}» · requisito ${f.requisito} · ${f.estado}${f.clase === 'pendiente' ? ' · PENDIENTE de completar' : ''}${f.sensible ? ' · POSIBLE DATO SENSIBLE: márcalo solo si quieres copiarlo' : ''}`;
+      const ev = document.createElement('small'); ev.textContent = `Evidencia: «${f.cita}»${f.ubicacion ? ` (${f.ubicacion})` : ''}${f.falta ? ` · Falta: ${f.falta}` : ''}`;
+      l.appendChild(c); l.appendChild(tx); li.appendChild(l); li.appendChild(ev); ul.appendChild(li);
+    }
+    const falta = t.querySelector('.aud-plan-falta');
+    if ((p.sin_copia || []).length) {
+      const h = document.createElement('p'); h.className = 'meta'; h.textContent = `Sin documento para copiar (${p.sin_copia.length}):`; falta.appendChild(h);
+      for (const x of p.sin_copia) { const e = document.createElement('p'); e.className = 'meta aud-aviso'; e.textContent = `${x.requisito} · ${x.estado}: ${x.accion}`; falta.appendChild(e); }
+    }
+    contar();
+    const botones = t.querySelectorAll('.tarjeta-botones button');
+    boton.addEventListener('click', async () => {
+      botones.forEach((b) => { b.disabled = true; });
+      const b = borradorPlan.get(p.id) || { omitir: [], sensibles: [] };
+      try {
+        const r = await api(`/api/auditorias/propuestas/${p.id}/aprobar-copias`, { method: 'POST', body: JSON.stringify({ password: t.querySelector('.aud-clave').value, omitir: b.omitir, incluir_sensibles: b.sensibles }) });
+        t.querySelector('.aud-clave').value = '';
+        propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+        aviso(`Creando «${r.destino}» con ${r.copias} copias. Los originales no se tocan.`);
+        encargosAuditoria.set(r.trabajo_id, { id: r.trabajo_id, modo: 'copias', modo_copias: true, estado: 'ejecutando', pasos_hechos: 0, pasos_total: 0, copias_total: r.copias, copias_hechas: 0 });
+        pintarEntregas(); seguirAuditorias();
+      } catch (e) { t.querySelector('.aud-clave').value = ''; botones.forEach((x) => { x.disabled = false; }); contar(); aviso(e.message, true); }
+    });
+    t.querySelector('.descartar').addEventListener('click', async () => {
+      botones.forEach((x) => { x.disabled = true; });
+      try { await api(`/api/auditorias/propuestas/${p.id}/descartar`, { method: 'POST' }); } catch (_) {}
+      propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+      pintarEntregas();
+    });
+    return t;
+  }
+
   function tarjetaPropuestaAuditoria(p, origen = 'tarjeta_chat') {
+    if (p.tipo === 'plan_copias') return tarjetaPlanCopias(p);
     if (p.tipo === 'autorizar_carpeta') return tarjetaAutorizarCarpeta(p);
     if (p.tipo === 'extraer_requisitos') return tarjetaExtraccion(p, origen);
     const t = document.createElement('div');
@@ -541,18 +611,20 @@
       + '<div class="aud-barra"><i></i></div><p class="meta aud-avance"></p><ul class="aud-matriz"></ul><div class="tarjeta-botones"></div>';
     const terminado = a.estado === 'completado';
     const extraccion = a.modo === 'requisitos';
-    t.querySelector('strong').textContent = extraccion ? (terminado ? 'Requisitos extraídos' : 'Extrayendo requisitos de la norma') : (terminado ? 'Auditoría terminada' : 'Auditoría en curso');
+    const copias = a.modo === 'copias';
+    t.querySelector('strong').textContent = copias ? (terminado ? 'Expediente organizado' : 'Organizando el expediente') : extraccion ? (terminado ? 'Requisitos extraídos' : 'Extrayendo requisitos de la norma') : (terminado ? 'Auditoría terminada' : 'Auditoría en curso');
     t.querySelector('.aud-estado').textContent = a.estado === 'ejecutando' && a.estado_real === 'esperando ejecutor' ? 'Esperando turno' : (ETAPA_AUD[a.estado] || a.estado);
     const pct = a.pasos_total ? Math.round((100 * a.pasos_hechos) / a.pasos_total) : 0;
     t.querySelector('.aud-barra i').style.width = `${pct}%`;
-    t.querySelector('.aud-avance').textContent = `${a.expediente ? `Expediente: ${a.expediente} · ` : ''}Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `${a.lotes_total ? `Lotes ${a.lotes_hechos || 0}/${a.lotes_total} · archivos leídos ${a.archivos_leidos || 0}/${a.archivos_total || '…'} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
+    t.querySelector('.aud-avance').textContent = copias ? `${a.expediente ? `Expediente: ${a.expediente} · ` : ''}Trabajo ${a.id.slice(0, 8)} · copias ${a.copias_hechas || 0}/${a.copias_total || '…'}${a.resultados_nombre ? ` · carpeta «${a.resultados_nombre}»` : ''} · sin costo de IA${a.motivo && !terminado ? ` · ${a.motivo}` : ''}` : `${a.expediente ? `Expediente: ${a.expediente} · ` : ''}Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `${a.lotes_total ? `Lotes ${a.lotes_hechos || 0}/${a.lotes_total} · archivos leídos ${a.archivos_leidos || 0}/${a.archivos_total || '…'} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
     const ul = t.querySelector('.aud-matriz');
     // Perfil SEREMI: la respuesta sencilla primero (qué subir, qué modificar, qué falta, qué no aplica, qué revisar).
     if (terminado && a.resumen_seremi) {
       const r = document.createElement('div');
       r.className = 'aud-resumen-seremi';
       const linea = (k, txt) => { const ids = a.resumen_seremi[k] || []; const p = document.createElement('p'); p.className = `aud-res aud-res-${k}`; p.textContent = `${txt} (${ids.length}): ${ids.length ? ids.join(', ') : 'ninguno'}`; r.appendChild(p); };
-      linea('listo', 'Puedes subir'); linea('modificar', 'Hay que modificar'); linea('no_encontrado', 'No se encuentran'); linea('no_aplica', 'No aplican (justificado)'); linea('revisar', 'Revisar a mano');
+      if (a.perfil === 'expediente') { linea('listo', 'Listos'); linea('modificar', 'Parciales (completar)'); linea('no_encontrado', 'No encontrados'); linea('no_aplica', 'No aplican (justificado)'); linea('revisar', 'Revisar a mano'); }
+      else { linea('listo', 'Puedes subir'); linea('modificar', 'Hay que modificar'); linea('no_encontrado', 'No se encuentran'); linea('no_aplica', 'No aplican (justificado)'); linea('revisar', 'Revisar a mano'); }
       ul.before(r);
     }
     for (const f of a.matriz || []) {
@@ -572,7 +644,13 @@
       t.querySelector('.aud-matriz').before(nota);
       boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
     }
-    if (terminado && a.excel_listo) {
+    if (terminado && copias) {
+      if (a.resultados && a.resultados.url) { const l = document.createElement('a'); l.href = a.resultados.url; l.target = '_blank'; l.rel = 'noopener'; l.className = 'boton-enlace principal'; l.textContent = 'Abrir la carpeta en Drive'; botones.appendChild(l); }
+      boton('Descargar Excel', (b) => descargar('auditoria', a.id, b));
+      boton('Descargar Word', (b) => descargar('auditoria_informe', a.id, b));
+      boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
+    } else if (terminado && a.excel_listo) {
+      if (a.organizar) { const n = document.createElement('p'); n.className = 'meta aud-aviso'; n.textContent = 'Paso 4: revisa el plan de copias (tarjeta «Plan de copias») y apruébalo para crear la carpeta organizada.'; t.querySelector('.aud-matriz').before(n); }
       boton('Descargar Excel', (b) => descargar('auditoria', a.id, b), 'principal');
       if (a.informe_listo) boton('Descargar informe', (b) => descargar('auditoria_informe', a.id, b), 'principal');
       boton('Guardar lista de requisitos', (b) => { if (t.querySelector('.aud-guardar-panel')) return; botones.after(panelGuardarLista(a.id)); b.disabled = true; });
@@ -641,7 +719,8 @@
         encargosAuditoria.set(id, a);
         if (antes && antes.estado !== 'completado' && a.estado === 'completado') {
           if (a.modo === 'requisitos') { aviso('Requisitos extraídos: revisa la lista y aprueba la auditoría.'); cargarAuditoriasActivas(); }
-          else aviso(a.informe_listo ? 'La auditoría terminó: el Excel y el informe están listos.' : 'La auditoría terminó: el Excel está listo para descargar.');
+          else if (a.modo === 'copias') aviso('Expediente organizado: la carpeta, el Excel y el Word están listos.');
+          else { aviso(a.organizar ? 'La auditoría terminó: revisa el plan de copias (paso 4).' : a.informe_listo ? 'La auditoría terminó: el Excel y el informe están listos.' : 'La auditoría terminó: el Excel está listo para descargar.'); if (a.organizar) cargarAuditoriasActivas(); }
         }
         if (a.estado === 'ejecutando') vivas = true;
       } catch (_) {}
@@ -766,13 +845,13 @@
         for (const a of ts) {
           const f = document.createElement('div'); f.className = 'aud-terminada';
           const txt = document.createElement('p'); txt.className = 'aud-terminada-txt';
-          txt.textContent = `${a.expediente || 'Auditoría'} · ${String(a.terminado_en).slice(0, 10)} · ${a.requisitos} requisitos (${a.ids}) · trabajo ${a.id.slice(0, 8)}${a.lista ? ` · lista «${a.lista}»` : ''}`;
+          txt.textContent = a.modo === 'copias' ? `${a.expediente || 'Expediente'} · ${String(a.terminado_en).slice(0, 10)} · carpeta organizada (${a.copias} copias) · trabajo ${a.id.slice(0, 8)}` : `${a.expediente || 'Auditoría'} · ${String(a.terminado_en).slice(0, 10)} · ${a.requisitos} requisitos (${a.ids}) · trabajo ${a.id.slice(0, 8)}${a.lista ? ` · lista «${a.lista}»` : ''}`;
           f.appendChild(txt);
           const bs = document.createElement('div'); bs.className = 'tarjeta-botones';
           const boton = (t2, fn, clase) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t2; if (clase) b.className = clase; b.addEventListener('click', () => fn(b)); bs.appendChild(b); };
           if (a.excel) boton('Excel', (b) => descargar('auditoria', a.id, b));
           if (a.informe) boton('Informe', (b) => descargar('auditoria_informe', a.id, b));
-          boton('Guardar lista de requisitos', (b) => { if (f.querySelector('.aud-guardar-panel')) return; f.appendChild(panelGuardarLista(a.id)); b.disabled = true; }, 'principal');
+          if (a.modo !== 'copias') boton('Guardar lista de requisitos', (b) => { if (f.querySelector('.aud-guardar-panel')) return; f.appendChild(panelGuardarLista(a.id)); b.disabled = true; }, 'principal');
           f.appendChild(bs);
           ct.appendChild(f);
         }

@@ -545,6 +545,61 @@ async function subirComoGoogle({ nombre, datos, tipo, carpetaId }) {
   return { id: f.id, url: f.webViewLink, carpeta: carpetaId ? undefined : 'ADA' };
 }
 
+// ---------- Carpeta de resultados de un encargo (organizar expediente) ----------
+// Es la ÚNICA escritura de este flujo: crear la carpeta del encargo en la raíz de Mi unidad, copiar ahí documentos de
+// la carpeta de origen (copia de Google Drive: el original no se descarga ni se modifica) y subir el Excel y el Word.
+// No son herramientas del chat. Cada escritura comprueba que el destino sea la carpeta marcada con ESTE encargo, y
+// cada copia lleva marcas (encargo, requisito, original) para no duplicarse si el trabajo se reanuda.
+const CARPETA_MIME = 'application/vnd.google-apps.folder';
+const q = (v) => `'${comillas(String(v))}'`;
+async function buscarMarcados(condiciones, padre) {
+  const filtros = Object.entries(condiciones).map(([k, v]) => `appProperties has { key=${q(k)} and value=${q(v)} }`);
+  if (padre) filtros.push(`${q(padre)} in parents`);
+  filtros.push('trashed = false');
+  const params = new URLSearchParams({ q: filtros.join(' and '), fields: 'files(id,name,mimeType,parents,webViewLink,appProperties,md5Checksum,size)', pageSize: '100', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' });
+  return (await gfetch(`${DRIVE}/files?${params}`)).files || [];
+}
+async function carpetaResultados({ encargo, nombre }) {
+  const [ya] = (await buscarMarcados({ ada_encargo: encargo, ada_rol: 'resultados' })).filter((f) => f.mimeType === CARPETA_MIME);
+  if (ya) return { id: ya.id, nombre: ya.name, url: ya.webViewLink, reutilizada: true };
+  const f = await gfetch(`${DRIVE}/files?fields=id,name,webViewLink&supportsAllDrives=true`, { method: 'POST', body: JSON.stringify({ name: nombre, mimeType: CARPETA_MIME, parents: ['root'], appProperties: { ada_encargo: encargo, ada_rol: 'resultados' } }) });
+  return { id: f.id, nombre: f.name, url: f.webViewLink, reutilizada: false };
+}
+async function comprobarResultados(resultadosId, encargo) {
+  const m = await gfetch(`${DRIVE}/files/${encodeURIComponent(resultadosId)}?fields=id,name,mimeType,appProperties,trashed&supportsAllDrives=true`);
+  if (m.trashed || m.mimeType !== CARPETA_MIME || !m.appProperties || m.appProperties.ada_encargo !== encargo || m.appProperties.ada_rol !== 'resultados') {
+    throw Object.assign(new Error('Destino no permitido: solo se escribe en la carpeta de resultados creada para este encargo.'), { status: 403, bloqueado: true });
+  }
+  return m;
+}
+async function copiarAResultados({ encargo, resultadosId, origenId, carpetaOrigen, requisito, nombre }) {
+  await comprobarResultados(resultadosId, encargo);
+  const meta = await metadatos(origenId);
+  if (meta.mimeType === 'application/vnd.google-apps.shortcut') throw Object.assign(new Error('Es un acceso directo: no se copia.'), { status: 403, bloqueado: true });
+  if (!(await autorizadoEn(carpetaOrigen)(meta))) throw Object.assign(new Error('El archivo no pertenece a la carpeta de origen del encargo.'), { status: 403, bloqueado: true });
+  const marcas = { ada_encargo: encargo, ada_req: String(requisito), ada_origen: origenId };
+  const [ya] = await buscarMarcados(marcas, resultadosId);
+  if (ya) return { id: ya.id, nombre: ya.name, url: ya.webViewLink, reutilizada: true, origen_version: claveVersionDe(meta) };
+  const c = await gfetch(`${DRIVE}/files/${encodeURIComponent(origenId)}/copy?fields=id,name,webViewLink,parents&supportsAllDrives=true`, { method: 'POST', body: JSON.stringify({ name: nombre, parents: [resultadosId], appProperties: marcas }) });
+  return { id: c.id, nombre: c.name, url: c.webViewLink, reutilizada: false, origen_version: claveVersionDe(meta) };
+}
+async function subirAResultados({ encargo, resultadosId, rol, nombre, mime, datos }) {
+  await comprobarResultados(resultadosId, encargo);
+  const marcas = { ada_encargo: encargo, ada_entregable: rol };
+  const [ya] = await buscarMarcados(marcas, resultadosId);
+  if (ya) return { id: ya.id, nombre: ya.name, url: ya.webViewLink, reutilizada: true };
+  const meta = { name: nombre, mimeType: mime, parents: [resultadosId], appProperties: marcas };
+  const limite = `ada${Date.now()}`;
+  const cuerpo = Buffer.concat([Buffer.from(`--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${limite}\r\nContent-Type: ${mime}\r\n\r\n`), datos, Buffer.from(`\r\n--${limite}--`)]);
+  const f = await gfetch(`${SIMULADO || 'https://www.googleapis.com'}/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink&supportsAllDrives=true`, { method: 'POST', sinJson: true, headers: { 'Content-Type': `multipart/related; boundary=${limite}` }, body: cuerpo });
+  return { id: f.id, nombre: f.name || nombre, url: f.webViewLink, reutilizada: false };
+}
+async function listarResultados(resultadosId) {
+  const params = new URLSearchParams({ q: `${q(resultadosId)} in parents and trashed = false`, fields: 'files(id,name,parents,webViewLink,appProperties)', pageSize: '200', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' });
+  return (await gfetch(`${DRIVE}/files?${params}`)).files || [];
+}
+const claveVersionDe = (m) => Extracciones.claveVersion(m);
+
 // ---------- Definiciones para Claude ----------
 
 const ID = { type: 'string', description: 'id del archivo (de buscar_drive o listar_carpeta_drive)' };
@@ -692,4 +747,4 @@ async function copiasTemporalesVivas() {
   return (r.files || []).map((f) => ({ id_termina_en: f.id.slice(-6), nombre: f.name, creado: f.createdTime }));
 }
 
-module.exports = { recargarCarpetas, carpetaAutorizada, autorizadoEn, autorizadoLectura, autorizadoEscritura, carpetasLectura, inventarioCarpeta, LEIBLE, claveVersionDe: (m) => Extracciones.claveVersion(m), conectado, lecturaVerificacion, copiasTemporalesVivas, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };
+module.exports = { carpetaResultados, copiarAResultados, subirAResultados, listarResultados, comprobarResultados, recargarCarpetas, carpetaAutorizada, autorizadoEn, autorizadoLectura, autorizadoEscritura, carpetasLectura, inventarioCarpeta, LEIBLE, claveVersionDe: (m) => Extracciones.claveVersion(m), conectado, lecturaVerificacion, copiasTemporalesVivas, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };

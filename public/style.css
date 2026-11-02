@@ -631,3 +631,14 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-fila-gestion span { flex: none; }
 .aud-fila-gestion button { align-self: flex-start; }
 .aud-fila-gestion .principal { align-self: stretch; }
+
+.aud-plan { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
+.aud-plan-fila { border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+.aud-plan-fila label { display: flex; gap: 8px; align-items: flex-start; }
+.aud-plan-fila input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 18px; margin-top: 1px; }
+.aud-plan-fila span { overflow-wrap: anywhere; }
+.aud-plan-fila small { display: block; opacity: .75; margin-top: 3px; overflow-wrap: anywhere; }
+.aud-pendiente { border-color: rgba(251,191,36,.45); }
+.aud-sensible-fila { border-color: rgba(248,113,113,.55); }
+.aud-plan-falta p { margin: 2px 0; overflow-wrap: anywhere; }
+.boton-enlace { display: inline-flex; align-items: center; justify-content: center; padding: 10px 14px; border-radius: 12px; text-decoration: none; }

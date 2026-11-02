@@ -36,11 +36,21 @@ http.createServer(async (req, res) => {
     if (w && (req.method === 'PUT' || req.method === 'POST')) { await leerCuerpo(req); inc(stats.escrituras, decodeURIComponent(w[1])); return json(res, 200, { updatedCells: 2, updatedRange: 'A1:B1', updates: { updatedRange: 'A2:B2' } }); }
     w = p.match(/^\/docs\/v1\/documents\/([^/:]+):batchUpdate$/);
     if (w) { await leerCuerpo(req); inc(stats.escrituras, decodeURIComponent(w[1])); return json(res, 200, { replies: [] }); }
-    if (p === '/upload/drive/v3/files' && req.method === 'POST') { req.resume(); inc(stats.escrituras, 'subida'); n += 1; return json(res, 200, { id: `subido-${n}`, webViewLink: 'https://drive.simulado/subido' }); }
+    if (p === '/upload/drive/v3/files' && req.method === 'POST') {
+      // multipart: la primera parte es el JSON de metadatos (nombre, carpeta, marcas).
+      const crudo = await new Promise((r) => { const b = []; req.on('data', (d) => b.push(d)); req.on('end', () => r(Buffer.concat(b))); });
+      const mj = crudo.toString('latin1').match(/\r\n\r\n(\{.*?\})\r\n--/s);
+      const meta = mj ? JSON.parse(Buffer.from(mj[1], 'latin1').toString('utf8')) : {};
+      n += 1; const id = `subido-${n}`;
+      archivos.set(id, { id, name: meta.name || id, mimeType: meta.mimeType, parents: meta.parents || ['root'], appProperties: meta.appProperties, acceso: true, version: 1, tamano: crudo.length });
+      inc(stats.escrituras, 'subida'); stats.escrituras_en = stats.escrituras_en || {}; inc(stats.escrituras_en, (meta.parents || ['root'])[0]);
+      return json(res, 200, { id, name: meta.name, webViewLink: `https://drive.simulado/${id}` });
+    }
     if (p === '/drive/v3/files' && req.method === 'POST') {
       const b = await leerCuerpo(req); n += 1; const id = `carpeta-${n}`;
-      archivos.set(id, { id, name: b.name, mimeType: b.mimeType, parents: b.parents || ['root'], acceso: true, version: 1 });
-      inc(stats.escrituras, `crear:${(b.parents || ['root'])[0]}`); return json(res, 200, publico(archivos.get(id)));
+      archivos.set(id, { id, name: b.name, mimeType: b.mimeType, parents: b.parents || ['root'], acceso: true, version: 1, appProperties: b.appProperties });
+      inc(stats.escrituras, `crear:${(b.parents || ['root'])[0]}`); stats.escrituras_en = stats.escrituras_en || {}; inc(stats.escrituras_en, (b.parents || ['root'])[0]);
+      return json(res, 200, publico(archivos.get(id)));
     }
     w = p.match(/^\/drive\/v3\/files\/([^/]+)$/);
     if (w && req.method === 'PATCH') {
@@ -65,10 +75,15 @@ http.createServer(async (req, res) => {
 
     // ---- Drive ----
     if (p === '/drive/v3/files' && req.method === 'GET') {
-      if (/appProperties has/.test(u.searchParams.get('q') || '')) return json(res, 200, { files: [...archivos.values()].filter((f) => f.appProperties && f.appProperties.ada_temporal === '1' && !f.trashed).map(publico) });
+      const qq = u.searchParams.get('q') || '';
+      if (/appProperties has/.test(qq)) {
+        const conds = [...qq.matchAll(/appProperties has \{ key='([^']+)' and value='([^']*)' \}/g)].map((x) => [x[1], x[2]]);
+        const pad = (qq.match(/'([^']+)' in parents/) || [])[1];
+        return json(res, 200, { files: [...archivos.values()].filter((f) => f.appProperties && !f.trashed && conds.every(([k, v]) => f.appProperties[k] === v) && (!pad || (f.parents || []).includes(pad))).map(publico) });
+      }
       const padre = ((u.searchParams.get('q') || '').match(/'([^']+)' in parents/) || [])[1];
       // Paginación como Drive: pageSize (máx. 200 en el inventario) y nextPageToken.
-      const todos = [...archivos.values()].filter((f) => !f.copiaDe && (!padre || (f.parents || ['carpeta-prueba']).includes(padre)));
+      const todos = [...archivos.values()].filter((f) => !(f.copiaDe && f.appProperties && f.appProperties.ada_temporal === '1') && !(f.copiaDe && !f.appProperties) && !f.trashed && (!padre || (f.parents || ['carpeta-prueba']).includes(padre)));
       const tam = Math.min(Number(u.searchParams.get('pageSize')) || 50, 200); const desde = Number(u.searchParams.get('pageToken')) || 0;
       return json(res, 200, { files: todos.slice(desde, desde + tam).map(publico), ...(desde + tam < todos.length ? { nextPageToken: String(desde + tam) } : {}) });
     }
@@ -87,10 +102,11 @@ http.createServer(async (req, res) => {
     if (m[2] === '/copy') {
       const b = await leerCuerpo(req);
       n += 1;
-      const copia = { id: `copia-${n}`, name: b.name, mimeType: b.mimeType, version: 1, copiaDe: f.id, appProperties: b.appProperties, acceso: true, parents: b.parents || f.parents };
+      const copia = { id: `copia-${n}`, name: b.name, mimeType: b.mimeType || f.mimeType, version: 1, copiaDe: f.id, appProperties: b.appProperties, acceso: true, parents: b.parents || f.parents };
       stats.copias_en = stats.copias_en || {}; inc(stats.copias_en, (b.parents || f.parents || ['?'])[0]);
       archivos.set(copia.id, copia); inc(stats.copias, f.id);
-      return json(res, 200, { id: copia.id, name: copia.name });
+      stats.escrituras_en = stats.escrituras_en || {}; if (!(b.appProperties && b.appProperties.ada_temporal === '1')) inc(stats.escrituras_en, (b.parents || f.parents || ['?'])[0]);
+      return json(res, 200, { id: copia.id, name: copia.name, webViewLink: `https://drive.simulado/${copia.id}`, parents: copia.parents });
     }
     if (m[2] === '/export' || u.searchParams.get('alt') === 'media') {
       const o = origen(f);

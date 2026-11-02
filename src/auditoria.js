@@ -171,7 +171,11 @@ const rechazaForzado = (e) => e && e.status === 400 && /tool_choice|forced tool|
 
 // Perfil SEREMI: además del estado técnico, la clasificación para presentar el requisito ante la autoridad.
 const PRESENTACION = ['listo', 'modificar', 'no_encontrado', 'no_aplica', 'revisar'];
+// Perfiles que clasifican para presentar un trámite (misma lógica de evidencia; cambian las etiquetas).
+const CLASIFICA = (p) => p === 'seremi' || p === 'expediente';
 const ETIQUETA_SEREMI = { listo: 'LISTO PARA SUBIR', modificar: 'HAY QUE MODIFICAR', no_encontrado: 'NO ENCONTRADO', no_aplica: 'NO APLICA', revisar: 'REQUIERE REVISIÓN' };
+const ETIQUETA_EXPEDIENTE = { listo: 'LISTO', modificar: 'PARCIAL', no_encontrado: 'NO ENCONTRADO', no_aplica: 'NO APLICA', revisar: 'REQUIERE REVISIÓN' };
+const etiquetaDe = (perfil, k) => (perfil === 'expediente' ? ETIQUETA_EXPEDIENTE : ETIQUETA_SEREMI)[k];
 const SISTEMA_SEREMI = `
 Perfil de esta auditoría: preparar la presentación ante la SEREMI de Salud. Además del estado, entrega "presentacion":
 - listo: hay un documento pertinente y su CONTENIDO permite comprobar todo lo exigido (datos completos, vigente, del establecimiento correcto, y firmado o timbrado cuando se exige y eso consta en el texto). Nunca "listo" solo porque existe un archivo con un nombre parecido.
@@ -204,8 +208,8 @@ function pedido(nivel, requisito, sel, nota, perfil) {
   return {
     model: modeloDe(nivel),
     max_tokens: 1200,
-    system: perfil === 'seremi' ? `${SISTEMA}\n${SISTEMA_SEREMI}` : SISTEMA,
-    tools: [perfil === 'seremi' ? HERRAMIENTA_SEREMI : HERRAMIENTA],
+    system: CLASIFICA(perfil) ? `${SISTEMA}\n${perfil === 'expediente' ? SISTEMA_SEREMI.replace('preparar la presentación ante la SEREMI de Salud', 'armar el expediente del trámite con los documentos que lo acreditan').replace('"modificar"', '"modificar" (se informa como PARCIAL)') : SISTEMA_SEREMI}` : SISTEMA,
+    tools: [CLASIFICA(perfil) ? HERRAMIENTA_SEREMI : HERRAMIENTA],
     tool_choice: eleccionHerramienta(modeloDe(nivel)),
     messages: [{ role: 'user', content: `Requisito ${requisito.id}: ${requisito.texto}\n\n${varios ? 'Fragmentos de los documentos' : `Fragmentos del documento «${sel.nombre}»`}:\n\n${frags || '(ninguno)'}${nota ? `\n\n${nota}` : ''}` }],
   };
@@ -238,7 +242,7 @@ function revisar(resp, sel, requisito, nivel, config, perfil) {
   if (CON_CITA.includes(ev.estado) && !unicas.length) return { valido: false, motivo: `"${ev.estado}" sin cita`, evaluacion: ev };
   if (ev.estado === 'contradictorio' && !(unicas.some((x) => x.aporta === 'a_favor') && unicas.some((x) => x.aporta === 'en_contra'))) return { valido: false, motivo: '"contradictorio" necesita una cita a favor y otra en contra', evaluacion: ev };
   if (ev.estado === 'no_aplica_justificado' && ev.justificacion.length < 20) return { valido: false, motivo: '"no aplica" sin justificación suficiente', evaluacion: ev };
-  if (perfil === 'seremi') {
+  if (CLASIFICA(perfil)) {
     ev.presentacion = String(e.presentacion || '').trim();
     ev.accion = String(e.accion || '').replace(/\s+/g, ' ').trim();
     if (e.pendiente_verificar && String(e.pendiente_verificar).trim()) ev.pendiente_verificar = String(e.pendiente_verificar).replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -353,7 +357,7 @@ function consolidarLotes(entrada, previos) {
     return { requisito: r.id, criterio: elegidos.length ? `${elegidos.length} fragmentos de ${new Set(elegidos.map((f) => f.archivo_id)).size} archivo(s) en ${lotesUsados} lote(s)` : 'ningún fragmento menciona el requisito', ids: elegidos.map(idGlobal) };
   });
   return { docs, lotes: lotes.length, caracteres: docs.reduce((a, d) => a + d.caracteres, 0), total_fragmentos: lotes.reduce((a, l) => a + l.resultado.total_fragmentos, 0),
-    fragmentos: fragmentos.map(({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote }) => ({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote })), por_requisito: porRequisito, sin_texto: sinTexto, versiones: entrada.versiones || {} };
+    fragmentos: fragmentos.map(({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote }) => ({ id, ubicacion, texto, archivo_id: a, nombre, version, orden, lote })), por_requisito: porRequisito, sin_texto: sinTexto, versiones: entrada.versiones || {}, genericas: entrada.genericas || [] };
 }
 
 // Perfil SEREMI: reglas del código sobre la clasificación (la IA propone, el código decide en estos casos).
@@ -361,7 +365,7 @@ function consolidarLotes(entrada, previos) {
 //    requisito impide decir "no encontrado": queda REQUIERE REVISIÓN nombrando ese archivo.
 // 2) "Listo" solo si el texto permite comprobarlo: firma/timbre, planos o imágenes, vigencia sin fecha citada,
 //    varias versiones del mismo documento o algo que la IA no pudo verificar → REQUIERE REVISIÓN con qué comprobar.
-const GENERICAS = new Set(['piso', 'pisos', 'certif', 'regist', 'docume', 'proced', 'protoc', 'person', 'establ', 'progra', 'manual', 'sistem', 'instal', 'vigent', 'copia', 'final', 'versio', 'escane', 'imagen', 'fotogr', 'fotos', 'archiv', 'servic', 'salud', 'centro', 'clinic', 'general', 'gener', 'inform', 'pdf', 'docx']);
+const GENERICAS = new Set(['local', 'locale', 'piso', 'pisos', 'certif', 'regist', 'docume', 'proced', 'protoc', 'person', 'establ', 'progra', 'manual', 'sistem', 'instal', 'vigent', 'copia', 'final', 'versio', 'escane', 'imagen', 'fotogr', 'fotos', 'archiv', 'servic', 'salud', 'centro', 'clinic', 'general', 'gener', 'inform', 'pdf', 'docx']);
 const SIGLAS_SALUD = { sis: 'superintendencia salud', ci: 'consentimiento informado cedula identidad', dt: 'director tecnico', eno: 'enfermedades notificacion obligatoria', rcp: 'reanimacion cardiopulmonar', epp: 'elementos proteccion personal', iaas: 'infecciones asociadas atencion', reas: 'residuos establecimientos atencion salud' };
 const raicesNombre = (nombre) => {
   const limpio = String(nombre || '').replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/[_.-]+/g, ' ');
@@ -372,8 +376,8 @@ const raicesNombre = (nombre) => {
 // Un archivo se relaciona con un requisito si su nombre lleva el número del requisito (p. ej. «25_NO_APLICA_…»,
 // «Req 43 …») o comparte una palabra específica con su texto.
 const llevaNumero = (nombre, id) => { const n = String(id).match(/^\d{1,3}/); return !!n && new RegExp(`(^|[^0-9])0*${n[0]}([^0-9]|$)`).test(String(nombre || '').replace(/\.[A-Za-z0-9]{2,5}$/, '')); };
-const relacionados = (requisito, omitidos) => {
-  const rq = [...raices(requisito.texto)].filter((x) => !GENERICAS.has(x) && x.length >= 4);
+const relacionados = (requisito, omitidos, genericasLista = []) => {
+  const rq = [...raices(requisito.texto)].filter((x) => !GENERICAS.has(x) && !genericasLista.includes(x) && x.length >= 4);
   return omitidos.filter((a) => { if (llevaNumero(a.nombre, requisito.id)) return true; const rn = raicesNombre(a.nombre); return rq.some((x) => rn.has(x)); });
 };
 const MOTIVO_OMITIDO = { acceso_directo: 'acceso directo que ADA no sigue', duplicado_no_auditado: 'copia de un archivo que tampoco se analizó', no_legible: 'formato sin texto (imagen u otro)', sin_texto: 'sin texto, posiblemente escaneado', excluido_sensible: 'excluido por posibles datos personales', sin_acceso: 'sin acceso', bloqueado: 'fuera de la carpeta autorizada', error: 'no se pudo leer' };
@@ -382,12 +386,12 @@ function ajustarSeremi(r, requisito, sel) {
   if (!out.presentacion) {
     if (out.estado === 'no_evaluado') return { ...out, presentacion: 'revisar', accion: 'Revisar este requisito manualmente: ADA no pudo verificar la evidencia con citas textuales.' };
     if (out.estado !== 'sin_evidencia') return out;
-    out = { ...out, presentacion: 'no_encontrado', accion: `Conseguir o preparar el documento que acredite el requisito ${requisito.id} y agregarlo a la carpeta.` };
+    out = { ...out, presentacion: 'no_encontrado', accion: `Conseguir o preparar el documento que acredite el requisito ${requisito.id} y agregarlo a la carpeta. Debe mostrar: ${String(requisito.texto).replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '').slice(0, 400)}.` };
   }
   // Archivos no analizados relacionados con este requisito: con "no encontrado" o "hay que modificar" la conclusión
   // podría ser falsa (la evidencia o una declaración de no aplica podría estar ahí) → REQUIERE REVISIÓN.
   const omitidos = (sel.sin_texto || []).filter((a) => a.estado !== 'poco_texto');
-  const parecidos = relacionados(requisito, omitidos);
+  const parecidos = relacionados(requisito, omitidos, sel.genericas || []);
   const nombres = parecidos.slice(0, 3).map((a) => `«${a.nombre}» (${MOTIVO_OMITIDO[a.estado] || a.estado})`).join(', ');
   if (parecidos.length && ['no_encontrado', 'modificar'].includes(out.presentacion)) {
     const antes = out.presentacion === 'no_encontrado' ? 'No se encontró en los documentos leídos' : 'Lo leído indica que hay que modificarlo';
@@ -492,7 +496,7 @@ const EJECUTORES = {
     const sel = { nombre: s.nombre || 'documentos', fragmentos: fragmentosDeSeleccion(s, entrada.requisito.id) };
     const base = { requisito: entrada.requisito.id, texto_requisito: entrada.requisito.texto, archivo_id: s.archivo_id || null, nombre: s.nombre || null, version: s.version || null, config: entrada.config };
     const perfil = entrada.perfil || null;
-    const seremi = (r) => (perfil === 'seremi' ? ajustarSeremi(r, entrada.requisito, s) : r);
+    const seremi = (r) => (CLASIFICA(perfil) ? ajustarSeremi(r, entrada.requisito, s) : r);
     if (!sel.fragmentos.length) {
       // Nada en los documentos habla del requisito: lo dice el código, sin gastar en IA.
       return { resultado: seremi({ ...base, estado: 'sin_evidencia', evidencias: [], cita: '', cita_verificada: false, ubicacion: null, justificacion: 'Ningún fragmento de los documentos menciona este requisito.', modelo: 'código', intentos: [], escalado: false }), costo: 0, llamadasRegistradas: true };
@@ -525,10 +529,10 @@ const EJECUTORES = {
   async aud_consolidar({ entrada, previos }) {
     const filas = entrada.requisitos.map((r) => {
       const p = [...previos].reverse().find((x) => x.resultado && x.resultado.requisito === r.id && x.clave.startsWith('verificar:'));
-      const v = p ? p.resultado : (entrada.perfil === 'seremi' ? { estado: 'no_evaluado', justificacion: 'paso sin resultado', presentacion: 'revisar', accion: 'Revisar este requisito manualmente.' } : { estado: 'no_evaluado', justificacion: 'paso sin resultado' });
+      const v = p ? p.resultado : (CLASIFICA(entrada.perfil) ? { estado: 'no_evaluado', justificacion: 'paso sin resultado', presentacion: 'revisar', accion: 'Revisar este requisito manualmente.' } : { estado: 'no_evaluado', justificacion: 'paso sin resultado' });
       return { requisito: r.id, texto_requisito: r.texto, fuente_norma: r.fuente || '', estado: v.estado, justificacion: v.justificacion || '', cita: v.cita || '', cita_verificada: !!v.cita_verificada,
         ubicacion: v.ubicacion || '', archivo_id: v.archivo_id || null, archivo_version: v.version || null, archivo: v.nombre || null, modelo: v.modelo || '', escalado: !!v.escalado, paso: p ? p.clave : null,
-        ...(v.presentacion ? { presentacion: v.presentacion, clasificacion: ETIQUETA_SEREMI[v.presentacion], accion: v.accion || '', revisar_archivos: v.revisar_archivos || [] } : {}),
+        ...(v.presentacion ? { presentacion: v.presentacion, clasificacion: etiquetaDe(entrada.perfil, v.presentacion), accion: v.accion || '', revisar_archivos: v.revisar_archivos || [] } : {}),
         evidencias: (v.evidencias || (v.cita ? [{ cita: v.cita, aporta: 'a_favor', ubicacion: v.ubicacion, archivo_id: v.archivo_id, nombre: v.nombre, version: v.version, verificada: !!v.cita_verificada }] : []))
           .map((x) => ({ cita: x.cita, aporta: x.aporta, ubicacion: x.ubicacion || '', archivo_id: x.archivo_id || null, archivo: x.nombre || null, archivo_version: x.version || null, verificada: !!x.verificada })) };
     });
@@ -567,9 +571,9 @@ const EJECUTORES = {
     if (objetivo.lista) res.addRow(['Lista de requisitos', `${objetivo.lista.nombre} (validada el ${String(objetivo.lista.validada_en || '').slice(0, 10)})`]);
     res.addRow(['Requisitos', filas.length]);
     for (const e of ORDEN_ESTADOS) res.addRow([`  ${ETIQUETA[e]}`, conteo[e] || 0]);
-    if (entrada.perfil === 'seremi') {
-      res.addRow(['Clasificación para la SEREMI', '']);
-      for (const k of PRESENTACION) { const ids = filas.filter((f) => f.presentacion === k).map((f) => f.requisito); res.addRow([`  ${ETIQUETA_SEREMI[k]}`, ids.length, ids.join(', ')]); }
+    if (CLASIFICA(entrada.perfil)) {
+      res.addRow([entrada.perfil === 'expediente' ? 'Clasificación del expediente' : 'Clasificación para la SEREMI', '']);
+      for (const k of PRESENTACION) { const ids = filas.filter((f) => f.presentacion === k).map((f) => f.requisito); res.addRow([`  ${etiquetaDe(entrada.perfil, k)}`, ids.length, ids.join(', ')]); }
     }
     res.addRow(['Documentos auditados', sel ? sel.resultado.docs.length : '']);
     if (objetivo.inventario) res.addRow(['Archivos en el inventario', `${objetivo.inventario.length} (detalle en la hoja Inventario)`]);
@@ -600,7 +604,7 @@ const EJECUTORES = {
     const filas = consol.resultado.filas;
     const pendientes = filas.filter(esPendiente);
     let recomendaciones = []; let costo = 0; let origenRec = 'sin hallazgos que corregir';
-    if (pendientes.length && entrada.perfil === 'seremi') {
+    if (pendientes.length && CLASIFICA(entrada.perfil)) {
       // Perfil SEREMI: las acciones ya vienen de cada evaluación (validadas como frases completas): sin otra llamada.
       recomendaciones = pendientes.map((f) => ({ requisito: f.requisito, accion: frase(f.accion || 'Revisar este requisito manualmente.'), prioridad: PRIORIDAD_SEREMI[f.presentacion] || 'media' }));
       origenRec = 'acciones de cada evaluación';
@@ -631,7 +635,7 @@ const COLUMNAS = ['requisito', 'texto_requisito', 'fuente_norma', 'estado', 'jus
 const COLUMNAS_EV = ['requisito', 'n', 'aporta', 'archivo', 'archivo_version', 'ubicacion', 'cita', 'verificada'];
 // Perfil SEREMI: la matriz empieza por lo que Cristian necesita para presentar (clasificación, archivo, cita, acción).
 const COLUMNAS_SEREMI = ['requisito', 'texto_requisito', 'clasificacion', 'archivo', 'cita', 'ubicacion', 'justificacion', 'accion', 'estado', 'n_evidencias', 'archivo_version', 'fuente_norma', 'modelo'];
-const columnasDe = (perfil) => (perfil === 'seremi' ? COLUMNAS_SEREMI : COLUMNAS);
+const columnasDe = (perfil) => (CLASIFICA(perfil) ? COLUMNAS_SEREMI : COLUMNAS);
 const COLUMNAS_INV = ['archivo_id', 'nombre', 'ruta', 'categoria', 'estado', 'detalle', 'requisitos_relacionados', 'tipo', 'version', 'modificado', 'lote', 'duplicado_de', 'grupo_versiones', 'caracteres', 'datos_enmascarados'];
 const CATEGORIA_INV = { fuente: 'Fuente de requisitos', auditado: 'Auditado', omitido: 'Omitido (justificado)' };
 // Estado final de CADA archivo del inventario: nada se omite en silencio.
@@ -738,8 +742,8 @@ const frase = (t) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); re
 function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada, docs }) {
   const conteo = conteoEstados(filas);
   const pendientes = filas.filter(esPendiente);
-  const seremi = entrada.perfil === 'seremi';
-  const etiqueta = (f) => (seremi && f.presentacion ? ETIQUETA_SEREMI[f.presentacion] : ETIQUETA[f.estado]);
+  const seremi = CLASIFICA(entrada.perfil);
+  const etiqueta = (f) => (seremi && f.presentacion ? etiquetaDe(entrada.perfil, f.presentacion) : ETIQUETA[f.estado]);
   const ref = (x) => `${x.archivo || 'documento'}${x.ubicacion ? `, ${x.ubicacion}` : ''}`;
   const l = [];
   if (entrada.expediente) l.push(`Expediente: ${entrada.expediente}${entrada.carpeta ? ` · Carpeta de origen: ${entrada.carpeta.nombre || ''} (id ${entrada.carpeta.id || ''})` : ''}${entrada.lista ? ` · Lista: ${entrada.lista.nombre}` : ''}`);
@@ -754,7 +758,7 @@ function informeMarkdown({ filas, recomendaciones, origenRec, trabajoId, entrada
   l.push('', '## 2. Resumen');
   if (seremi) {
     l.push('| Clasificación | N.º | Requisitos |', '| --- | --- | --- |');
-    for (const k of PRESENTACION) { const ids = filas.filter((f) => f.presentacion === k).map((f) => f.requisito); l.push(`| ${ETIQUETA_SEREMI[k]} | ${ids.length} | ${ids.length ? ids.join(', ') : '—'} |`); }
+    for (const k of PRESENTACION) { const ids = filas.filter((f) => f.presentacion === k).map((f) => f.requisito); l.push(`| ${etiquetaDe(entrada.perfil, k)} | ${ids.length} | ${ids.length ? ids.join(', ') : '—'} |`); }
     l.push(`| Total | ${filas.length} | |`);
   } else {
     l.push('| Estado | Requisitos |', '| --- | --- |');
@@ -810,6 +814,7 @@ async function textoDocx(b64) {
 async function verificar(t, pasos, esperado, opciones) {
   const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
   if (objetivo.modo === 'requisitos') return verificarRequisitos(t, pasos, objetivo, opciones);
+  if (objetivo.modo === 'copias') return verificarCopias(t, pasos, objetivo, opciones);
   const problemas = opciones.integridad(pasos);
   const ids = (objetivo.requisitos || []).map((r) => r.id);
   const consol = pasos.filter((p) => p.tipo === 'aud_consolidar').pop();
@@ -821,7 +826,7 @@ async function verificar(t, pasos, esperado, opciones) {
     if (vistos.length !== ids.length || vistos.some((x, i) => x !== ids[i])) problemas.push(`la matriz tiene ${vistos.join(', ')} y lo aprobado es ${ids.join(', ')}`);
     for (const f of matriz.filas) {
       if (!Trabajos.ESTADOS_EVIDENCIA.includes(f.estado)) problemas.push(`${f.requisito}: estado inválido "${f.estado}"`);
-      if (objetivo.perfil === 'seremi') {
+      if (CLASIFICA(objetivo.perfil)) {
         if (!PRESENTACION.includes(f.presentacion)) problemas.push(`${f.requisito}: sin clasificación SEREMI`);
         else if (f.estado !== 'no_evaluado' && f.modelo !== 'código' && presentacionValida(f)) problemas.push(`${f.requisito}: ${presentacionValida(f)}`);
         if (accionValida(f.accion)) problemas.push(`${f.requisito}: acción ${accionValida(f.accion)}`);
@@ -899,11 +904,13 @@ async function verificar(t, pasos, esperado, opciones) {
       if (matriz && iH > 0 && iR > iH) {
         const hallazgos = texto.slice(iH, iR); const recs = texto.slice(iR, iM > 0 ? iM : undefined);
         const pend = matriz.filas.filter(esPendiente);
+        // Número exacto (no subcadena): «5 (prioridad» no debe coincidir dentro de «15 (prioridad».
+        const exacto = (id, sufijo) => new RegExp(`(^|[^0-9A-Za-z])${String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${sufijo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
         for (const f of pend) {
-          if (!hallazgos.includes(`${f.requisito} — `)) problemas.push(`el informe omite el hallazgo ${f.requisito}`);
-          if (!recs.includes(`${f.requisito} (prioridad`)) problemas.push(`el informe no tiene recomendación para ${f.requisito}`);
+          if (!exacto(f.requisito, ' — ').test(hallazgos)) problemas.push(`el informe omite el hallazgo ${f.requisito}`);
+          if (!exacto(f.requisito, ' (prioridad').test(recs)) problemas.push(`el informe no tiene recomendación para ${f.requisito}`);
         }
-        for (const f of matriz.filas.filter((x) => !esPendiente(x))) if (recs.includes(`${f.requisito} (prioridad`)) problemas.push(`el informe recomienda sobre ${f.requisito}, que no es hallazgo`);
+        for (const f of matriz.filas.filter((x) => !esPendiente(x))) if (exacto(f.requisito, ' (prioridad').test(recs)) problemas.push(`el informe recomienda sobre ${f.requisito}, que no es hallazgo`);
         const total = (texto.match(/Total\s*\n?\s*(\d+)/) || [])[1];
         if (Number(total) !== matriz.filas.length) problemas.push(`el resumen del informe dice ${total} requisitos y la matriz ${matriz.filas.length}`);
         informe = { hallazgos: pend.length, recomendaciones: e.recomendaciones, origen_recomendaciones: e.origen_recomendaciones, caracteres: texto.length };
@@ -959,8 +966,8 @@ function validarEntrada(d) {
   for (const r of requisitos) if (!/^[\w.-]{1,12}$/.test(r.id)) throw err(`Id de requisito inválido: ${r.id}`);
   const esperado = (d.esperado || []).filter((x) => x && x.id && x.estado).map((x) => ({ id: String(x.id), estado: String(x.estado) }));
   for (const x of esperado) if (!Trabajos.ESTADOS_EVIDENCIA.includes(x.estado)) throw err(`Estado esperado inválido para ${x.id}: ${x.estado}`);
-  const perfil = d.perfil === 'seremi' ? 'seremi' : null;
-  return { archivo_ids, archivo_id: archivo_ids[0], requisitos, esperado, perfil, ...(Array.isArray(d.inventario) ? { inventario: d.inventario, carpeta: d.carpeta || null } : {}), ...(Array.isArray(d.notas_lista) && d.notas_lista.length ? { notas_lista: d.notas_lista.slice(0, 40).map((x) => String(x).slice(0, 600)) } : {}), ...(d.expediente ? { expediente: String(d.expediente).slice(0, 160) } : {}), ...(d.lista ? { lista: d.lista } : {}) };
+  const perfil = CLASIFICA(d.perfil) ? d.perfil : null;
+  return { archivo_ids, archivo_id: archivo_ids[0], requisitos, esperado, perfil, ...(Array.isArray(d.inventario) ? { inventario: d.inventario, carpeta: d.carpeta || null } : {}), ...(Array.isArray(d.notas_lista) && d.notas_lista.length ? { notas_lista: d.notas_lista.slice(0, 40).map((x) => String(x).slice(0, 600)) } : {}), ...(d.expediente ? { expediente: String(d.expediente).slice(0, 160) } : {}), ...(d.lista ? { lista: d.lista } : {}), ...(d.organizar ? { organizar: { nombre: String(d.organizar.nombre || '').slice(0, 200) } } : {}) };
 }
 
 // Estimación previa por configuración (peor caso: segundo intento incluido). Sirve para proponer presupuesto.
@@ -969,7 +976,7 @@ function estimar({ requisitos, config, informe = true, perfil = null }) {
   const fragmentos = 'x'.repeat(CARACTERES_POR_REQUISITO);
   const verificar = requisitos.reduce((a, r) => a + k.modelos.reduce((b, nivel) => b + C.estimarCosto(pedido(nivel, r, { nombre: 'documento', fragmentos: [{ id: 'F1', ubicacion: 'p', texto: fragmentos }] }, null, perfil)), 0), 0);
   // Perfil SEREMI: el informe usa las acciones de cada evaluación (sin otra llamada a la IA).
-  return verificar + (informe && perfil !== 'seremi' ? estimarInforme(requisitos, config) : 0);
+  return verificar + (informe && !CLASIFICA(perfil) ? estimarInforme(requisitos, config) : 0);
 }
 // Peor caso del informe: todos los requisitos son hallazgos y hay un segundo intento.
 const estimarInforme = (requisitos, config) => 2 * C.estimarCosto(pedidoRecomendaciones(requisitos.map((r) => ({ requisito: r.id, estado: 'no_cumple', texto_requisito: r.texto, justificacion: 'x'.repeat(200) })), null, config));
@@ -1017,7 +1024,11 @@ function pasosDe(e, config) {
     for (const a of e.inventario || []) if (a.grupo_versiones && auditados.has(a.id)) { const g = a.grupo_versiones.split(':')[0]; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(a); }
     const versiones = {};
     for (const g of grupos.values()) if (g.length > 1) for (const a of g) versiones[a.id] = { otros: g.filter((x) => x.id !== a.id).map((x) => x.nombre) };
-    pasos.push({ clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'consolidación de lotes', entrada: { lotes: lotes.length, requisitos: e.requisitos, no_leidos: noLeidos, versiones } });
+    // Palabras del tema de todo el expediente (p. ej. «botiquín»): aparecen en ≥30 % de los requisitos y no sirven para
+    // relacionar un archivo omitido con UN requisito.
+    const frec = {}; for (const r of e.requisitos) for (const x of raices(r.texto)) frec[x] = (frec[x] || 0) + 1;
+    const genericas = Object.keys(frec).filter((x) => e.requisitos.length >= 6 && frec[x] >= Math.max(3, Math.ceil(e.requisitos.length * 0.3)));
+    pasos.push({ clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'consolidación de lotes', entrada: { lotes: lotes.length, requisitos: e.requisitos, no_leidos: noLeidos, versiones, genericas } });
   } else {
     for (const id of e.archivo_ids) pasos.push({ clave: `extraer:${id}`, tipo: 'extraer', etapa: 'extracción', entrada: { archivo_id: id } });
     pasos.push({ clave: 'seleccionar', tipo: 'aud_seleccionar', etapa: 'fragmentos', entrada: { archivo_ids: e.archivo_ids, requisitos: e.requisitos } });
@@ -1029,13 +1040,13 @@ function pasosDe(e, config) {
   const huella = hash(JSON.stringify(e.requisitos));
   pasos.push({ clave: 'consolidar', tipo: 'aud_consolidar', etapa: 'consolidación', entrada: { requisitos: e.requisitos, perfil } });
   pasos.push({ clave: 'excel', tipo: 'aud_excel', etapa: 'entregables', entrada: { config, requisitos_hash: huella, perfil } });
-  pasos.push({ clave: 'informe', tipo: 'aud_informe', etapa: 'entregables', entrada: { config, requisitos_hash: huella, perfil }, ...(perfil === 'seremi' ? {} : { estimado: Number(estimarInforme(e.requisitos, config).toFixed(6)) }) });
+  pasos.push({ clave: 'informe', tipo: 'aud_informe', etapa: 'entregables', entrada: { config, requisitos_hash: huella, perfil }, ...(CLASIFICA(perfil) ? {} : { estimado: Number(estimarInforme(e.requisitos, config).toFixed(6)) }) });
   return pasos;
 }
 
 async function crearYAprobar(e, config, presupuesto, serie, propuesta) {
   const objetivo = { archivo_id: e.archivo_id, archivo_ids: e.archivo_ids, requisitos: e.requisitos, esperado: e.esperado, config, requisitos_hash: hash(JSON.stringify(e.requisitos)), informe: true,
-    ...(e.perfil ? { perfil: e.perfil } : {}), ...(e.inventario ? { inventario: e.inventario, carpeta: e.carpeta || null } : {}), ...(e.notas_lista ? { notas_lista: e.notas_lista } : {}), ...(e.expediente ? { expediente: e.expediente } : {}), ...(e.lista ? { lista: e.lista } : {}), ...(serie ? { serie } : {}), ...(propuesta ? { propuesta } : {}) };
+    ...(e.perfil ? { perfil: e.perfil } : {}), ...(e.inventario ? { inventario: e.inventario, carpeta: e.carpeta || null } : {}), ...(e.notas_lista ? { notas_lista: e.notas_lista } : {}), ...(e.expediente ? { expediente: e.expediente } : {}), ...(e.lista ? { lista: e.lista } : {}), ...(e.organizar ? { organizar: e.organizar } : {}), ...(serie ? { serie } : {}), ...(propuesta ? { propuesta } : {}) };
   const t = await Trabajos.crear({ tipo: 'auditoria', titulo: `Auditoría ${config} (${e.requisitos.length} requisitos, ${e.archivo_ids.length} documento${e.archivo_ids.length === 1 ? '' : 's'})`, objetivo, presupuesto, pasos: pasosDe(e, config) });
   return Trabajos.aprobar(t.id);
 }
@@ -1147,8 +1158,151 @@ Object.assign(EJECUTORES, {
     const descartados = previos.filter((p) => p.clave.startsWith('req_bloque:') && p.resultado).flatMap((p) => p.resultado.descartados || []);
     return { resultado: { requisitos, total: requisitos.length, numeracion_de_la_norma: !!conNumero, duplicados, descartados, exceso }, costo: 0 };
   },
+
+  // ---------- Organizar expediente (sin IA): carpeta de resultados, copias, comprobación, Excel y Word ----------
+  async org_carpeta({ trabajo }) {
+    const o = Cifrado.descifrarJSON(trabajo.objetivo_cifrado) || {};
+    const r = await require('./drive').carpetaResultados({ encargo: o.encargo, nombre: o.resultados_nombre });
+    // Registro (sin dar permiso de lectura): aparece en Ajustes como carpeta de resultados del expediente.
+    await qPrincipal(`INSERT INTO carpetas_autorizadas (id, usuario_id, nombre, expediente, estado, autorizada_en, constancia_cifrada) VALUES (?, ?, ?, ?, 'resultados', ?, ?)
+      ON DUPLICATE KEY UPDATE nombre = VALUES(nombre)`, [r.id, usuario().id, r.nombre, o.expediente || '', new Date(), Cifrado.cifrarJSON({ encargo: o.encargo, permiso: 'crear y copiar solo en esta carpeta' })]);
+    return { resultado: r, costo: 0 };
+  },
+  async org_copiar({ entrada, previos, trabajo }) {
+    const o = Cifrado.descifrarJSON(trabajo.objetivo_cifrado) || {};
+    const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
+    const f = entrada.fila;
+    try {
+      const r = await require('./drive').copiarAResultados({ encargo: o.encargo, resultadosId: res.id, origenId: f.archivo_id, carpetaOrigen: o.carpeta_docs.id, requisito: pad2(f.requisito), nombre: f.nombre_copia });
+      return { resultado: { ...f, estado_copia: 'ok', copia_id: r.id, copia_nombre: r.nombre, url: r.url, reutilizada: r.reutilizada, origen_version: r.origen_version }, costo: 0 };
+    } catch (e) {
+      if (e.temporal || e.status === 429 || (e.status >= 500 && e.status < 600)) throw e;
+      return { resultado: { ...f, estado_copia: 'error', motivo: String(e.message).slice(0, 200) }, costo: 0 };
+    }
+  },
+  // Comprueba en Drive que cada copia exista en la carpeta de resultados con su nombre y enlace, y que los originales
+  // sigan iguales (misma versión, misma carpeta). Solo lee.
+  async org_verificar({ previos, trabajo }) {
+    const Drive = require('./drive');
+    const o = Cifrado.descifrarJSON(trabajo.objetivo_cifrado) || {};
+    const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
+    const copias = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado);
+    const en = await Drive.listarResultados(res.id);
+    const porId = new Map(en.map((f) => [f.id, f]));
+    const problemas = []; let ok = 0; let originales = 0;
+    for (const c of copias) {
+      if (c.estado_copia !== 'ok') { problemas.push(`${c.nombre_copia}: no se copió (${c.motivo})`); continue; }
+      const f = porId.get(c.copia_id);
+      if (!f) { problemas.push(`${c.copia_nombre}: no está en la carpeta de resultados`); continue; }
+      if (f.name !== c.copia_nombre || !f.webViewLink || !(f.appProperties && f.appProperties.ada_origen === c.archivo_id)) { problemas.push(`${c.copia_nombre}: nombre, enlace o marca no coinciden`); continue; }
+      ok += 1;
+      try {
+        const m = await Drive.metadatos(c.archivo_id);
+        if (Drive.claveVersionDe(m) === c.origen_version && (await Drive.autorizadoEn(o.carpeta_docs.id)(m))) originales += 1;
+        else problemas.push(`el original de ${c.copia_nombre} cambió o ya no está en su carpeta`);
+      } catch (e) { problemas.push(`no pude comprobar el original de ${c.copia_nombre}: ${e.message}`); }
+    }
+    const nombres = copias.filter((c) => c.estado_copia === 'ok').map((c) => c.copia_nombre);
+    if (new Set(nombres).size !== nombres.length) problemas.push('hay nombres de copia repetidos');
+    const marcadas = en.filter((f) => f.appProperties && f.appProperties.ada_origen);
+    if (marcadas.length > nombres.length) problemas.push(`hay ${marcadas.length - nombres.length} copias de más en la carpeta (posible duplicado)`);
+    return { resultado: { carpeta: res, copias: copias.length, copias_ok: ok, originales_intactos: originales, problemas }, costo: 0 };
+  },
+  async org_excel({ previos, trabajo, trabajoId }) {
+    const o = Cifrado.descifrarJSON(trabajo.objetivo_cifrado) || {};
+    const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
+    const copias = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado);
+    const ver = previos.find((x) => x.clave === 'verificar_copias' && x.resultado).resultado;
+    const aud = await Trabajos.ver(o.auditoria_trabajo, { conResultado: true });
+    const filas = aud.resultado.matriz.filas;
+    const ExcelJS = require('exceljs');
+    const libro = new ExcelJS.Workbook();
+    const hoja = libro.addWorksheet('Requisitos');
+    hoja.columns = [{ header: 'N.º', width: 6 }, { header: 'Requisito', width: 50 }, { header: 'Estado', width: 18 }, { header: 'Documentos encontrados', width: 36 }, { header: 'Evidencia', width: 60 },
+      { header: 'Qué falta o qué corregir', width: 50 }, { header: 'Nombre de la copia', width: 40 }, { header: 'Enlace a la copia', width: 45 }];
+    hoja.getRow(1).font = { bold: true };
+    for (const f of filas) {
+      const cs = copias.filter((c) => c.requisito === f.requisito && c.estado_copia === 'ok');
+      const docs = [...new Set((f.evidencias || []).filter((e) => e.verificada).map((e) => e.archivo).filter(Boolean))];
+      const evid = (f.evidencias || []).filter((e) => e.verificada).map((e) => `${e.aporta === 'en_contra' ? '(en contra) ' : ''}«${e.cita}» — ${e.archivo || 'documento'}${e.ubicacion ? `, ${e.ubicacion}` : ''}`).join('\n');
+      const falta = f.presentacion === 'listo' ? '' : [f.accion, f.presentacion === 'no_encontrado' ? '' : f.justificacion].filter(Boolean).join(' ');
+      hoja.addRow([f.requisito, f.texto_requisito, f.clasificacion || f.estado, docs.join('\n'), evid, falta, cs.map((c) => c.copia_nombre).join('\n'), cs.map((c) => c.url).join('\n')]);
+    }
+    hoja.eachRow((row) => { row.alignment = { wrapText: true, vertical: 'top' }; });
+    const hc = libro.addWorksheet('Copias');
+    hc.columns = [{ header: 'Copia', width: 44 }, { header: 'Requisito', width: 10 }, { header: 'Tipo', width: 22 }, { header: 'Original', width: 40 }, { header: 'Enlace', width: 45 }, { header: 'Estado', width: 30 }];
+    hc.getRow(1).font = { bold: true };
+    for (const c of copias) hc.addRow([c.copia_nombre || c.nombre_copia, c.requisito, c.clase === 'acredita' ? 'acredita' : 'PENDIENTE de completar', c.archivo, c.url || '', c.estado_copia === 'ok' ? (c.reutilizada ? 'copiada (ya existía)' : 'copiada') : `no copiada: ${c.motivo}`]);
+    const hr = libro.addWorksheet('Resumen');
+    hr.columns = [{ width: 34 }, { width: 70 }];
+    for (const [k, v] of [['Expediente', o.expediente], ['Carpeta de resultados', `${res.nombre} — ${res.url}`], ['Carpeta de origen (solo lectura)', `${o.carpeta_docs.nombre} (id ${o.carpeta_docs.id})`],
+      ['Requisitos', filas.length], ['Copias creadas', `${ver.copias_ok} de ${ver.copias}`], ['Originales comprobados sin cambios', ver.originales_intactos], ['Auditoría de origen', o.auditoria_trabajo], ['Generado', new Date().toISOString()]]) hr.addRow([k, v]);
+    for (const k of PRESENTACION) { const ids = filas.filter((f) => f.presentacion === k).map((f) => f.requisito); hr.addRow([`  ${etiquetaDe(o.perfil, k)}`, `${ids.length}${ids.length ? `: ${ids.join(', ')}` : ''}`]); }
+    for (const pr of ver.problemas) hr.addRow(['Problema', pr]);
+    const buf = Buffer.from(await libro.xlsx.writeBuffer());
+    const up = await require('./drive').subirAResultados({ encargo: o.encargo, resultadosId: res.id, rol: 'excel', nombre: `${o.resultados_nombre} — Matriz de requisitos.xlsx`, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', datos: buf });
+    return { resultado: { nombre: 'organizado.xlsx', xlsx_b64: buf.toString('base64'), filas: filas.length, drive: up }, costo: 0 };
+  },
+  async org_informe({ previos, trabajo, trabajoId }) {
+    const o = Cifrado.descifrarJSON(trabajo.objetivo_cifrado) || {};
+    const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
+    const copias = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado).filter((c) => c.estado_copia === 'ok');
+    const ver = previos.find((x) => x.clave === 'verificar_copias' && x.resultado).resultado;
+    const filas = (await Trabajos.ver(o.auditoria_trabajo, { conResultado: true })).resultado.matriz.filas;
+    const de = (k) => filas.filter((f) => f.presentacion === k);
+    const l = [];
+    l.push(`Expediente: ${o.expediente} · Carpeta de resultados: «${res.nombre}».`);
+    l.push(`Copias creadas: ${ver.copias_ok} de ${ver.copias}. Los documentos originales no se modificaron (${ver.originales_intactos} comprobados).`);
+    l.push('', '## 1. Resumen');
+    l.push('| Estado | N.º | Requisitos |', '| --- | --- | --- |');
+    for (const k of PRESENTACION) { const ids = de(k).map((f) => f.requisito); l.push(`| ${etiquetaDe(o.perfil, k)} | ${ids.length} | ${ids.length ? ids.join(', ') : '—'} |`); }
+    l.push('', '## 2. Documentos aprovechados');
+    const acr = copias.filter((c) => c.clase === 'acredita');
+    if (!acr.length) l.push('- Ninguno acredita por sí solo un requisito.');
+    for (const c of acr) l.push(`- ${c.copia_nombre} (requisito ${c.requisito}): «${c.cita}».`);
+    l.push('', '## 3. Pendientes de completar');
+    const pend = filas.filter((f) => ['modificar', 'revisar'].includes(f.presentacion));
+    if (!pend.length) l.push('- No hay requisitos pendientes de completar.');
+    for (const f of pend) { const cs = copias.filter((c) => c.requisito === f.requisito).map((c) => c.copia_nombre); l.push(`- ${f.requisito} (${f.clasificacion}): ${frase(f.accion || f.justificacion)}${cs.length ? ` Copias: ${cs.join(', ')}.` : ''}`); }
+    l.push('', '## 4. Documentos que faltan');
+    if (!de('no_encontrado').length) l.push('- Ningún requisito quedó sin antecedentes.');
+    for (const f of de('no_encontrado')) l.push(`- ${f.requisito}: ${frase(f.texto_requisito)} Falta: ${frase(f.accion || 'conseguir el documento que lo acredite.')}`);
+    l.push('', '## 5. No aplica');
+    if (!de('no_aplica').length) l.push('- Ninguno.');
+    for (const f of de('no_aplica')) l.push(`- ${f.requisito}: ${frase(f.justificacion)}`);
+    l.push('', '## 6. Cómo se hizo');
+    l.push('- Cada copia corresponde a un requisito y se respalda en una cita encontrada tal cual en el documento original; nada se copió solo por el nombre del archivo.');
+    l.push('- Las copias marcadas PENDIENTE solo acreditan una parte del requisito o requieren revisar firma, fecha, vigencia o integridad.');
+    l.push('- Las carpetas de origen se usaron solo para leer; ADA escribió únicamente en la carpeta de resultados.');
+    if (ver.problemas.length) { l.push('', '## 7. Problemas detectados'); for (const pr of ver.problemas) l.push(`- ${frase(pr)}`); }
+    const md = l.join('\n');
+    const { crearWord, comprobarWord } = require('./archivos');
+    const titulo = `Expediente organizado — ${o.expediente}`;
+    const buf = await crearWord({ titulo, contenido: md });
+    const c = await comprobarWord(buf, { titulo, contenido: md }, { estricto: true });
+    if (!c.ok) throw new Error(`el Word quedó incompleto: ${c.problemas.join('; ')}`);
+    const up = await require('./drive').subirAResultados({ encargo: o.encargo, resultadosId: res.id, rol: 'informe', nombre: `${o.resultados_nombre} — Resumen.docx`, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', datos: buf });
+    return { resultado: { nombre: 'organizado.docx', docx_b64: buf.toString('base64'), md, drive: up }, costo: 0 };
+  },
 });
 
+// Trabajo de copias: todo hecho, cada copia comprobada en Drive con originales intactos, Excel con todos los requisitos.
+async function verificarCopias(t, pasos, objetivo, { integridad }) {
+  const problemas = integridad(pasos);
+  const leer = (tipo) => { const p = pasos.filter((x) => x.tipo === tipo).pop(); return p && p.resultado_cifrado ? Cifrado.descifrarJSON(p.resultado_cifrado) : null; };
+  const ver = leer('org_verificar'); const ex = leer('org_excel'); const inf = leer('org_informe');
+  if (!ver) problemas.push('falta la comprobación de las copias');
+  else {
+    for (const pr of ver.problemas) problemas.push(pr);
+    if (ver.copias_ok !== ver.originales_intactos) problemas.push('no todos los originales se pudieron comprobar sin cambios');
+  }
+  const aud = await Trabajos.ver(objetivo.auditoria_trabajo, { conResultado: true }).catch(() => null);
+  const n = aud && aud.resultado && aud.resultado.matriz ? aud.resultado.matriz.filas.length : null;
+  if (!ex || !ex.xlsx_b64) problemas.push('falta el Excel');
+  else if (n != null && ex.filas !== n) problemas.push(`el Excel tiene ${ex.filas} requisitos y la auditoría ${n}`);
+  if (!inf || !inf.docx_b64) problemas.push('falta el Word');
+  return { ok: !problemas.length, problemas, matriz: null, extra: { modo: 'copias',  copias: ver ? ver.copias_ok : 0, carpeta: ver ? ver.carpeta : null, excel_drive: ex && ex.drive, informe_drive: inf && inf.drive } };
+}
 async function verificarRequisitos(t, pasos, objetivo, { integridad }) {
   const problemas = integridad(pasos);
   const p = pasos.filter((x) => x.tipo === 'aud_req_consolidar').pop();
@@ -1169,6 +1323,8 @@ async function verificarRequisitos(t, pasos, objetivo, { integridad }) {
 async function alTerminar(t, final) {
   const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
   if (objetivo.modo === 'requisitos') return listaParaAprobar(t, objetivo, final);
+  if (objetivo.modo === 'copias') return;
+  if (objetivo.organizar) await crearPlanCopias(t, objetivo, final);
   // Aviso al teléfono (Fase 3d): la auditoría terminó y el Excel está listo en el chat.
   if (process.env.ADA_AVISOS !== 'no' && !objetivo.serie) {
     const resumen = final && final.matriz ? final.matriz.filas.map((f) => `${f.requisito}: ${f.estado}`).join(' · ') : '';
@@ -1219,7 +1375,7 @@ async function prefijoExpediente(trabajoId) {
 async function informe(trabajoId) {
   const v = await Trabajos.ver(trabajoId);
   if (v.tipo !== 'auditoria') throw err('No es una auditoría', 404);
-  const [p] = await qPrincipal("SELECT resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo = 'aud_informe' AND estado = 'hecho'", [trabajoId]);
+  const [p] = await qPrincipal("SELECT resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('aud_informe', 'org_informe') AND estado = 'hecho'", [trabajoId]);
   if (!p || v.estado !== 'completado') throw err('El informe todavía no está listo', 404);
   const e = Cifrado.descifrarJSON(p.resultado_cifrado);
   return { nombre: `informe-auditoria-${await prefijoExpediente(trabajoId)}${trabajoId.slice(0, 8)}.docx`, datos: Buffer.from(e.docx_b64, 'base64') };
@@ -1228,7 +1384,7 @@ async function informe(trabajoId) {
 async function excel(trabajoId) {
   const v = await Trabajos.ver(trabajoId);
   if (v.tipo !== 'auditoria') throw err('No es una auditoría', 404);
-  const [p] = await qPrincipal("SELECT resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo = 'aud_excel' AND estado = 'hecho'", [trabajoId]);
+  const [p] = await qPrincipal("SELECT resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('aud_excel', 'org_excel') AND estado = 'hecho'", [trabajoId]);
   if (!p) throw err('El Excel todavía no está listo', 404);
   const e = Cifrado.descifrarJSON(p.resultado_cifrado);
   return { nombre: `auditoria-${await prefijoExpediente(trabajoId)}${trabajoId.slice(0, 8)}.xlsx`, datos: Buffer.from(e.xlsx_b64, 'base64') };
@@ -1336,7 +1492,7 @@ async function proponerExtraccion(d, ctx) {
   } else archivos = (await archivosDeLaPropuesta({ ...d, norma_id: undefined })).filter((a) => a.id !== meta.id);
   if (!archivos.length) throw err('Faltan los documentos a auditar (además de la norma).');
   const rango = d.rango && Number(d.rango.desde) > 0 && Number(d.rango.hasta) >= Number(d.rango.desde) ? { desde: Number(d.rango.desde), hasta: Number(d.rango.hasta) } : null;
-  const perfil = d.perfil === 'seremi' ? 'seremi' : null;
+  const perfil = CLASIFICA(d.perfil) ? d.perfil : null;
   const doc = await Drive.textoParaTrabajo(meta.id, { conversacionId: ctx.conversacionId });
   const bloques = bloquesDeNorma(doc.texto);
   if (!bloques.length) throw err('La norma no tiene texto extraíble.');
@@ -1347,7 +1503,8 @@ async function proponerExtraccion(d, ctx) {
   const aprox = estimar({ requisitos: Array.from({ length: nAprox }, (_, i) => ({ id: `R${i + 1}`, texto: 'x'.repeat(160) })), config: CONFIG_PROVISIONAL, perfil });
   const datos = {
     tipo: 'extraer_requisitos', archivos, config: CONFIG_PROVISIONAL, motivo: String(d.motivo || '').slice(0, 300), rango, perfil,
-    ...(inventario ? { inventario, carpeta, subcarpetas } : {}),
+    ...(inventario ? { inventario, carpeta, subcarpetas } : {}), ...(d.organizar ? { organizar: d.organizar } : {}),
+    ...(carpeta ? { expediente: ((await carpetaRegistrada(carpeta.id)) || {}).expediente || carpeta.nombre } : {}),
     norma: { id: meta.id, nombre: doc.nombre, version: doc.version, caracteres: doc.texto.length, bloques: bloques.map((b) => ({ n: b.n, huella: hash(b.texto), caracteres: b.texto.length, ubicaciones: b.ubicaciones })) },
     estimacion: { extraccion_usd: Number(extraccion.toFixed(4)), presupuesto_minimo: minimo(extraccion), auditoria_aprox_usd: Number(aprox.toFixed(3)) },
   };
@@ -1600,6 +1757,7 @@ async function crearListaParaAprobar(t, objetivo, final, opciones = {}) {
   const datos = { tipo: 'auditoria', archivos, requisitos: e.requisitos, config: objetivo.config || CONFIG_PROVISIONAL, motivo: `Requisitos ${objetivo.rango ? `${objetivo.rango.desde} al ${objetivo.rango.hasta} ` : ''}extraídos de «${objetivo.norma.nombre}»`,
     estimacion: est, perfil: objetivo.perfil || null, rango: objetivo.rango || null, faltantes, fuera_de_rango: fueraDeRango, recuperados, recuperados_detalle: recuperadosDetalle, subapartados, menciones, ubicacion, texto_norma_disponible: textoDisponible,
     ...(objetivo.inventario ? { inventario: objetivo.inventario, carpeta: objetivo.carpeta, subcarpetas: objetivo.subcarpetas } : {}),
+    ...(objetivo.organizar ? { organizar: objetivo.organizar } : {}), ...(objetivo.expediente ? { expediente: objetivo.expediente } : {}),
     origen: { extraccion_trabajo: t.id, extraccion_propuesta: objetivo.propuesta && objetivo.propuesta.id, norma: { id: objetivo.norma.id, nombre: objetivo.norma.nombre, version: objetivo.norma.version },
       duplicados: lista.duplicados.length, descartados: lista.descartados.length, exceso: lista.exceso } };
   await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1624,7 +1782,8 @@ function extrasInventario(datos) {
 }
 
 function tarjetaDe(id, datos, estado = 'pendiente') {
-  if (datos.tipo === 'autorizar_carpeta') return { id, estado, tipo: 'autorizar_carpeta', carpeta: datos.carpeta, lista: datos.lista, perfil: datos.perfil, rango: datos.rango, motivo: datos.motivo };
+  if (datos.tipo === 'autorizar_carpeta') return { id, estado, tipo: 'autorizar_carpeta', carpeta: datos.carpeta, carpetas: datos.carpetas || [datos.carpeta], lista: datos.lista, perfil: datos.perfil, rango: datos.rango, motivo: datos.motivo, organizar: datos.organizar || null, documento_requisitos: datos.documento_requisitos || null };
+  if (datos.tipo === 'plan_copias') return tarjetaPlanCopias(id, datos, estado);
   const est = datos.estimacion;
   if (datos.tipo === 'extraer_requisitos') {
     return { id, estado, tipo: 'extraer_requisitos', norma: { id: datos.norma.id, nombre: datos.norma.nombre, caracteres: datos.norma.caracteres, bloques: datos.norma.bloques.length },
@@ -1643,7 +1802,15 @@ async function proponer(d, ctx = {}) {
   if (usuario().id !== 1) throw err('La auditoría está disponible solo para la cuenta principal en esta etapa.', 403);
   // Carpeta pegada como enlace; si no está autorizada, primero la tarjeta de autorización (no se lee nada).
   if (d.carpeta && !d.carpeta_id) { const cid = idDeCarpeta(d.carpeta); if (!cid) throw err('No reconozco ese enlace como una carpeta de Google Drive.'); d = { ...d, carpeta_id: cid }; }
-  if (d.carpeta_id && !(await require('./drive').carpetaAutorizada(d.carpeta_id))) return proponerAutorizacion(d.carpeta_id, d, ctx);
+  if (d.carpeta_requisitos && !d.carpeta_requisitos_id) { const rid = idDeCarpeta(d.carpeta_requisitos); if (!rid) throw err('No reconozco el enlace de la carpeta de requisitos.'); d = { ...d, carpeta_requisitos_id: rid }; }
+  if (d.organizar === true || (d.organizar && typeof d.organizar !== 'object')) d = { ...d, organizar: {} };
+  // Carpetas sin autorizar (documentos y, si viene, la de requisitos): una sola tarjeta de autorización de lectura.
+  const sinAutorizar = [];
+  for (const cid of [d.carpeta_id, d.carpeta_requisitos_id].filter(Boolean)) if (!(await require('./drive').carpetaAutorizada(cid)) && !sinAutorizar.includes(cid)) sinAutorizar.push(cid);
+  if (sinAutorizar.length) return proponerAutorizacion(sinAutorizar, d, ctx);
+  // Documento de requisitos por su NOMBRE dentro de la carpeta de requisitos (solo metadatos).
+  if (!d.norma_id && d.documento_requisitos && (d.carpeta_requisitos_id || d.carpeta_id)) d = { ...d, norma_id: await buscarDocumentoPorNombre(d.carpeta_requisitos_id || d.carpeta_id, d.documento_requisitos) };
+  if (d.organizar && !d.perfil) d = { ...d, perfil: 'expediente' };
   // Lista de requisitos guardada: sin extracción ni costo.
   let lista = null;
   if (d.lista && !(Array.isArray(d.requisitos) && d.requisitos.length)) { lista = await cargarLista(d.lista); d = { ...d, requisitos: lista.requisitos, perfil: lista.perfil || d.perfil, rango: lista.rango || d.rango }; }
@@ -1664,7 +1831,7 @@ async function proponer(d, ctx = {}) {
   }
   else archivos = await archivosDeLaPropuesta(d);
   const config = CONFIGS[d.configuracion] ? d.configuracion : CONFIG_PROVISIONAL;
-  const perfil = d.perfil === 'seremi' ? 'seremi' : null;
+  const perfil = CLASIFICA(d.perfil) ? d.perfil : null;
   const e = validarEntrada({ archivo_ids: archivos.map((a) => a.id), requisitos: d.requisitos, perfil, inventario: inv && inv.inventario });
   const est = estimacion({ archivo_ids: e.archivo_ids, requisitos: e.requisitos, perfil });
   const id = crypto.randomUUID();
@@ -1853,7 +2020,7 @@ async function terminadas() {
     let o; try { o = Cifrado.descifrarJSON(f.objetivo_cifrado) || {}; } catch (_) { continue; }
     if (o.modo === 'requisitos') continue;
     const ent = await qPrincipal("SELECT tipo FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('aud_excel','aud_informe') AND estado = 'hecho'", [f.id]);
-    out.push({ id: f.id, expediente: o.expediente || (o.carpeta && o.carpeta.nombre) || null, terminado_en: f.terminado_en, requisitos: (o.requisitos || []).length,
+    out.push({ id: f.id, modo: o.modo === 'copias' ? 'copias' : 'auditoria', expediente: o.expediente || (o.carpeta && o.carpeta.nombre) || null, terminado_en: f.terminado_en, requisitos: o.modo === 'copias' ? 0 : (o.requisitos || []).length, copias: o.modo === 'copias' ? (o.filas || []).length : undefined,
       ids: (o.requisitos || []).length ? `${o.requisitos[0].id}…${o.requisitos[o.requisitos.length - 1].id}` : '', gastado_usd: Number(f.gastado_usd || 0),
       excel: ent.some((x) => x.tipo === 'aud_excel'), informe: ent.some((x) => x.tipo === 'aud_informe'), lista: o.lista ? o.lista.nombre : null, propuesta_id: o.propuesta ? o.propuesta.id : null });
   }
@@ -1891,21 +2058,41 @@ async function carpetaRegistrada(id) {
   const [f] = await qPrincipal("SELECT id, nombre, expediente, estado, autorizada_en FROM carpetas_autorizadas WHERE usuario_id = ? AND id = ?", [usuario().id, id]);
   return f || null;
 }
-async function proponerAutorizacion(carpetaId, d, ctx) {
+// Busca un documento por su nombre dentro de una carpeta autorizada (solo metadatos, nada se descarga).
+async function buscarDocumentoPorNombre(carpetaId, nombre) {
+  const inv = await require('./drive').inventarioCarpeta(String(carpetaId), { maxArchivos: 1000 });
+  const k = (t) => norm(String(t || '')).replace(/\.[a-z0-9]{2,5}$/, '').replace(/[^a-z0-9ñ]+/g, ' ').trim();
+  const buscado = k(nombre);
+  const exactos = inv.archivos.filter((f) => k(f.name) === buscado);
+  const parecidos = exactos.length ? exactos : inv.archivos.filter((f) => k(f.name).includes(buscado) || buscado.includes(k(f.name)));
+  if (parecidos.length === 1) return parecidos[0].id;
+  if (!parecidos.length) throw err(`No encontré «${nombre}» en la carpeta «${inv.carpeta.nombre}». Archivos que sí están: ${inv.archivos.slice(0, 8).map((f) => `«${f.name}»`).join(', ')}${inv.archivos.length > 8 ? '…' : ''}.`, 404);
+  throw err(`Hay varios archivos que coinciden con «${nombre}»: ${parecidos.map((f) => `«${f.name}»`).join(', ')}. Dime cuál.`, 409);
+}
+async function proponerAutorizacion(ids, d, ctx) {
   const Drive = require('./drive');
-  let meta;
-  try { meta = await Drive.metadatos(carpetaId); } catch (e) { throw err('No puedo ver esa carpeta en tu Drive: revisa el enlace o que esté compartida con tu cuenta.', 404); }
-  if (meta.mimeType !== 'application/vnd.google-apps.folder') throw err('El enlace no es de una carpeta de Drive.', 400);
+  const lista = Array.isArray(ids) ? ids : [ids];
+  const carpetasMeta = [];
+  for (const cid of lista) {
+    let meta;
+    try { meta = await Drive.metadatos(cid); } catch (e) { throw err('No puedo ver esa carpeta en tu Drive: revisa el enlace o que esté compartida con tu cuenta.', 404); }
+    if (meta.mimeType !== 'application/vnd.google-apps.folder') throw err(`El enlace de «${meta.name}» no es de una carpeta de Drive.`, 400);
+    carpetasMeta.push({ id: meta.id, nombre: meta.name, propietario: ((meta.owners || [])[0] || {}).displayName || null, rol: cid === d.carpeta_requisitos_id && cid !== d.carpeta_id ? 'requisitos' : 'documentos' });
+  }
+  const meta = { id: carpetasMeta[0].id, name: carpetasMeta[0].nombre, owners: [{ displayName: carpetasMeta[0].propietario }] };
   const id = crypto.randomUUID();
-  const datos = { tipo: 'autorizar_carpeta', carpeta: { id: meta.id, nombre: meta.name, propietario: ((meta.owners || [])[0] || {}).displayName || null },
-    lista: d.lista || null, perfil: d.perfil || null, rango: d.rango || null, motivo: String(d.motivo || '').slice(0, 300) };
+  // Lo que se pidió (sin contraseñas): al autorizar, ADA sigue con esto (extraer requisitos o usar la lista).
+  const siguiente = Object.fromEntries(Object.entries(d).filter(([k]) => ['carpeta_id', 'carpeta_requisitos_id', 'documento_requisitos', 'norma_id', 'lista', 'perfil', 'rango', 'motivo', 'organizar', 'configuracion'].includes(k)));
+  const datos = { tipo: 'autorizar_carpeta', carpeta: carpetasMeta.find((c) => c.rol === 'documentos') || carpetasMeta[0], carpetas: carpetasMeta,
+    lista: d.lista || null, perfil: d.perfil || null, rango: d.rango || null, motivo: String(d.motivo || '').slice(0, 300), siguiente,
+    ...(d.organizar ? { organizar: d.organizar } : {}), ...(d.documento_requisitos ? { documento_requisitos: d.documento_requisitos } : {}) };
   const puedeMostrar = Array.isArray(ctx.tarjetas) && ctx.tarjetas.includes(TARJETA);
   await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [id, usuario().id, ctx.conversacionId || null, 'pendiente', Cifrado.cifrarJSON(datos), puedeMostrar ? 'enviada' : 'no_soportada', new Date(), new Date()]);
   const tarjeta = tarjetaDe(id, datos);
   if (puedeMostrar && typeof ctx.emitir === 'function') ctx.emitir('auditoria_propuesta', tarjeta);
-  return { ok: true, propuesta_id: id, carpeta: meta.name, estado: 'carpeta_sin_autorizar', tarjeta: puedeMostrar ? 'enviada' : 'no_disponible',
-    nota: `La carpeta «${meta.name}» todavía no está autorizada. Le mostré una tarjeta para autorizarla SOLO PARA LECTURA (con su contraseña), ponerle nombre al expediente y elegir la lista de requisitos. No leí ningún documento. Dilo en una o dos frases.` };
+  return { ok: true, propuesta_id: id, carpeta: carpetasMeta.map((c) => c.nombre).join(' y '), estado: 'carpeta_sin_autorizar', tarjeta: puedeMostrar ? 'enviada' : 'no_disponible',
+    nota: `${carpetasMeta.length > 1 ? `Las carpetas ${carpetasMeta.map((c) => `«${c.nombre}»`).join(' y ')} todavía no están autorizadas` : `La carpeta «${meta.name}» todavía no está autorizada`}. Le mostré una tarjeta para autorizarla SOLO PARA LECTURA (con su contraseña), ponerle nombre al expediente y elegir la lista de requisitos. No leí ningún documento. Dilo en una o dos frases.` };
 }
 // Autorizar desde la tarjeta: confirma la contraseña del propietario, registra la carpeta (solo lectura) y prepara
 // la propuesta de auditoría con la lista elegida. Nada se descarga ni se cobra hasta aprobar esa propuesta.
@@ -1918,30 +2105,36 @@ async function autorizarCarpeta(propuestaId, { expediente, lista, password } = {
   const exp = String(expediente || '').trim().slice(0, 160);
   if (exp.length < 3) throw err('Ponle un nombre al expediente (p. ej. el nombre del cliente)');
   const Drive = require('./drive');
-  const meta = await Drive.metadatos(p.datos.carpeta.id);
-  if (meta.mimeType !== 'application/vnd.google-apps.folder') throw err('Ya no es una carpeta', 409);
+  const todas = p.datos.carpetas || [p.datos.carpeta];
+  const metas = [];
+  for (const c of todas) { const m = await Drive.metadatos(c.id); if (m.mimeType !== 'application/vnd.google-apps.folder') throw err(`«${m.name}» ya no es una carpeta`, 409); metas.push(m); }
   const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), propuestaId]);
   if (!r.affectedRows) throw err('La tarjeta cambió mientras la autorizabas', 409);
-  const constancia = { en: new Date().toISOString(), via: 'tarjeta_chat', app: /; wv\)/.test(cliente.ua || '') ? 'android' : cliente.ua ? 'navegador' : 'desconocida', carpeta: meta.name, propietario_drive: ((meta.owners || [])[0] || {}).displayName || null, permiso: 'solo lectura', subcarpetas: 'incluidas', accesos_directos: 'no se siguen' };
-  await qPrincipal(`INSERT INTO carpetas_autorizadas (id, usuario_id, nombre, expediente, estado, autorizada_en, constancia_cifrada) VALUES (?, ?, ?, ?, 'activa', ?, ?)
-    ON DUPLICATE KEY UPDATE nombre = VALUES(nombre), expediente = VALUES(expediente), estado = 'activa', autorizada_en = VALUES(autorizada_en), constancia_cifrada = VALUES(constancia_cifrada), revocada_en = NULL`,
-  [meta.id, usuario().id, meta.name, exp, new Date(), Cifrado.cifrarJSON(constancia)]);
+  for (const meta of metas) {
+    const constancia = { en: new Date().toISOString(), via: 'tarjeta_chat', app: /; wv\)/.test(cliente.ua || '') ? 'android' : cliente.ua ? 'navegador' : 'desconocida', carpeta: meta.name, propietario_drive: ((meta.owners || [])[0] || {}).displayName || null, permiso: 'solo lectura', subcarpetas: 'incluidas', accesos_directos: 'no se siguen' };
+    await qPrincipal(`INSERT INTO carpetas_autorizadas (id, usuario_id, nombre, expediente, estado, autorizada_en, constancia_cifrada) VALUES (?, ?, ?, ?, 'activa', ?, ?)
+      ON DUPLICATE KEY UPDATE nombre = VALUES(nombre), expediente = VALUES(expediente), estado = 'activa', autorizada_en = VALUES(autorizada_en), constancia_cifrada = VALUES(constancia_cifrada), revocada_en = NULL`,
+    [meta.id, usuario().id, meta.name, exp, new Date(), Cifrado.cifrarJSON(constancia)]);
+  }
   await Drive.recargarCarpetas();
-  const out = { carpeta: { id: meta.id, nombre: meta.name, expediente: exp, permiso: 'solo lectura' } };
-  const refLista = lista || p.datos.lista;
-  if (!refLista) return { ...out, nota: 'Carpeta autorizada. Elige una lista de requisitos para preparar la auditoría.' };
-  const r2 = await proponer({ carpeta_id: meta.id, lista: refLista, motivo: p.datos.motivo }, { conversacionId: p.conversacion_id, tarjetas: [TARJETA] });
+  const meta = metas[0];
+  const out = { carpeta: { id: meta.id, nombre: meta.name, expediente: exp, permiso: 'solo lectura' }, carpetas: metas.map((m) => ({ id: m.id, nombre: m.name, permiso: 'solo lectura' })) };
+  const sig = { ...(p.datos.siguiente || { carpeta_id: meta.id }), motivo: p.datos.motivo };
+  if (lista) { sig.lista = lista; delete sig.norma_id; delete sig.documento_requisitos; }
+  if (!sig.lista && !sig.norma_id && !sig.documento_requisitos) return { ...out, nota: 'Carpeta autorizada. Elige una lista de requisitos para preparar la auditoría.' };
+  const r2 = await proponer(sig, { conversacionId: p.conversacion_id, tarjetas: [TARJETA] });
   const n = await propuesta(r2.propuesta_id);
   return { ...out, propuesta: tarjetaDe(n.id, n.datos) };
 }
 // Todas las carpetas que ADA puede leer, en un solo lugar: las autorizadas desde ADA y las configuradas en Railway.
 async function carpetas() {
   const filas = await qPrincipal('SELECT id, nombre, expediente, estado, autorizada_en, revocada_en FROM carpetas_autorizadas WHERE usuario_id = ? ORDER BY autorizada_en DESC', [usuario().id]);
-  const out = filas.map((f) => ({ id: f.id, nombre: f.nombre, expediente: f.expediente, estado: f.estado, autorizada_en: f.autorizada_en, revocada_en: f.revocada_en, permiso: 'solo lectura', origen: 'ADA', revocable: f.estado === 'activa' }));
+  const out = filas.map((f) => ({ id: f.id, nombre: f.nombre, expediente: f.expediente, estado: f.estado === 'resultados' ? 'activa' : f.estado, autorizada_en: f.autorizada_en, revocada_en: f.revocada_en,
+    permiso: f.estado === 'resultados' ? 'carpeta de resultados: ADA solo crea copias de su encargo (no la lee para otras auditorías)' : 'solo lectura', origen: 'ADA', revocable: f.estado === 'activa' }));
   const listaIds = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
   const env = [...listaIds(process.env.ADA_DRIVE_CARPETAS_LECTURA).map((id) => ({ id, permiso: 'solo lectura' })), ...listaIds(process.env.ADA_DRIVE_CARPETA_PRUEBA).map((id) => ({ id, permiso: 'lectura y escritura (carpeta de prueba ficticia)' }))];
   for (const c of env) {
-    if (out.some((x) => x.id === c.id && x.estado === 'activa')) continue;
+    if (out.some((x) => x.id === c.id && x.estado === 'activa' && /solo lectura/.test(x.permiso))) continue;
     let nombre = null; try { nombre = (await require('./drive').metadatos(c.id)).name; } catch (_) { nombre = null; }
     out.push({ id: c.id, nombre, expediente: nombre, estado: 'activa', permiso: c.permiso, origen: 'Railway (variable de configuración)', revocable: false, nota: 'Se quita desde la variable en Railway, no desde aquí.' });
   }
@@ -1952,6 +2145,77 @@ async function revocarCarpeta(id) {
   if (!r.affectedRows) throw err('Esa carpeta no está autorizada', 404);
   await require('./drive').recargarCarpetas();
   return { ok: true, nota: 'Carpeta revocada: ADA ya no puede leer sus archivos (ni en auditorías en curso).' };
+}
+
+// ======================= Organizar expediente: plan de copias → copias → Excel y Word en la carpeta de resultados =======================
+const pad2 = (id) => { const m = String(id).match(/^(\d+)(.*)$/); return m ? `${m[1].padStart(2, '0')}${m[2]}` : String(id); };
+const limpiarNombre = (n) => String(n || 'documento').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').slice(0, 150);
+// Una copia por (requisito, archivo) SOLO si ese archivo tiene evidencia verificada a favor del requisito. LISTO y NO
+// APLICA → «05_Nombre»; PARCIAL o REQUIERE REVISIÓN → «05_PENDIENTE_Nombre». Sin evidencia → no se copia.
+function planDeCopias(filas, inventario) {
+  const inv = new Map((inventario || []).map((a) => [a.id, a]));
+  const plan = []; const sinCopia = []; const usados = new Set();
+  for (const f of filas) {
+    const aFavor = (f.evidencias || []).filter((e) => e.verificada && e.aporta !== 'en_contra' && e.archivo_id);
+    const porArchivo = [...new Map(aFavor.map((e) => [e.archivo_id, e])).values()];
+    if (!porArchivo.length) { sinCopia.push({ requisito: f.requisito, texto: f.texto_requisito, estado: f.clasificacion || f.estado, accion: f.accion || f.justificacion || '' }); continue; }
+    const acredita = f.presentacion === 'listo' || f.presentacion === 'no_aplica';
+    for (const e of porArchivo) {
+      const a = inv.get(e.archivo_id) || {};
+      const original = e.archivo || a.nombre || e.archivo_id;
+      let nombre = `${pad2(f.requisito)}_${acredita ? '' : 'PENDIENTE_'}${limpiarNombre(original)}`;
+      const base = nombre; let k = 2;
+      while (usados.has(nombre.toLowerCase())) { const m = base.match(/^(.*?)(\.[^.]+)?$/); nombre = `${m[1]}_${k}${m[2] || ''}`; k += 1; }
+      usados.add(nombre.toLowerCase());
+      plan.push({ clave: `${f.requisito}:${e.archivo_id}`, requisito: f.requisito, estado: f.clasificacion || f.estado, clase: acredita ? 'acredita' : 'pendiente', archivo_id: e.archivo_id, archivo: original,
+        nombre_copia: nombre, cita: String(e.cita || '').slice(0, 300), ubicacion: e.ubicacion || '', sensible: !!(a.incluido_por_decision || esSensible(original)), falta: acredita ? '' : (f.accion || '') });
+    }
+  }
+  return { plan, sinCopia };
+}
+async function crearPlanCopias(t, objetivo, final) {
+  const filas = final && final.matriz ? final.matriz.filas : [];
+  if (!filas.length) return;
+  const { plan, sinCopia } = planDeCopias(filas, objetivo.inventario);
+  const expediente = objetivo.expediente || (objetivo.carpeta && objetivo.carpeta.nombre) || 'Expediente';
+  const datos = { tipo: 'plan_copias', auditoria_trabajo: t.id, expediente, perfil: objetivo.perfil || null, carpeta_docs: objetivo.carpeta,
+    resultados_nombre: (objetivo.organizar && objetivo.organizar.nombre) || `ADA — ${expediente} — Documentos organizados`, plan, sin_copia: sinCopia, requisitos: filas.length };
+  const id = crypto.randomUUID();
+  await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, usuario().id, objetivo.propuesta ? objetivo.propuesta.conversacion_id : null, 'pendiente', Cifrado.cifrarJSON(datos), 'por_mostrar', new Date(), new Date()]);
+  await Trabajos.evento(t.id, 'plan_copias', `${plan.length} copias propuestas (propuesta ${id.slice(0, 8)})`, null, 'ada').catch(() => {});
+}
+function tarjetaPlanCopias(id, datos, estado) {
+  return { id, estado, tipo: 'plan_copias', expediente: datos.expediente, resultados_nombre: datos.resultados_nombre, auditoria_trabajo: datos.auditoria_trabajo, requisitos: datos.requisitos,
+    plan: datos.plan, sin_copia: datos.sin_copia, copias: datos.plan.length, sensibles: datos.plan.filter((f) => f.sensible).length, trabajo_id: datos.trabajo_id || null };
+}
+// Aprobar las copias: contraseña del propietario (autorización de ESCRITURA separada de la de lectura), filas elegidas,
+// y los archivos sensibles solo si se marcan uno a uno. Crea el trabajo de copias; no hay IA ni costo.
+async function aprobarCopias(propuestaId, { password, omitir = [], incluir_sensibles: incluirSensibles = [] } = {}, cliente = {}) {
+  if (usuario().id !== 1) throw err('Solo el propietario aprueba las copias', 403);
+  if (!process.env.ADA_PASSWORD || !igual(String(password || ''), process.env.ADA_PASSWORD)) throw err('Contraseña incorrecta: no se creó ninguna carpeta ni copia.', 400);
+  const p = await propuesta(propuestaId);
+  if (p.datos.tipo !== 'plan_copias') throw err('Esta tarjeta no es un plan de copias', 409);
+  if (p.estado !== 'pendiente') throw err(`La tarjeta ya está "${p.estado}"`, 409);
+  const sel = p.datos.plan.filter((f) => !omitir.includes(f.clave) && (!f.sensible || incluirSensibles.includes(f.clave)));
+  if (!sel.length) throw err('No quedó ninguna copia seleccionada', 400);
+  const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobando', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), propuestaId]);
+  if (!r.affectedRows) throw err('La tarjeta cambió mientras la aprobabas', 409);
+  const objetivo = { modo: 'copias', encargo: propuestaId, expediente: p.datos.expediente, resultados_nombre: p.datos.resultados_nombre, carpeta_docs: p.datos.carpeta_docs, carpeta: p.datos.carpeta_docs,
+    filas: sel, auditoria_trabajo: p.datos.auditoria_trabajo, perfil: p.datos.perfil, propuesta: { id: propuestaId, conversacion_id: p.conversacion_id } };
+  const pasos = [{ clave: 'carpeta_resultados', tipo: 'org_carpeta', etapa: 'carpeta de resultados', entrada: {} },
+    ...sel.map((f) => ({ clave: `copiar:${f.clave}`, tipo: 'org_copiar', etapa: 'copias', entrada: { fila: f } })),
+    { clave: 'verificar_copias', tipo: 'org_verificar', etapa: 'comprobación', entrada: {} },
+    { clave: 'excel', tipo: 'org_excel', etapa: 'entregables', entrada: {} },
+    { clave: 'informe', tipo: 'org_informe', etapa: 'entregables', entrada: {} }];
+  let t;
+  try {
+    t = await Trabajos.crear({ tipo: 'auditoria', titulo: `Organizar expediente ${p.datos.expediente} (${sel.length} copias)`, objetivo, presupuesto: 0.05, pasos }); // sin IA: el gasto real es US$0; el tope cubre el colchón del motor
+    await Trabajos.aprobar(t.id);
+  } catch (e) { await qPrincipal("UPDATE auditoria_propuestas SET estado = 'pendiente' WHERE id = ?", [propuestaId]); throw e; }
+  const aprob = { en: new Date().toISOString(), via: 'tarjeta_chat', app: /; wv\)/.test(cliente.ua || '') ? 'android' : 'navegador', copias: sel.length, omitidas: p.datos.plan.length - sel.length, sensibles_incluidos: sel.filter((f) => f.sensible).map((f) => f.archivo), destino: p.datos.resultados_nombre, permiso: 'crear carpeta y copiar SOLO en la carpeta de resultados' };
+  await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobada', trabajo_id = ?, aprobacion_cifrada = ?, actualizado_en = ? WHERE id = ?", [t.id, Cifrado.cifrarJSON(aprob), new Date(), propuestaId]);
+  return { trabajo_id: t.id, copias: sel.length, destino: p.datos.resultados_nombre };
 }
 
 async function propuesta(id) {
@@ -1977,6 +2241,7 @@ async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, or
   const via = ['tarjeta_chat', 'ajustes_pendientes'].includes(origen) ? origen : 'api';
   const deQuien = { via, usuario_id: usuario().id, app: /; wv\)/.test(cliente.ua || '') ? 'android' : cliente.ua ? 'navegador' : 'desconocida' };
   if (datos.tipo === 'autorizar_carpeta') throw err('Esta tarjeta autoriza una carpeta: usa «Autorizar solo lectura» con tu contraseña.', 409);
+  if (datos.tipo === 'plan_copias') throw err('Esta tarjeta es el plan de copias: se aprueba con «Crear carpeta y copiar» y tu contraseña.', 409);
   if (datos.tipo === 'extraer_requisitos') return aprobarExtraccion(p, Number(presupuesto), deQuien, enAprobacion);
   // Una lista por rango hecha con la versión anterior (subapartados sueltos, números perdidos) no se puede aprobar:
   // primero se corrige con «Corregir la lista (sin costo)».
@@ -1997,7 +2262,7 @@ async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, or
   const archivosAprob = datos.archivos.concat(extra);
   const aprobado = { archivo_ids: archivosAprob.map((a) => a.id), requisitos: requisitos && requisitos.length ? conFuente(requisitos) : datos.requisitos,
     configuracion: configuracion || datos.config, presupuesto: Number(presupuesto), perfil: datos.perfil || null, ...(inventario ? { inventario, carpeta: datos.carpeta } : {}), notas_lista: [...(datos.lista ? datos.lista.notas || [] : []), ...notasLista(datos)],
-    expediente: datos.expediente || (datos.carpeta && datos.carpeta.nombre) || null, ...(datos.lista ? { lista: { id: datos.lista.id, nombre: datos.lista.nombre, validada_en: datos.lista.validada_en } } : {}) };
+    expediente: datos.expediente || (datos.carpeta && datos.carpeta.nombre) || null, ...(datos.organizar ? { organizar: datos.organizar } : {}), ...(datos.lista ? { lista: { id: datos.lista.id, nombre: datos.lista.nombre, validada_en: datos.lista.validada_en } } : {}) };
   const e = validarEntrada(aprobado);
   if (!CONFIGS[aprobado.configuracion]) throw err('Configuración inválida (K1, K2 o K3)');
   const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobando', actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [new Date(), id, usuario().id]);
@@ -2031,7 +2296,8 @@ async function aprobarExtraccion(p, presupuesto, deQuien, enAprobacion) {
     for (const b of n.bloques) pasos.push({ clave: `req_bloque:${b.n}`, tipo: 'aud_req_bloque', etapa: 'requisitos', entrada: { norma_id: n.id, version: n.version, n: b.n, huella: b.huella }, estimado: Number(estimarBloque({ n: b.n, texto: 'x'.repeat(b.caracteres), ubicaciones: b.ubicaciones }).toFixed(6)) });
     pasos.push({ clave: 'req_consolidar', tipo: 'aud_req_consolidar', etapa: 'lista', entrada: { rango: datos.rango || null, perfil: datos.perfil || null } });
     const objetivo = { modo: 'requisitos', norma: { id: n.id, nombre: n.nombre, version: n.version }, archivos: datos.archivos, config: datos.config, bloques_hash: bloquesHash, propuesta: { id: p.id, conversacion_id: p.conversacion_id },
-      rango: datos.rango || null, perfil: datos.perfil || null, ...(datos.inventario ? { inventario: datos.inventario, carpeta: datos.carpeta, subcarpetas: datos.subcarpetas } : {}) };
+      rango: datos.rango || null, perfil: datos.perfil || null, ...(datos.inventario ? { inventario: datos.inventario, carpeta: datos.carpeta, subcarpetas: datos.subcarpetas } : {}),
+      ...(datos.organizar ? { organizar: datos.organizar } : {}), ...(datos.expediente ? { expediente: datos.expediente } : {}) };
     const t = await Trabajos.crear({ tipo: 'auditoria', titulo: `Extraer requisitos de «${n.nombre}»`.slice(0, 200), objetivo, presupuesto, pasos });
     trabajo = await Trabajos.aprobar(t.id);
   } catch (x) {
@@ -2131,11 +2397,13 @@ async function avance(trabajoId) {
     ? Object.fromEntries(PRESENTACION.map((k) => [k, r.matriz.filas.filter((f) => f.presentacion === k).map((f) => f.requisito)])) : null;
   const errorLista = bloques.length && v.estado === 'completado' && !siguiente ? (v.eventos.filter((e) => e.tipo === 'lista_error').pop() || {}).detalle || null : null;
   return {
-    modo: bloques.length ? 'requisitos' : 'auditoria', ...(errorLista ? { lista_error: errorLista } : {}),
+    modo: bloques.length ? 'requisitos' : objetivoAv.modo === 'copias' ? 'copias' : 'auditoria', perfil: objetivoAv.perfil || null, ...(objetivoAv.organizar ? { organizar: true } : {}), ...(errorLista ? { lista_error: errorLista } : {}),
     ...(objetivoAv.expediente ? { expediente: objetivoAv.expediente } : {}), ...(objetivoAv.carpeta ? { carpeta: objetivoAv.carpeta } : {}), ...(objetivoAv.lista ? { lista: objetivoAv.lista.nombre } : {}), ...(textos != null ? { textos_guardados: textos } : {}), ...(resumenSeremi ? { resumen_seremi: resumenSeremi } : {}),
     lotes_total: pasos.filter((p) => p.tipo === 'aud_seleccionar_lote').length, lotes_hechos: pasos.filter((p) => p.tipo === 'aud_seleccionar_lote' && p.estado === 'hecho').length,
     archivos_leidos: pasos.filter((p) => (p.tipo === 'aud_extraer' || p.tipo === 'extraer') && p.estado === 'hecho').length, archivos_total: pasos.filter((p) => p.tipo === 'aud_extraer' || p.tipo === 'extraer').length, bloques_hechos: bloques.filter((p) => p.estado === 'hecho').length, bloques_total: bloques.length, lista_propuesta: siguiente,
-    informe_listo: v.estado === 'completado' && pasos.some((p) => p.tipo === 'aud_informe' && p.estado === 'hecho'),
+    informe_listo: v.estado === 'completado' && pasos.some((p) => (p.tipo === 'aud_informe' || p.tipo === 'org_informe') && p.estado === 'hecho'),
+    ...(objetivoAv.modo === 'copias' ? { modo_copias: true, copias_total: pasos.filter((p) => p.tipo === 'org_copiar').length, copias_hechas: pasos.filter((p) => p.tipo === 'org_copiar' && p.estado === 'hecho').length,
+      resultados: r.carpeta || null, resultados_nombre: objetivoAv.resultados_nombre, excel_drive: r.excel_drive || null, informe_drive: r.informe_drive || null } : {}),
     conteo: r.conteo || null,
     hay: true, id: v.id, propuesta_id: prop ? prop.id : null, conversacion_id: prop ? prop.conversacion_id : null,
     estado: v.estado, estado_real: v.estado_real, motivo: v.motivo, etapa: v.etapa,
@@ -2215,8 +2483,11 @@ H.registrar([
         carpeta_id: { type: 'string', description: 'o una carpeta: se auditan sus documentos con texto' },
         carpeta: { type: 'string', description: 'enlace (o id) de una carpeta de Google Drive pegado por Cristian' },
         lista: { type: 'string', description: 'nombre o id de una lista de requisitos guardada (p. ej. «SEREMI 18–47»); reemplaza a norma_id y requisitos' },
+        carpeta_requisitos: { type: 'string', description: 'enlace de la carpeta donde está el documento de requisitos, si es otra que la de los documentos' },
+        documento_requisitos: { type: 'string', description: 'nombre del documento de requisitos dentro de carpeta_requisitos (p. ej. «00.Botiquín Andaluz — requisitos y documentos.pdf»); ADA lo ubica por su nombre' },
+        organizar: { type: 'object', properties: { nombre: { type: 'string', description: 'nombre de la carpeta de resultados' } }, description: 'si Cristian quiere una carpeta ORGANIZADA con copias de los documentos útiles (no solo un diagnóstico): al terminar la auditoría se le propone el plan de copias para aprobarlo' },
         rango: { type: 'object', properties: { desde: { type: 'integer' }, hasta: { type: 'integer' } }, description: 'con norma_id: revisar solo los requisitos con esa numeración (p. ej. 18 al 47)' },
-        perfil: { type: 'string', enum: ['seremi'], description: 'seremi: clasifica cada requisito para presentarlo a la SEREMI (listo para subir, hay que modificar, no encontrado, no aplica, requiere revisión) con acción concreta' },
+        perfil: { type: 'string', enum: ['seremi', 'expediente'], description: 'seremi: clasifica para presentar a la SEREMI (listo para subir, hay que modificar…); expediente: para armar un expediente de cualquier trámite (LISTO, PARCIAL, NO ENCONTRADO, NO APLICA, REQUIERE REVISIÓN), con acción concreta' },
         norma_id: { type: 'string', description: 'documento normativo (norma, pauta, reglamento) del que extraer los requisitos; si lo indicas, omite requisitos: primero se propone extraerlos y Cristian aprueba la lista' },
         requisitos: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', description: 'R1, R2…' }, texto: { type: 'string' } }, required: ['texto'] }, description: 'requisitos claros y verificables, uno por elemento' },
         configuracion: { type: 'string', enum: ['K1', 'K2', 'K3'], description: 'omítela: por ahora se usa K1 (Sonnet), salvo que Cristian pida otra' },
@@ -2280,4 +2551,4 @@ async function textosGuardados(trabajoId, objetivo) {
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

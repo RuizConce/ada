@@ -1,0 +1,1008 @@
+{
+ "_nota": "Encargo ficticio «organizar expediente de botiquín». Generado por pruebas/fase3e/generar-prueba-botiquin.py.",
+ "carpetas": [
+  {
+   "id": "carpeta-botreq",
+   "name": "Botiquin_requisitos",
+   "mimeType": "application/vnd.google-apps.folder",
+   "parents": [
+    "root"
+   ]
+  },
+  {
+   "id": "carpeta-botdocs",
+   "name": "Botiquin_documentos",
+   "mimeType": "application/vnd.google-apps.folder",
+   "parents": [
+    "root"
+   ]
+  },
+  {
+   "id": "botdocs-procedimientos",
+   "name": "Procedimientos",
+   "mimeType": "application/vnd.google-apps.folder",
+   "parents": [
+    "carpeta-botdocs"
+   ]
+  }
+ ],
+ "archivos": [
+  {
+   "id": "BREQ",
+   "name": "00.Botiquín Andaluz — requisitos y documentos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "BOTIQUÍN — REQUISITOS Y DOCUMENTOS (FICTICIO)\nPágina 1\n1. Solicitud de autorización de botiquín firmada por el representante legal.\n2. Fotocopia del RUT de la empresa (rol único tributario).\n3. Escritura de constitución de la sociedad.\n4. Nombramiento del químico farmacéutico responsable del botiquín.\n5. Contrato de trabajo del químico farmacéutico responsable.\n6. Título profesional del químico farmacéutico.\n7. Plano del local del botiquín con sus medidas.\n8. Listado de medicamentos que mantendrá el botiquín.\n9. Medicamentos:\na) Procedimiento de recepción de medicamentos.\nb) Procedimiento de almacenamiento de medicamentos.\n10. Registro de control de temperatura del refrigerador de medicamentos.\n11. Procedimiento de eliminación de medicamentos vencidos.\n12. Si se manejan estupefacientes, libro de control de estupefacientes.\n13. Horario de funcionamiento del botiquín.\n14. Procedimiento de dispensación de medicamentos a pacientes.\n15. Certificado de calibración del termómetro del refrigerador.\n-- 1 16 CAPACITACIÓN Programa de capacitación del personal del botiquín.\n17. Procedimiento de control de inventario de medicamentos.\n18. Declaración de cumplimiento de condiciones sanitarias del local, firmada.\n19. Certificado de dotación de agua potable del local.\n20. Procedimiento de manejo de reclamos de usuarios.\n21. Póliza de seguro del local.\n22. Procedimiento de limpieza del área del botiquín.\nNota final: documento ficticio para pruebas.",
+   "parents": [
+    "carpeta-botreq"
+   ],
+   "version": 1,
+   "md5Checksum": "7118853fe721"
+  },
+  {
+   "id": "BREQ_OTRO",
+   "name": "Notas_internas.pdf",
+   "mimeType": "application/pdf",
+   "texto": "NOTAS\nDocumento ficticio.\nPágina 1\nNotas sin relación.",
+   "parents": [
+    "carpeta-botreq"
+   ],
+   "version": 1,
+   "md5Checksum": "18fc63ba25ea"
+  },
+  {
+   "id": "D_SOLICITUD",
+   "name": "Solicitud_autorizacion_botiquin.pdf",
+   "mimeType": "application/pdf",
+   "texto": "SOLICITUD AUTORIZACION BOTIQUIN\nDocumento ficticio.\nPágina 1\nSolicitud de autorización de botiquín presentada por el representante legal de la empresa.\nFirma del representante legal: (espacio para firma).",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "ffe64f0d6398"
+  },
+  {
+   "id": "D_RUT",
+   "name": "RUT_empresa.pdf",
+   "mimeType": "application/pdf",
+   "texto": "RUT EMPRESA\nDocumento ficticio.\nPágina 1\nFotocopia del RUT de la empresa: rol único tributario 76.123.456-7.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "30dc3ea3351e"
+  },
+  {
+   "id": "D_ESCRITURA",
+   "name": "Escritura_constitucion_sociedad.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ESCRITURA CONSTITUCION SOCIEDAD\nDocumento ficticio.\nPágina 1\nEscritura pública de constitución de la sociedad Clínica Ficticia SpA, otorgada ante notario.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "e01f5581b9c9"
+  },
+  {
+   "id": "D_QF",
+   "name": "Contrato_QF_y_nombramiento.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CONTRATO QF Y NOMBRAMIENTO\nDocumento ficticio.\nPágina 1\nNombramiento del químico farmacéutico responsable del botiquín: Q.F. Ana Soto.\nContrato de trabajo del químico farmacéutico responsable, jornada de 44 horas.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "1c69f253615b"
+  },
+  {
+   "id": "D_TITULO",
+   "name": "Titulo_QF.pdf",
+   "mimeType": "application/pdf",
+   "texto": "TITULO QF\nDocumento ficticio.\nPágina 1\nTítulo profesional de químico farmacéutico otorgado por la Universidad Ficticia.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "b6eecc13a07e"
+  },
+  {
+   "id": "D_PLANO",
+   "name": "Plano_local_botiquin.jpg",
+   "mimeType": "image/jpeg",
+   "texto": null,
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "6a341f280ba5"
+  },
+  {
+   "id": "D_LISTADO",
+   "name": "Listado_medicamentos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "LISTADO MEDICAMENTOS\nDocumento ficticio.\nPágina 1\nListado de medicamentos que mantendrá el botiquín: paracetamol, ibuprofeno y suero fisiológico.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "3e0216dc8577"
+  },
+  {
+   "id": "D_RECEPCION",
+   "name": "Procedimiento_recepcion.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROCEDIMIENTO RECEPCION\nDocumento ficticio.\nPágina 1\nProcedimiento de recepción de medicamentos: revisión de guía de despacho, lote y vencimiento.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "b61ffad81f74"
+  },
+  {
+   "id": "D_TEMP1",
+   "name": "Registro_temperatura_enero.pdf",
+   "mimeType": "application/pdf",
+   "texto": "REGISTRO TEMPERATURA ENERO\nDocumento ficticio.\nPágina 1\nRegistro de control de temperatura del refrigerador de medicamentos: lecturas diarias de enero de 2026.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "7c64f17803cf"
+  },
+  {
+   "id": "D_TEMP2",
+   "name": "Registro_temperatura_febrero.pdf",
+   "mimeType": "application/pdf",
+   "texto": "REGISTRO TEMPERATURA FEBRERO\nDocumento ficticio.\nPágina 1\nRegistro de control de temperatura del refrigerador de medicamentos: lecturas diarias de febrero de 2026.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "2759e2d9db3a"
+  },
+  {
+   "id": "D_VENCIDOS",
+   "name": "Eliminacion_vencidos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ELIMINACION VENCIDOS\nDocumento ficticio.\nPágina 1\nProcedimiento de eliminación de medicamentos vencidos mediante empresa autorizada.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "c4d89a3724b6"
+  },
+  {
+   "id": "D_NOESTUP",
+   "name": "NO_APLICA_estupefacientes.pdf",
+   "mimeType": "application/pdf",
+   "texto": "NO APLICA ESTUPEFACIENTES\nDocumento ficticio.\nPágina 1\nEl botiquín no maneja estupefacientes ni psicotrópicos; por eso no lleva libro de control de estupefacientes.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "757a33cf1ab1"
+  },
+  {
+   "id": "D_HORARIO",
+   "name": "Horario_funcionamiento.pdf",
+   "mimeType": "application/pdf",
+   "texto": "HORARIO FUNCIONAMIENTO\nDocumento ficticio.\nPágina 1\nHorario de funcionamiento del botiquín: lunes a viernes de 9 a 18 horas.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "ed79bfef3b66"
+  },
+  {
+   "id": "D_DISPENSA",
+   "name": "Procedimiento_dispensacion.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROCEDIMIENTO DISPENSACION\nDocumento ficticio.\nPágina 1\nProcedimiento de dispensación de medicamentos a pacientes con receta y registro.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "b1753225562b"
+  },
+  {
+   "id": "D_SENUELO",
+   "name": "Certificado_calibracion_termometro.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CERTIFICADO CALIBRACION TERMOMETRO\nDocumento ficticio.\nPágina 1\nCotización de mobiliario para la sala de espera: tres sillas y una mesa.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "732202e10e0b"
+  },
+  {
+   "id": "D_CAPAC",
+   "name": "Programa_capacitacion.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROGRAMA CAPACITACION\nDocumento ficticio.\nPágina 1\nPrograma de capacitación del personal del botiquín: buenas prácticas de almacenamiento y dispensación.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "6da6036497a6"
+  },
+  {
+   "id": "D_INVENT",
+   "name": "Control_inventario.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CONTROL INVENTARIO\nDocumento ficticio.\nPágina 1\nProcedimiento de control de inventario de medicamentos con conteo mensual.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "f8977573eaac"
+  },
+  {
+   "id": "D_DECLARA",
+   "name": "Declaracion_condiciones_sanitarias.pdf",
+   "mimeType": "application/pdf",
+   "texto": "DECLARACION CONDICIONES SANITARIAS\nDocumento ficticio.\nPágina 1\nDeclaración de cumplimiento de condiciones sanitarias del local del botiquín.\nFirma: pendiente.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "8e107eb52885"
+  },
+  {
+   "id": "D_AGUA",
+   "name": "Certificado_agua_potable.pdf",
+   "mimeType": "application/pdf",
+   "texto": "CERTIFICADO AGUA POTABLE\nDocumento ficticio.\nPágina 1\nCertificado de dotación de agua potable del local emitido por la empresa sanitaria.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "c49d0f18d20f"
+  },
+  {
+   "id": "D_RECLAMOS",
+   "name": "Procedimiento_reclamos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROCEDIMIENTO RECLAMOS\nDocumento ficticio.\nPágina 1\nProcedimiento de manejo de reclamos de usuarios con respuesta en cinco días hábiles.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "b42789c8da88"
+  },
+  {
+   "id": "D_LIMPIEZA",
+   "name": "Procedimiento_limpieza.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROCEDIMIENTO LIMPIEZA\nDocumento ficticio.\nPágina 1\nProcedimiento de limpieza del área del botiquín, diario, con registro.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "17e95863ea95"
+  },
+  {
+   "id": "D_RECLAMOS_COPIA",
+   "name": "Copia de Procedimiento_reclamos.pdf",
+   "mimeType": "application/pdf",
+   "texto": "PROCEDIMIENTO RECLAMOS\nDocumento ficticio.\nPágina 1\nProcedimiento de manejo de reclamos de usuarios con respuesta en cinco días hábiles.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "b42789c8da88"
+  },
+  {
+   "id": "D_ATAJO",
+   "name": "Acceso directo a otro botiquín",
+   "mimeType": "application/vnd.google-apps.shortcut",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "shortcutDetails": {
+    "targetId": "BREQ_OTRO"
+   }
+  },
+  {
+   "id": "D_R01",
+   "name": "Administrativo_01.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 1\nDocumento ficticio.\nPágina 1\nFactura de compra número 1 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "3856341dd023"
+  },
+  {
+   "id": "D_R02",
+   "name": "Administrativo_02.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 2\nDocumento ficticio.\nPágina 1\nFactura de compra número 2 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "d7899f1779d4"
+  },
+  {
+   "id": "D_R03",
+   "name": "Administrativo_03.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 3\nDocumento ficticio.\nPágina 1\nFactura de compra número 3 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "2ef6ddd08749"
+  },
+  {
+   "id": "D_R04",
+   "name": "Administrativo_04.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 4\nDocumento ficticio.\nPágina 1\nFactura de compra número 4 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "db4c30031f2b"
+  },
+  {
+   "id": "D_R05",
+   "name": "Administrativo_05.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 5\nDocumento ficticio.\nPágina 1\nFactura de compra número 5 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "265d8f5935cf"
+  },
+  {
+   "id": "D_R06",
+   "name": "Administrativo_06.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 6\nDocumento ficticio.\nPágina 1\nFactura de compra número 6 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "e422ed02d9e5"
+  },
+  {
+   "id": "D_R07",
+   "name": "Administrativo_07.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 7\nDocumento ficticio.\nPágina 1\nFactura de compra número 7 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "435e13f98c04"
+  },
+  {
+   "id": "D_R08",
+   "name": "Administrativo_08.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 8\nDocumento ficticio.\nPágina 1\nFactura de compra número 8 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "42e884d921ef"
+  },
+  {
+   "id": "D_R09",
+   "name": "Administrativo_09.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 9\nDocumento ficticio.\nPágina 1\nFactura de compra número 9 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "d7acc513ca3f"
+  },
+  {
+   "id": "D_R10",
+   "name": "Administrativo_10.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 10\nDocumento ficticio.\nPágina 1\nFactura de compra número 10 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "f5c3dcb314e6"
+  },
+  {
+   "id": "D_R11",
+   "name": "Administrativo_11.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 11\nDocumento ficticio.\nPágina 1\nFactura de compra número 11 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "b755993022fd"
+  },
+  {
+   "id": "D_R12",
+   "name": "Administrativo_12.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 12\nDocumento ficticio.\nPágina 1\nFactura de compra número 12 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "935eebfe8825"
+  },
+  {
+   "id": "D_R13",
+   "name": "Administrativo_13.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 13\nDocumento ficticio.\nPágina 1\nFactura de compra número 13 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "47195148fa42"
+  },
+  {
+   "id": "D_R14",
+   "name": "Administrativo_14.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 14\nDocumento ficticio.\nPágina 1\nFactura de compra número 14 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "b11722aa6aae"
+  },
+  {
+   "id": "D_R15",
+   "name": "Administrativo_15.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 15\nDocumento ficticio.\nPágina 1\nFactura de compra número 15 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "18c99faa4acf"
+  },
+  {
+   "id": "D_R16",
+   "name": "Administrativo_16.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 16\nDocumento ficticio.\nPágina 1\nFactura de compra número 16 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "8c6deb2ee4e2"
+  },
+  {
+   "id": "D_R17",
+   "name": "Administrativo_17.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 17\nDocumento ficticio.\nPágina 1\nFactura de compra número 17 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "46e17e589b57"
+  },
+  {
+   "id": "D_R18",
+   "name": "Administrativo_18.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 18\nDocumento ficticio.\nPágina 1\nFactura de compra número 18 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "ab2ec2deab87"
+  },
+  {
+   "id": "D_R19",
+   "name": "Administrativo_19.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 19\nDocumento ficticio.\nPágina 1\nFactura de compra número 19 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "9ff07afc1ca4"
+  },
+  {
+   "id": "D_R20",
+   "name": "Administrativo_20.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 20\nDocumento ficticio.\nPágina 1\nFactura de compra número 20 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "710698c956ba"
+  },
+  {
+   "id": "D_R21",
+   "name": "Administrativo_21.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 21\nDocumento ficticio.\nPágina 1\nFactura de compra número 21 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "699c9685df82"
+  },
+  {
+   "id": "D_R22",
+   "name": "Administrativo_22.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 22\nDocumento ficticio.\nPágina 1\nFactura de compra número 22 de insumos de oficina.",
+   "parents": [
+    "botdocs-procedimientos"
+   ],
+   "version": 1,
+   "md5Checksum": "1a23d628b687"
+  },
+  {
+   "id": "D_R23",
+   "name": "Administrativo_23.pdf",
+   "mimeType": "application/pdf",
+   "texto": "ADMINISTRATIVO 23\nDocumento ficticio.\nPágina 1\nFactura de compra número 23 de insumos de oficina.",
+   "parents": [
+    "carpeta-botdocs"
+   ],
+   "version": 1,
+   "md5Checksum": "64bd74667ce5"
+  }
+ ],
+ "norma_id": "BREQ",
+ "resultado_correcto": [
+  {
+   "id": "1",
+   "presentacion": "revisar"
+  },
+  {
+   "id": "2",
+   "presentacion": "listo"
+  },
+  {
+   "id": "3",
+   "presentacion": "listo"
+  },
+  {
+   "id": "4",
+   "presentacion": "listo"
+  },
+  {
+   "id": "5",
+   "presentacion": "listo"
+  },
+  {
+   "id": "6",
+   "presentacion": "listo"
+  },
+  {
+   "id": "7",
+   "presentacion": "revisar"
+  },
+  {
+   "id": "8",
+   "presentacion": "listo"
+  },
+  {
+   "id": "9",
+   "presentacion": "modificar"
+  },
+  {
+   "id": "10",
+   "presentacion": "listo"
+  },
+  {
+   "id": "11",
+   "presentacion": "listo"
+  },
+  {
+   "id": "12",
+   "presentacion": "no_aplica"
+  },
+  {
+   "id": "13",
+   "presentacion": "listo"
+  },
+  {
+   "id": "14",
+   "presentacion": "listo"
+  },
+  {
+   "id": "15",
+   "presentacion": "no_encontrado"
+  },
+  {
+   "id": "16",
+   "presentacion": "listo"
+  },
+  {
+   "id": "17",
+   "presentacion": "listo"
+  },
+  {
+   "id": "18",
+   "presentacion": "modificar"
+  },
+  {
+   "id": "19",
+   "presentacion": "listo"
+  },
+  {
+   "id": "20",
+   "presentacion": "listo"
+  },
+  {
+   "id": "21",
+   "presentacion": "no_encontrado"
+  },
+  {
+   "id": "22",
+   "presentacion": "listo"
+  }
+ ],
+ "simulado": {
+  "requisitos": [
+   {
+    "referencia": "1",
+    "texto": "Solicitud de autorización de botiquín firmada por el representante legal.",
+    "cita": "Solicitud de autorización de botiquín firmada por el representante legal."
+   },
+   {
+    "referencia": "2",
+    "texto": "Fotocopia del RUT de la empresa (rol único tributario).",
+    "cita": "Fotocopia del RUT de la empresa (rol único tributario)."
+   },
+   {
+    "referencia": "3",
+    "texto": "Escritura de constitución de la sociedad.",
+    "cita": "Escritura de constitución de la sociedad."
+   },
+   {
+    "referencia": "4",
+    "texto": "Nombramiento del químico farmacéutico responsable del botiquín.",
+    "cita": "Nombramiento del químico farmacéutico responsable del botiquín."
+   },
+   {
+    "referencia": "5",
+    "texto": "Contrato de trabajo del químico farmacéutico responsable.",
+    "cita": "Contrato de trabajo del químico farmacéutico responsable."
+   },
+   {
+    "referencia": "6",
+    "texto": "Título profesional del químico farmacéutico.",
+    "cita": "Título profesional del químico farmacéutico."
+   },
+   {
+    "referencia": "7",
+    "texto": "Plano del local del botiquín con sus medidas.",
+    "cita": "Plano del local del botiquín con sus medidas."
+   },
+   {
+    "referencia": "8",
+    "texto": "Listado de medicamentos que mantendrá el botiquín.",
+    "cita": "Listado de medicamentos que mantendrá el botiquín."
+   },
+   {
+    "referencia": "9 a)",
+    "texto": "Procedimiento de recepción de medicamentos.",
+    "cita": "Procedimiento de recepción de medicamentos."
+   },
+   {
+    "referencia": "9 b)",
+    "texto": "Procedimiento de almacenamiento de medicamentos.",
+    "cita": "Procedimiento de almacenamiento de medicamentos."
+   },
+   {
+    "referencia": "10",
+    "texto": "Registro de control de temperatura del refrigerador de medicamentos.",
+    "cita": "Registro de control de temperatura del refrigerador de medicamentos."
+   },
+   {
+    "referencia": "11",
+    "texto": "Procedimiento de eliminación de medicamentos vencidos.",
+    "cita": "Procedimiento de eliminación de medicamentos vencidos."
+   },
+   {
+    "referencia": "12",
+    "texto": "Si se manejan estupefacientes, libro de control de estupefacientes.",
+    "cita": "Si se manejan estupefacientes, libro de control de estupefacientes."
+   },
+   {
+    "referencia": "13",
+    "texto": "Horario de funcionamiento del botiquín.",
+    "cita": "Horario de funcionamiento del botiquín."
+   },
+   {
+    "referencia": "14",
+    "texto": "Procedimiento de dispensación de medicamentos a pacientes.",
+    "cita": "Procedimiento de dispensación de medicamentos a pacientes."
+   },
+   {
+    "referencia": "15",
+    "texto": "Certificado de calibración del termómetro del refrigerador.",
+    "cita": "Certificado de calibración del termómetro del refrigerador."
+   },
+   {
+    "referencia": "16",
+    "texto": "Programa de capacitación del personal del botiquín.",
+    "cita": "Programa de capacitación del personal del botiquín."
+   },
+   {
+    "referencia": "17",
+    "texto": "Procedimiento de control de inventario de medicamentos.",
+    "cita": "Procedimiento de control de inventario de medicamentos."
+   },
+   {
+    "referencia": "18",
+    "texto": "Declaración de cumplimiento de condiciones sanitarias del local, firmada.",
+    "cita": "Declaración de cumplimiento de condiciones sanitarias del local, firmada."
+   },
+   {
+    "referencia": "19",
+    "texto": "Certificado de dotación de agua potable del local.",
+    "cita": "Certificado de dotación de agua potable del local."
+   },
+   {
+    "referencia": "20",
+    "texto": "Procedimiento de manejo de reclamos de usuarios.",
+    "cita": "Procedimiento de manejo de reclamos de usuarios."
+   },
+   {
+    "referencia": "21",
+    "texto": "Póliza de seguro del local.",
+    "cita": "Póliza de seguro del local."
+   },
+   {
+    "referencia": "22",
+    "texto": "Procedimiento de limpieza del área del botiquín.",
+    "cita": "Procedimiento de limpieza del área del botiquín."
+   }
+  ],
+  "evaluaciones": {
+   "1": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Solicitud de autorización de botiquín presentada por el representante legal de la empresa.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 1.",
+    "accion": "Subir la solicitud."
+   },
+   "2": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Fotocopia del RUT de la empresa: rol único tributario",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 2.",
+    "accion": "Subir la fotocopia del RUT."
+   },
+   "3": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Escritura pública de constitución de la sociedad Clínica Ficticia SpA",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 3.",
+    "accion": "Subir la escritura."
+   },
+   "4": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Nombramiento del químico farmacéutico responsable del botiquín: Q.F. Ana Soto.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 4.",
+    "accion": "Subir el nombramiento."
+   },
+   "5": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Contrato de trabajo del químico farmacéutico responsable, jornada de 44 horas.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 5.",
+    "accion": "Subir el contrato."
+   },
+   "6": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Título profesional de químico farmacéutico otorgado por la Universidad Ficticia.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 6.",
+    "accion": "Subir el título."
+   },
+   "8": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Listado de medicamentos que mantendrá el botiquín",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 8.",
+    "accion": "Subir el listado."
+   },
+   "9": {
+    "estado": "parcial",
+    "presentacion": "modificar",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de recepción de medicamentos",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 9.",
+    "accion": "Agregar el procedimiento de almacenamiento de medicamentos (subapartado b) y volver a firmar."
+   },
+   "10": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "lecturas diarias de enero de 2026.",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "lecturas diarias de febrero de 2026.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 10.",
+    "accion": "Subir ambos registros."
+   },
+   "11": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de eliminación de medicamentos vencidos mediante empresa autorizada.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 11.",
+    "accion": "Subir el procedimiento."
+   },
+   "12": {
+    "estado": "no_aplica_justificado",
+    "presentacion": "no_aplica",
+    "evidencias": [
+     {
+      "cita": "El botiquín no maneja estupefacientes ni psicotrópicos",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 12.",
+    "accion": "Subir la declaración de no aplica."
+   },
+   "13": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Horario de funcionamiento del botiquín: lunes a viernes de 9 a 18 horas.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 13.",
+    "accion": "Subir el horario."
+   },
+   "14": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de dispensación de medicamentos a pacientes con receta y registro.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 14.",
+    "accion": "Subir el procedimiento."
+   },
+   "16": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Programa de capacitación del personal del botiquín",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 16.",
+    "accion": "Subir el programa."
+   },
+   "17": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de control de inventario de medicamentos con conteo mensual.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 17.",
+    "accion": "Subir el procedimiento."
+   },
+   "18": {
+    "estado": "parcial",
+    "presentacion": "modificar",
+    "evidencias": [
+     {
+      "cita": "Declaración de cumplimiento de condiciones sanitarias del local del botiquín.",
+      "aporta": "a_favor"
+     },
+     {
+      "cita": "Firma: pendiente.",
+      "aporta": "en_contra"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 18.",
+    "accion": "Firmar la declaración y volver a subirla."
+   },
+   "19": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Certificado de dotación de agua potable del local emitido por la empresa sanitaria.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 19.",
+    "accion": "Subir el certificado."
+   },
+   "20": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de manejo de reclamos de usuarios con respuesta en cinco días hábiles.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 20.",
+    "accion": "Subir el procedimiento."
+   },
+   "22": {
+    "estado": "cumple",
+    "presentacion": "listo",
+    "evidencias": [
+     {
+      "cita": "Procedimiento de limpieza del área del botiquín, diario, con registro.",
+      "aporta": "a_favor"
+     }
+    ],
+    "justificacion": "Evaluación simulada del requisito 22.",
+    "accion": "Subir el procedimiento."
+   }
+  }
+ }
+}

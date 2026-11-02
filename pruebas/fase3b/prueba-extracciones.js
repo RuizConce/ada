@@ -273,6 +273,7 @@ function doc(id, nombre, mimeType, largo = 3000) {
 
   // ===== 13. Motor sin Drive simulado: no lee documentos reales =====
   await parar('A'); // un solo ejecutor de encargos: si no, el servidor con Drive simulado podría tomar este trabajo
+  try { sql("UPDATE carpetas_autorizadas SET estado = 'revocada'"); } catch (_) {} // sin carpetas autorizadas desde ADA (otras pruebas dejan registros)
   await arrancar('R', 3202, { ADA_DRIVE_URL: '' });
   const tkR = await login(3202);
   const tr = await post('/api/trabajos', { titulo: 'Real', presupuesto: 1, pasos: [{ clave: 'extraer:real', tipo: 'extraer', entrada: { archivo_id: 'cualquiera' }, max_intentos: 1 }] }, 3202, tkR);
