@@ -118,3 +118,34 @@ const b6 = [{ bloque: 1, requisitos: [
 const g6 = listaRango(b6, { desde: 24, hasta: 26 }, guia6);
 const t25 = g6.requisitos.find((x) => x.id === '25').texto;
 ok(g6.ubicacion.reubicados[0].destino === 'movido' && /sala de recuperación/.test(t25) && /evaluación anestésica/.test(t25) && g6.requisitos.length === 3, `aunque el 25 tenga palabras parecidas, la exigencia distinta se agrega (no se pierde): 25 = «${t25}»`);
+
+// ---- Tablas (como queda un PDF de tabla al convertirlo a texto) ----
+const { _tablaDeNorma: tablaDeNorma } = require('../../src/auditoria');
+const EST = { 1: 'Por preparar', 5: 'Por preparar', 12: 'Por preparar', 15: 'Por preparar', 16: 'Por preparar', 21: 'Por preparar', 6: 'No aplica', 7: 'No aplica', 11: 'No aplica', 13: 'No aplica', 14: 'No aplica', 22: 'No aplica' };
+const est = (n) => EST[n] || 'Listo';
+const cab = ['N.º', 'Requisito', 'Qué subir para Andaluz', 'Estado'];
+const fila = (n) => {
+  if (n === 4) return [String(n), 'Nombramiento del químico farmacéutico', 'responsable del botiquín (Ley 20.584).', 'Resolución de nombramiento firmada.', est(n)]; // celda en dos líneas
+  if (n === 12) return [String(n), 'Libro de control de recetas.', 'Copias:', '2', 'Libro foliado.', est(n)]; // un «2» suelto dentro de la celda
+  return [String(n), `Requisito ${n} del botiquín, con su exigencia completa.`, `Documento ${n} que se sube para Andaluz.`, est(n)];
+};
+const pdf = ['BOTIQUÍN ANDALUZ — REQUISITOS Y DOCUMENTOS', ...cab, ...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(fila), ...cab, ...Array.from({ length: 13 }, (_, i) => i + 10).flatMap(fila),
+  'DATOS BASE DEL BOTIQUÍN', 'Representante legal: Juan Pérez, RUT 12.345.678-9, teléfono +56 9 1234 5678', 'Pendientes', '1. Firmar la solicitud.', '2. Conseguir el certificado de agua.', '3', 'Total pendientes'].join('\n');
+const tb = tablaDeNorma(pdf);
+ok(tb && tb.filas.length === 22 && tb.filas.map((f) => f.numero).join() === Array.from({ length: 22 }, (_, i) => i + 1).join() && tb.columnas.join(' | ') === cab.join(' | '), `tabla: 22 filas 1…22 y sus 4 columnas (${tb && tb.filas.length})`);
+ok(tb.paginas === 2 && tb.filas.find((f) => f.numero === 9).pagina === 1 && tb.filas.find((f) => f.numero === 10).pagina === 2, 'páginas: 1 al 9 en la página 1, 10 al 22 en la página 2 (encabezado repetido)');
+const f22 = tb.filas.find((f) => f.numero === 22);
+ok(f22.estado_declarado === 'No aplica' && !/DATOS BASE|Juan|Pendientes|Firmar/.test(JSON.stringify(f22)), 'la última fila termina en su estado: los datos base y los pendientes (página 3) no se mezclan');
+ok(tb.filas.find((f) => f.numero === 12).texto.includes('Copias: 2') && tb.filas.filter((f) => f.numero === 2).length === 1, 'un «2» suelto dentro de una celda no crea una fila nueva');
+ok(tb.filas.find((f) => f.numero === 4).inferida && /Nombramiento del químico farmacéutico/.test(tb.filas.find((f) => f.numero === 4).texto) && /Resolución de nombramiento firmada/.test(tb.filas.find((f) => f.numero === 4).texto), 'celda en dos líneas: el texto completo se conserva y la fila queda marcada para revisar las columnas');
+ok(tb.filas.find((f) => f.numero === 3).texto === 'Requisito: Requisito 3 del botiquín, con su exigencia completa. Qué subir para Andaluz: Documento 3 que se sube para Andaluz.' && tb.filas.find((f) => f.numero === 3).estado_declarado === 'Listo', 'texto = Requisito + Qué subir; el estado declarado queda aparte (solo referencia)');
+const estados = tb.filas.reduce((m, f) => { (m[f.estado_declarado] = m[f.estado_declarado] || []).push(f.numero); return m; }, {});
+ok(estados.Listo.join() === '2,3,4,8,9,10,17,18,19,20' && estados['Por preparar'].join() === '1,5,12,15,16,21' && estados['No aplica'].join() === '6,7,11,13,14,22', 'estados declarados por fila iguales a los del PDF');
+const lr = listaRango([{ bloque: 1, requisitos: [{ referencia: '1', texto: 'algo', cita: 'Requisito 1 del botiquín' }] }], { desde: 1, hasta: 22 }, pdf);
+ok(lr.requisitos.length === 22 && !lr.faltantes.length && lr.tabla && lr.tabla.columnas.length === 4 && /^Tabla, fila 7 \(página 1\)/.test(lr.requisitos[6].fuente) && !lr.requisitos.some((r) => /12\.345\.678-9|Juan Pérez/.test(JSON.stringify(r))),
+  'la lista sale de la tabla: 22 de 22, con fila y página, sin datos personales de la página 3');
+// Variante con tabuladores (otra forma de conversión).
+const tabs = [['N.º', 'Requisito', 'Qué subir', 'Estado'].join('\t'), ...Array.from({ length: 22 }, (_, i) => [String(i + 1), `Requisito ${i + 1}.`, `Documento ${i + 1}.`, est(i + 1)].join('\t')), 'Datos base', 'RUT 12.345.678-9'].join('\n');
+const tt = tablaDeNorma(tabs);
+ok(tt && tt.formato === 'tab' && tt.filas.length === 22 && tt.filas[21].estado_declarado === 'No aplica' && !/RUT/.test(JSON.stringify(tt.filas[21])), 'tabla con tabuladores: 22 filas, sin mezclar lo que sigue');
+ok(tablaDeNorma('1. Contar con nómina.\n2. Contar con plan.') === null, 'una lista numerada sin tabla no se trata como tabla');

@@ -27,12 +27,20 @@ REQ = {
  21: "Póliza de seguro del local.",
  22: "Procedimiento de limpieza del área del botiquín.",
 }
-SUB9 = ["Procedimiento de recepción de medicamentos.", "Procedimiento de almacenamiento de medicamentos."]
-def linea(n):
-    if n == 9: return "9. Medicamentos:\na) " + SUB9[0] + "\nb) " + SUB9[1]
-    if n == 16: return "-- 1 16 CAPACITACIÓN " + REQ[16]   # formato de tabla, como la guía real
-    return f"{n}. {REQ[n]}"
-norma = "BOTIQUÍN — REQUISITOS Y DOCUMENTOS (FICTICIO)\nPágina 1\n" + "\n".join(linea(n) for n in range(1, 23)) + "\nNota final: documento ficticio para pruebas."
+# Estructura del PDF real: tabla «N.º | Requisito | Qué subir para Andaluz | Estado» (1–9 en la página 1, 10–22 en la
+# página 2 con el encabezado repetido) y una página 3 con datos base y pendientes numerados (no son requisitos).
+REQ[9] = "Procedimientos de recepción y almacenamiento de medicamentos."
+ESTADO = {n: "Listo" for n in (2, 3, 4, 8, 9, 10, 17, 18, 19, 20)}
+ESTADO.update({n: "Por preparar" for n in (1, 5, 12, 15, 16, 21)}); ESTADO.update({n: "No aplica" for n in (6, 7, 11, 13, 14, 22)})
+CAB = ["N.º", "Requisito", "Qué subir para Andaluz", "Estado"]
+def celdas(n):
+    subir = "El documento correspondiente de Andaluz, legible y completo."
+    if n == 12: return [str(n), REQ[n], "Copias:", "2", subir, ESTADO[n]]    # «2» suelto dentro de una celda
+    if n == 4: return [str(n), "Nombramiento del químico farmacéutico", "responsable del botiquín.", subir, ESTADO[n]]  # celda en dos líneas
+    return [str(n), REQ[n], subir, ESTADO[n]]
+norma = "\n".join(["BOTIQUÍN ANDALUZ — REQUISITOS Y DOCUMENTOS (FICTICIO)", *CAB, *[c for n in range(1, 10) for c in celdas(n)], *CAB, *[c for n in range(10, 23) for c in celdas(n)],
+  "DATOS BASE DEL BOTIQUÍN", "Nombre: Botiquín Andaluz (ficticio)", "Representante legal: Juan Pérez Soto, RUT 12.345.678-9, teléfono +56 9 1234 5678, correo juan.perez@ejemplo.cl",
+  "Pendientes", "1. Firmar la solicitud.", "2. Conseguir la póliza de seguro.", "3. Completar el procedimiento de almacenamiento."])
 archivos = []
 def agregar(id_, nombre, texto=None, mime="application/pdf", carpeta="carpeta-botdocs", md5=None):
     archivos.append({"id": id_, "name": nombre, "mimeType": mime, "texto": texto, "parents": [carpeta], "version": 1,
@@ -104,10 +112,7 @@ for rid, v in E.items():
 FINAL = {"1": "revisar"}            # «firmada»: el código exige comprobar la firma
 CODIGO = {"7": "revisar", "15": "no_encontrado", "21": "no_encontrado"}   # 7: el plano está solo en imagen; 15: el señuelo no tiene evidencia
 correcto = [{"id": str(n), "presentacion": FINAL.get(str(n), E[str(n)][1]) if str(n) in E else CODIGO[str(n)]} for n in range(1, 23)]
-lista_ia = []
-for n in range(1, 23):
-    if n == 9: lista_ia += [{"referencia": f"9 {l})", "texto": t, "cita": t} for l, t in zip("ab", SUB9)]
-    else: lista_ia.append({"referencia": str(n), "texto": REQ[n], "cita": REQ[n]})
+lista_ia = [{"referencia": str(n), "texto": REQ[n] if n != 4 else "Nombramiento del químico farmacéutico responsable del botiquín.", "cita": REQ[n] if n != 4 else "Nombramiento del químico farmacéutico"} for n in range(1, 23)]
 salida = {"_nota": "Encargo ficticio «organizar expediente de botiquín». Generado por pruebas/fase3e/generar-prueba-botiquin.py.",
   "carpetas": carpetas, "archivos": archivos, "norma_id": "BREQ", "resultado_correcto": correcto,
   "simulado": {"requisitos": lista_ia, "evaluaciones": {rid: {"estado": v[0], "presentacion": v[1], "evidencias": [{"cita": c, "aporta": a} for (_, c, a) in v[2]], "justificacion": f"Evaluación simulada del requisito {rid}.", "accion": v[3]} for rid, v in E.items()}}}

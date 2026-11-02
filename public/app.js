@@ -477,7 +477,13 @@
         linea(`Tomados literalmente del texto guardado de la norma (la extracción no los había separado): ${p.recuperados.join(', ')}. Comprueba que el texto esté completo:`, 'aud-aviso');
         for (const d of p.recuperados_detalle || []) linea(`${d.numero}: ${d.caracteres.toLocaleString('es-CL')} caracteres · empieza «${d.empieza}…» · termina «…${d.termina}»${d.termina_antes_de ? ` (justo antes del ${d.termina_antes_de})` : d.hasta_el_final ? ' (hasta el final del documento: revisa que no incluya texto que no es del requisito)' : ''}`, 'aud-aviso');
       }
-      if (p.ubicacion) {
+      if (p.tabla) {
+        linea(`Tabla detectada: ${p.tabla.columnas.join(' | ')} · ${p.tabla.filas} filas en ${p.tabla.paginas} página${p.tabla.paginas === 1 ? '' : 's'}. Los textos salen de cada fila, copiados del documento.`, 'aud-ok');
+        if (p.tabla.columnas.some((c) => /estado|situaci|cumple/i.test(c))) linea('El estado que declara el documento se guarda solo como referencia: ADA evalúa cada requisito con los archivos reales.');
+        if ((p.tabla.inferidas || []).length) linea(`Revisa las columnas de las filas ${p.tabla.inferidas.join(', ')}: alguna celda ocupa varias líneas y su división es aproximada (el texto completo se conserva).`, 'aud-aviso');
+        if (p.tabla.fuera_de_rango) linea(`${p.tabla.fuera_de_rango} filas de la tabla quedan fuera del rango pedido.`);
+      }
+      if (p.ubicacion && !p.ubicacion.tabla) {
         const u = p.ubicacion;
         linea(`Comprobé en el texto original que cada apartado pertenece a su número: ${u.comprobados} comprobados.`);
         const DESTINO = { movido: (x) => `lo moví al ${x.esta_en}`, ya_estaba: (x) => `ya estaba en el ${x.esta_en}, no lo repito`, en_texto_completo: (x) => `queda dentro del texto completo del ${x.esta_en}`,
@@ -555,7 +561,7 @@
       const d = document.createElement('details');
       d.className = 'aud-fuentes';
       d.innerHTML = '<summary>Ver de dónde sale cada requisito en la norma</summary><ol></ol>';
-      for (const r of p.requisitos) { const li = document.createElement('li'); li.textContent = `${r.id} · ${r.fuente || 'sin fuente'}`; d.querySelector('ol').appendChild(li); }
+      for (const r of p.requisitos) { const li = document.createElement('li'); li.textContent = `${r.id} · ${r.fuente || 'sin fuente'}${r.estado_declarado ? ` · estado declarado (referencia): ${r.estado_declarado}` : ''}`; d.querySelector('ol').appendChild(li); }
       t.querySelector('.aud-archivos').after(d);
     }
     if (p.requisitos.length > 8) t.querySelector('.aud-req').rows = 12;

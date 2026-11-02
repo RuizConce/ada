@@ -58,13 +58,24 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     ok(r.status === 200 && r.d.carpetas.length === 2 && pX && pX.tipo === 'extraer_requisitos' && pX.norma.nombre === '00.Botiquín Andaluz — requisitos y documentos.pdf',
       `ambas carpetas autorizadas solo lectura; ADA ubicó por su nombre «${pX && pX.norma.nombre}» y propone extraerlo`);
     ok(pX.inventario.total === 46 && pX.inventario.por_estado['excluido: posible dato sensible'] === 1 && pX.inventario.por_estado['duplicado exacto'] === 1, `inventario de los 46 documentos: ${JSON.stringify(pX.inventario.por_estado)}`);
-    // ---- Aprobación 2: extracción → 22 requisitos (16 desde el texto, 9 con subapartados) ----
+    // ---- Aprobación 2: extracción → 22 requisitos desde la tabla del PDF (página 3 fuera) ----
     r = await post(`/api/auditorias/propuestas/${pX.id}/aprobar`, { presupuesto: pX.presupuesto_sugerido, origen: 'tarjeta_chat' });
     const ext = await esperar(r.d.trabajo_id);
     if (!ext.lista_propuesta) console.log('   extraccion:', JSON.stringify(ext).slice(0, 600));
-    const pL = (await api('/api/auditorias/propuestas')).d.find((x) => x.id === ext.lista_propuesta.propuesta_id);
-    ok(pL.requisitos.map((x) => x.id).join() === Array.from({ length: 22 }, (_, i) => String(i + 1)).join() && pL.recuperados.join() === '16' && /^a\) Procedimiento de recepción/.test(pL.requisitos[8].texto) && pL.perfil === 'expediente',
-      'lista: exactamente 22 requisitos 1…22, el 16 tomado literalmente del PDF y el 9 con sus subapartados');
+    let pL = (await api('/api/auditorias/propuestas')).d.find((x) => x.id === ext.lista_propuesta.propuesta_id);
+    const txtL = JSON.stringify(pL);
+    ok(pL.requisitos.map((x) => x.id).join() === Array.from({ length: 22 }, (_, i) => String(i + 1)).join() && pL.tabla && pL.tabla.filas === 22 && /Procedimientos de recepción/.test(pL.requisitos[8].texto)
+      && pL.requisitos[1].estado_declarado === 'Listo' && pL.requisitos[5].estado_declarado === 'No aplica' && /Copias/.test(pL.requisitos[11].texto) && pL.perfil === 'expediente'
+      && !/12\.345\.678|juan\.perez|1234 5678|Firmar la solicitud/.test(txtL),
+      `lista desde la tabla: 22 de 22 (páginas ${pL.tabla && pL.tabla.paginas}), columnas y estado de referencia por fila, el «2» suelto no es requisito y la página 3 queda fuera sin datos personales`);
+    // «Corregir la lista (sin costo)» sobre la tabla: texto ya guardado, sin descargas ni llamadas a la IA
+    const stA = await ctl('/control/stats'); const llamA = sql('SELECT COUNT(*) FROM llamadas_ia');
+    const rh = await post(`/api/auditorias/propuestas/${pL.id}/rehacer-lista`);
+    const stB = await ctl('/control/stats');
+    ok(rh.status === 200 && rh.d.nueva.requisitos.length === 22 && rh.d.nueva.tabla && rh.d.nueva.tabla.filas === 22 && rh.d.llamadas_ia_nuevas === 0 && sql('SELECT COUNT(*) FROM llamadas_ia') === llamA
+      && JSON.stringify(stA.export) === JSON.stringify(stB.export) && rh.d.nueva.requisitos[3].texto.includes('responsable del botiquín'),
+      `«Corregir la lista»: 22 de 22 desde la tabla, sin llamadas a la IA ni descargas (${rh.status} ${rh.d.error || ''})`);
+    if (rh.status === 200) pL = rh.d.nueva;
     // ---- Aprobación 3: auditoría (incluyo el RUT, sensible, para leerlo) ----
     r = await post(`/api/auditorias/propuestas/${pL.id}/aprobar`, { presupuesto: pL.presupuesto_sugerido, configuracion: 'K1', origen: 'tarjeta_chat', incluir_ids: ['D_RUT'] });
     const tAud = r.d.trabajo_id;

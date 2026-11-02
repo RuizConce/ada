@@ -31,12 +31,12 @@
    "id": "BREQ",
    "name": "00.Botiquín Andaluz — requisitos y documentos.pdf",
    "mimeType": "application/pdf",
-   "texto": "BOTIQUÍN — REQUISITOS Y DOCUMENTOS (FICTICIO)\nPágina 1\n1. Solicitud de autorización de botiquín firmada por el representante legal.\n2. Fotocopia del RUT de la empresa (rol único tributario).\n3. Escritura de constitución de la sociedad.\n4. Nombramiento del químico farmacéutico responsable del botiquín.\n5. Contrato de trabajo del químico farmacéutico responsable.\n6. Título profesional del químico farmacéutico.\n7. Plano del local del botiquín con sus medidas.\n8. Listado de medicamentos que mantendrá el botiquín.\n9. Medicamentos:\na) Procedimiento de recepción de medicamentos.\nb) Procedimiento de almacenamiento de medicamentos.\n10. Registro de control de temperatura del refrigerador de medicamentos.\n11. Procedimiento de eliminación de medicamentos vencidos.\n12. Si se manejan estupefacientes, libro de control de estupefacientes.\n13. Horario de funcionamiento del botiquín.\n14. Procedimiento de dispensación de medicamentos a pacientes.\n15. Certificado de calibración del termómetro del refrigerador.\n-- 1 16 CAPACITACIÓN Programa de capacitación del personal del botiquín.\n17. Procedimiento de control de inventario de medicamentos.\n18. Declaración de cumplimiento de condiciones sanitarias del local, firmada.\n19. Certificado de dotación de agua potable del local.\n20. Procedimiento de manejo de reclamos de usuarios.\n21. Póliza de seguro del local.\n22. Procedimiento de limpieza del área del botiquín.\nNota final: documento ficticio para pruebas.",
+   "texto": "BOTIQUÍN ANDALUZ — REQUISITOS Y DOCUMENTOS (FICTICIO)\nN.º\nRequisito\nQué subir para Andaluz\nEstado\n1\nSolicitud de autorización de botiquín firmada por el representante legal.\nEl documento correspondiente de Andaluz, legible y completo.\nPor preparar\n2\nFotocopia del RUT de la empresa (rol único tributario).\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n3\nEscritura de constitución de la sociedad.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n4\nNombramiento del químico farmacéutico\nresponsable del botiquín.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n5\nContrato de trabajo del químico farmacéutico responsable.\nEl documento correspondiente de Andaluz, legible y completo.\nPor preparar\n6\nTítulo profesional del químico farmacéutico.\nEl documento correspondiente de Andaluz, legible y completo.\nNo aplica\n7\nPlano del local del botiquín con sus medidas.\nEl documento correspondiente de Andaluz, legible y completo.\nNo aplica\n8\nListado de medicamentos que mantendrá el botiquín.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n9\nProcedimientos de recepción y almacenamiento de medicamentos.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\nN.º\nRequisito\nQué subir para Andaluz\nEstado\n10\nRegistro de control de temperatura del refrigerador de medicamentos.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n11\nProcedimiento de eliminación de medicamentos vencidos.\nEl documento correspondiente de Andaluz, legible y completo.\nNo aplica\n12\nSi se manejan estupefacientes, libro de control de estupefacientes.\nCopias:\n2\nEl documento correspondiente de Andaluz, legible y completo.\nPor preparar\n13\nHorario de funcionamiento del botiquín.\nEl documento correspondiente de Andaluz, legible y completo.\nNo aplica\n14\nProcedimiento de dispensación de medicamentos a pacientes.\nEl documento correspondiente de Andaluz, legible y completo.\nNo aplica\n15\nCertificado de calibración del termómetro del refrigerador.\nEl documento correspondiente de Andaluz, legible y completo.\nPor preparar\n16\nPrograma de capacitación del personal del botiquín.\nEl documento correspondiente de Andaluz, legible y completo.\nPor preparar\n17\nProcedimiento de control de inventario de medicamentos.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n18\nDeclaración de cumplimiento de condiciones sanitarias del local, firmada.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n19\nCertificado de dotación de agua potable del local.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n20\nProcedimiento de manejo de reclamos de usuarios.\nEl documento correspondiente de Andaluz, legible y completo.\nListo\n21\nPóliza de seguro del local.\nEl documento correspondiente de Andaluz, legible y completo.\nPor preparar\n22\nProcedimiento de limpieza del área del botiquín.\nEl documento correspondiente de Andaluz, legible y completo.\nNo aplica\nDATOS BASE DEL BOTIQUÍN\nNombre: Botiquín Andaluz (ficticio)\nRepresentante legal: Juan Pérez Soto, RUT 12.345.678-9, teléfono +56 9 1234 5678, correo juan.perez@ejemplo.cl\nPendientes\n1. Firmar la solicitud.\n2. Conseguir la póliza de seguro.\n3. Completar el procedimiento de almacenamiento.",
    "parents": [
     "carpeta-botreq"
    ],
    "version": 1,
-   "md5Checksum": "7118853fe721"
+   "md5Checksum": "cd95dc068bdb"
   },
   {
    "id": "BREQ_OTRO",
@@ -668,7 +668,7 @@
    {
     "referencia": "4",
     "texto": "Nombramiento del químico farmacéutico responsable del botiquín.",
-    "cita": "Nombramiento del químico farmacéutico responsable del botiquín."
+    "cita": "Nombramiento del químico farmacéutico"
    },
    {
     "referencia": "5",
@@ -691,14 +691,9 @@
     "cita": "Listado de medicamentos que mantendrá el botiquín."
    },
    {
-    "referencia": "9 a)",
-    "texto": "Procedimiento de recepción de medicamentos.",
-    "cita": "Procedimiento de recepción de medicamentos."
-   },
-   {
-    "referencia": "9 b)",
-    "texto": "Procedimiento de almacenamiento de medicamentos.",
-    "cita": "Procedimiento de almacenamiento de medicamentos."
+    "referencia": "9",
+    "texto": "Procedimientos de recepción y almacenamiento de medicamentos.",
+    "cita": "Procedimientos de recepción y almacenamiento de medicamentos."
    },
    {
     "referencia": "10",
