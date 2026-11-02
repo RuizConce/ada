@@ -34,7 +34,7 @@ const ACUSE = /^(si|no|ya|ok|dale|claro|obvio|exacto|bueno|ya po)\b/;
 
 const nivelAnterior = new Map(); // conversación → último nivel usado
 
-const AUDITORIA = /\b(audit[a-z]*|auditoria[s]?)\b|\bcomo va (la|el) (auditoria|encargo|revision)\b/;
+const AUDITORIA = /\b(audit[a-z]*|auditoria[s]?)\b|\bcomo va (la|el) (auditoria|encargo|revision)\b|drive\.google\.com\/drive\/(u\/\d+\/)?folders\//;
 function elegirModelo(texto, { conversacionId, modo = 'auto' } = {}) {
   const forzar = process.env.ADA_MODO_MODELO || modo;
   if (forzar === 'rapido') return { modelo: MODELO_RAPIDO(), nivel: 'rapido', motivo: 'ajuste: siempre rápido' };

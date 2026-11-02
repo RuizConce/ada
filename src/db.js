@@ -356,6 +356,30 @@ async function initDb() {
     const [{ n }] = await qPrincipal('SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?', ['auditoria_propuestas', col]);
     if (!n) await qPrincipal(`ALTER TABLE auditoria_propuestas ADD COLUMN ${col} ${def}`);
   }
+  // Carpetas de Drive autorizadas desde ADA (solo lectura, con su expediente). Reemplaza editar Railway por carpeta.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS carpetas_autorizadas (
+    id VARCHAR(128) NOT NULL,
+    usuario_id INT NOT NULL,
+    nombre VARCHAR(250) NULL,
+    expediente VARCHAR(160) NOT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'activa',
+    autorizada_en DATETIME(3) NOT NULL,
+    constancia_cifrada LONGTEXT NULL,
+    revocada_en DATETIME(3) NULL,
+    PRIMARY KEY (usuario_id, id),
+    INDEX idx_estado (usuario_id, estado)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Listas de requisitos revisadas y confirmadas, reutilizables en otras auditorías sin volver a extraerlas.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS listas_requisitos (
+    id CHAR(36) PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    nombre VARCHAR(120) NOT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'activa',
+    datos_cifrado LONGTEXT NOT NULL,
+    validada_en DATETIME(3) NOT NULL,
+    creado_en DATETIME(3) NOT NULL,
+    INDEX idx_usuario (usuario_id, estado)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   // Copias temporales propias ("ADA temporal - …") que no se pudieron borrar al primer intento.
   await qPrincipal(`CREATE TABLE IF NOT EXISTS temporales_drive (
     usuario_id INT NOT NULL,

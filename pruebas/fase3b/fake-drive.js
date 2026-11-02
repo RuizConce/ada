@@ -17,7 +17,8 @@ function error(res, status, reason, message) { json(res, status, { error: { code
 function leerCuerpo(req) { return new Promise((r) => { let b = ''; req.on('data', (d) => { b += d; }); req.on('end', () => { try { r(b ? JSON.parse(b) : {}); } catch (_) { r({}); } }); }); }
 const origen = (f) => (f.copiaDe ? archivos.get(f.copiaDe) : f);
 const publico = (f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, version: String(f.version), md5Checksum: f.md5Checksum, modifiedTime: f.modifiedTime,
-  trashed: !!f.trashed, parents: f.parents || ['carpeta-prueba'], webViewLink: `https://drive.simulado/${f.id}`, appProperties: f.appProperties, size: String((f.texto || '').length) });
+  trashed: !!f.trashed, parents: f.parents || ['carpeta-prueba'], webViewLink: `https://drive.simulado/${f.id}`, appProperties: f.appProperties, size: String((f.texto || '').length),
+  owners: [{ displayName: f.propietario || 'Cristian (simulado)' }], ...(f.shortcutDetails ? { shortcutDetails: f.shortcutDetails } : {}) });
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
@@ -66,7 +67,10 @@ http.createServer(async (req, res) => {
     if (p === '/drive/v3/files' && req.method === 'GET') {
       if (/appProperties has/.test(u.searchParams.get('q') || '')) return json(res, 200, { files: [...archivos.values()].filter((f) => f.appProperties && f.appProperties.ada_temporal === '1' && !f.trashed).map(publico) });
       const padre = ((u.searchParams.get('q') || '').match(/'([^']+)' in parents/) || [])[1];
-      return json(res, 200, { files: [...archivos.values()].filter((f) => !f.copiaDe && (!padre || (f.parents || ['carpeta-prueba']).includes(padre))).slice(0, 50).map(publico) });
+      // Paginación como Drive: pageSize (máx. 200 en el inventario) y nextPageToken.
+      const todos = [...archivos.values()].filter((f) => !f.copiaDe && (!padre || (f.parents || ['carpeta-prueba']).includes(padre)));
+      const tam = Math.min(Number(u.searchParams.get('pageSize')) || 50, 200); const desde = Number(u.searchParams.get('pageToken')) || 0;
+      return json(res, 200, { files: todos.slice(desde, desde + tam).map(publico), ...(desde + tam < todos.length ? { nextPageToken: String(desde + tam) } : {}) });
     }
     m = p.match(/^\/drive\/v3\/files\/([^/]+)(\/copy|\/export)?$/);
     if (!m) return error(res, 404, 'notFound', 'ruta');

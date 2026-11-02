@@ -320,7 +320,58 @@
     return t;
   }
 
+  // Autorizar una carpeta pegada en el chat: solo lectura, con contraseña, nombre del expediente y lista a usar.
+  const borradorCarpeta = new Map(); // lo escrito en la tarjeta sobrevive a los redibujos (nunca la contraseña)
+  function tarjetaAutorizarCarpeta(p) {
+    const t = document.createElement('div');
+    t.className = 'tarjeta tarjeta-auditoria tarjeta-carpeta';
+    t.dataset.propuesta = p.id;
+    t.innerHTML = '<div class="tarjeta-cab"><span><strong>Autorizar carpeta (solo lectura)</strong></span><em class="aud-estado"></em></div>'
+      + '<p class="meta aud-carpeta"></p><p class="meta">ADA podrá <b>leer</b> los archivos de esta carpeta y sus subcarpetas para auditarlos. No escribe, no mueve ni borra nada; no sigue accesos directos; no abre el resto de tu Drive. Puedes revocarla en Ajustes.</p>'
+      + '<label class="aud-campo">Nombre del expediente<input type="text" class="aud-exp" maxlength="160"></label>'
+      + '<label class="aud-campo">Lista de requisitos<select class="aud-lista"></select></label>'
+      + '<label class="aud-campo">Tu contraseña de ADA (confirma que eres el propietario)<input type="password" class="aud-clave" autocomplete="current-password"></label>'
+      + '<p class="meta aud-est">Al autorizar, ADA solo lista los archivos (sin abrirlos) y te muestra el inventario, el alcance y el presupuesto. Nada se lee ni se cobra hasta que apruebes la auditoría.</p>'
+      + '<div class="tarjeta-botones"><button type="button" class="principal">Autorizar solo lectura</button><button type="button" class="descartar">Descartar</button></div>';
+    t.querySelector('.aud-estado').textContent = `Pendiente · ${p.id.slice(0, 8)}`;
+    t.querySelector('.aud-carpeta').textContent = `Carpeta: ${p.carpeta.nombre}${p.carpeta.propietario ? ` · propietario en Drive: ${p.carpeta.propietario}` : ''}`;
+    const bor = borradorCarpeta.get(p.id) || {};
+    const exp = t.querySelector('.aud-exp');
+    exp.value = bor.expediente != null ? bor.expediente : (p.carpeta.nombre || '');
+    exp.addEventListener('input', () => { borradorCarpeta.set(p.id, { ...(borradorCarpeta.get(p.id) || {}), expediente: exp.value }); });
+    const sel = t.querySelector('.aud-lista');
+    api('/api/listas').then((ls) => {
+      sel.innerHTML = '';
+      if (!ls.length) { const o = document.createElement('option'); o.value = ''; o.textContent = 'No hay listas guardadas'; sel.appendChild(o); return; }
+      for (const l of ls) { const o = document.createElement('option'); o.value = l.id; o.textContent = `${l.nombre} (${l.requisitos} requisitos)`; sel.appendChild(o); }
+      const pre = ls.find((l) => p.lista && (l.id === p.lista || l.nombre.toLowerCase() === String(p.lista).toLowerCase()));
+      if (pre) sel.value = pre.id;
+      if ((borradorCarpeta.get(p.id) || {}).lista) sel.value = borradorCarpeta.get(p.id).lista;
+    }).catch(() => {});
+    sel.addEventListener('change', () => { borradorCarpeta.set(p.id, { ...(borradorCarpeta.get(p.id) || {}), lista: sel.value }); });
+    const botones = t.querySelectorAll('.tarjeta-botones button');
+    t.querySelector('.tarjeta-botones .principal').addEventListener('click', async () => {
+      botones.forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api(`/api/auditorias/propuestas/${p.id}/autorizar-carpeta`, { method: 'POST', body: JSON.stringify({ expediente: t.querySelector('.aud-exp').value, lista: sel.value || null, password: t.querySelector('.aud-clave').value }) });
+        t.querySelector('.aud-clave').value = '';
+        propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+        if (r.propuesta) propuestasAuditoria.push(r.propuesta);
+        pintarEntregas();
+        aviso(r.propuesta ? `Carpeta autorizada (solo lectura) para «${r.carpeta.expediente}». Revisa el inventario y el presupuesto.` : (r.nota || 'Carpeta autorizada.'));
+      } catch (e) { botones.forEach((b) => { b.disabled = false; }); t.querySelector('.aud-clave').value = ''; aviso(e.message, true); }
+    });
+    t.querySelector('.descartar').addEventListener('click', async () => {
+      botones.forEach((b) => { b.disabled = true; });
+      try { await api(`/api/auditorias/propuestas/${p.id}/descartar`, { method: 'POST' }); } catch (_) {}
+      propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id);
+      pintarEntregas();
+    });
+    return t;
+  }
+
   function tarjetaPropuestaAuditoria(p, origen = 'tarjeta_chat') {
+    if (p.tipo === 'autorizar_carpeta') return tarjetaAutorizarCarpeta(p);
     if (p.tipo === 'extraer_requisitos') return tarjetaExtraccion(p, origen);
     const t = document.createElement('div');
     t.className = 'tarjeta tarjeta-auditoria';
@@ -332,6 +383,17 @@
     t.querySelector('.aud-estado').textContent = `${p.origen ? 'Paso 2 de 2 · ' : ''}Pendiente · ${p.id.slice(0, 8)}`;
     if (p.origen) t.querySelector('strong').textContent = `Revisa los ${p.requisitos.length} requisitos y aprueba la auditoría`;
     t.querySelector('.aud-archivos').textContent = `${p.archivos.length} documento${p.archivos.length === 1 ? '' : 's'}: ${listaArchivos(p.archivos)}${p.motivo ? ` — ${p.motivo}` : ''}${p.perfil === 'seremi' ? ' · clasificación SEREMI' : ''}`;
+    if (p.expediente || p.lista) {
+      const x = document.createElement('div'); x.className = 'meta aud-expediente';
+      const ln = (txt, clase) => { const e = document.createElement('p'); e.textContent = txt; if (clase) e.className = clase; x.appendChild(e); };
+      if (p.expediente) ln(`Expediente: ${p.expediente}${p.carpeta ? ` · carpeta «${p.carpeta.nombre}»` : ''}`, 'aud-exp-nombre');
+      if (p.lista) {
+        ln(`Lista: «${p.lista.nombre}» (validada el ${String(p.lista.validada_en || '').slice(0, 10)}) · documento de origen: ${p.lista.fuente_estado}`, /cambió|no se pudo/.test(p.lista.fuente_estado || '') ? 'aud-aviso' : '');
+        if (/cambió/.test(p.lista.fuente_estado || '')) ln('El documento de origen cambió desde que validaste la lista: revisa si debes extraerla de nuevo antes de aprobar.', 'aud-aviso');
+        for (const n of p.lista.notas || []) ln(n, 'aud-aviso');
+      }
+      t.querySelector('.aud-archivos').before(x);
+    }
     const debeCorregir = !!(p.rango && p.origen && !p.agrupada);
     const puedeCorregir = !!(p.rango && p.origen);
     if (p.rango || (p.faltantes || []).length) {
@@ -406,6 +468,18 @@
     }
     const inv = bloqueInventario(p, { conCasillas: true });
     if (inv) t.querySelector('.aud-archivos').after(inv);
+    // Guardar esta lista (ya revisada) para reutilizarla en otras carpetas sin volver a extraerla.
+    if (p.origen && p.agrupada && !(p.faltantes || []).length) {
+      const g = document.createElement('details'); g.className = 'aud-guardar';
+      g.innerHTML = '<summary>Guardar esta lista para reutilizarla</summary><label class="aud-campo">Nombre<input type="text" class="aud-lista-nombre" maxlength="120"></label><label class="aud-campo">Observación (opcional)<textarea rows="2" class="aud-lista-nota"></textarea></label><button type="button" class="aud-lista-guardar">Confirmar y guardar la lista</button>';
+      g.querySelector('.aud-lista-nombre').value = p.perfil === 'seremi' && p.rango ? `SEREMI ${p.rango.desde}–${p.rango.hasta}` : '';
+      g.querySelector('.aud-lista-guardar').addEventListener('click', async (ev) => {
+        const b = ev.currentTarget; b.disabled = true;
+        try { const r = await api(`/api/auditorias/propuestas/${p.id}/guardar-lista`, { method: 'POST', body: JSON.stringify({ nombre: g.querySelector('.aud-lista-nombre').value, nota: g.querySelector('.aud-lista-nota').value }) }); aviso(`Lista «${r.nombre}» guardada (${r.requisitos} requisitos).`); b.textContent = 'Lista guardada'; }
+        catch (e) { b.disabled = false; aviso(e.message, true); }
+      });
+      t.querySelector('.tarjeta-botones').before(g);
+    }
     // Con lista extraída de una norma: de dónde sale cada requisito (cita textual de la norma), para revisarla.
     if (p.requisitos.some((r) => r.fuente)) {
       const d = document.createElement('details');
@@ -471,7 +545,7 @@
     t.querySelector('.aud-estado').textContent = a.estado === 'ejecutando' && a.estado_real === 'esperando ejecutor' ? 'Esperando turno' : (ETAPA_AUD[a.estado] || a.estado);
     const pct = a.pasos_total ? Math.round((100 * a.pasos_hechos) / a.pasos_total) : 0;
     t.querySelector('.aud-barra i').style.width = `${pct}%`;
-    t.querySelector('.aud-avance').textContent = `Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `${a.lotes_total ? `Lotes ${a.lotes_hechos || 0}/${a.lotes_total} · archivos leídos ${a.archivos_leidos || 0}/${a.archivos_total || '…'} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
+    t.querySelector('.aud-avance').textContent = `${a.expediente ? `Expediente: ${a.expediente} · ` : ''}Trabajo ${a.id.slice(0, 8)}${a.propuesta_id ? ` (propuesta ${a.propuesta_id.slice(0, 8)})` : ''}${a.config ? ` · ${a.config}` : ''} · ${a.etapa ? `${a.etapa} · ` : ''}${extraccion ? `Bloques de la norma ${a.bloques_hechos || 0}/${a.bloques_total || '…'}` : `${a.lotes_total ? `Lotes ${a.lotes_hechos || 0}/${a.lotes_total} · archivos leídos ${a.archivos_leidos || 0}/${a.archivos_total || '…'} · ` : ''}Requisitos evaluados ${a.requisitos_evaluados}/${a.requisitos_total}`} · pasos ${a.pasos_hechos}/${a.pasos_total || '…'} · gastado ${usdAud(a.costo_real_usd)} de ${usdAud(a.presupuesto_usd)}${a.reserva_activa_usd ? ` · reservado ahora ${usdAud(a.reserva_activa_usd)}` : ''}${a.motivo && !terminado ? ` · ${a.motivo}` : ''}`;
     const ul = t.querySelector('.aud-matriz');
     // Perfil SEREMI: la respuesta sencilla primero (qué subir, qué modificar, qué falta, qué no aplica, qué revisar).
     if (terminado && a.resumen_seremi) {
@@ -641,7 +715,45 @@
   });
   $('#cierre-copiar').addEventListener('click', async (ev) => { const ok = await copiar($('#cierre-salida').textContent); ev.target.textContent = ok ? 'Copiado ✓' : 'No se pudo'; setTimeout(() => { ev.target.textContent = 'Copiar resultado'; }, 1800); });
 
+  async function pintarGestionExpedientes() {
+    const cc = $('#aud-carpetas'); const cl = $('#aud-listas');
+    if (!cc || !cl) return;
+    try {
+      const cs = await api('/api/carpetas-autorizadas');
+      cc.innerHTML = cs.length ? '' : '<p class="meta">Ninguna todavía. Pega el enlace de una carpeta de Drive en el chat para autorizarla.</p>';
+      for (const c of cs) {
+        const f = document.createElement('div'); f.className = 'aud-fila-gestion';
+        const txt = document.createElement('span'); txt.textContent = `${c.expediente} · «${c.nombre}» · ${c.estado === 'activa' ? 'solo lectura' : 'revocada'}`; f.appendChild(txt);
+        if (c.estado === 'activa') {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'descartar'; b.textContent = 'Revocar';
+          b.addEventListener('click', async () => {
+            if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar revocación'; return; }
+            b.disabled = true;
+            try { await api(`/api/carpetas-autorizadas/${encodeURIComponent(c.id)}/revocar`, { method: 'POST' }); aviso('Carpeta revocada: ADA ya no puede leerla.'); pintarGestionExpedientes(); } catch (e) { b.disabled = false; aviso(e.message, true); }
+          });
+          f.appendChild(b);
+        }
+        cc.appendChild(f);
+      }
+      const ls = await api('/api/listas');
+      cl.innerHTML = ls.length ? '' : '<p class="meta">Ninguna todavía. Guárdala desde la tarjeta de una lista revisada.</p>';
+      for (const l of ls) {
+        const f = document.createElement('div'); f.className = 'aud-fila-gestion';
+        const txt = document.createElement('span'); txt.textContent = `${l.nombre} · ${l.requisitos} requisitos${l.fuente ? ` · de «${l.fuente}»` : ''} · validada ${String(l.validada_en).slice(0, 10)}`; f.appendChild(txt);
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'descartar'; b.textContent = 'Archivar';
+        b.addEventListener('click', async () => {
+          if (b.dataset.paso !== '1') { b.dataset.paso = '1'; b.textContent = 'Confirmar'; return; }
+          b.disabled = true;
+          try { await api(`/api/listas/${l.id}/archivar`, { method: 'POST' }); pintarGestionExpedientes(); } catch (e) { b.disabled = false; aviso(e.message, true); }
+        });
+        f.appendChild(b);
+        cl.appendChild(f);
+      }
+    } catch (e) { cc.textContent = e.message; }
+  }
+
   async function pintarPendientesAjustes() {
+    pintarGestionExpedientes();
     const cont = $('#aud-pendientes');
     cont.innerHTML = '';
     try {

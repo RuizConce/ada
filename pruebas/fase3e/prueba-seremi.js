@@ -63,7 +63,8 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     let st = await ctl('/control/stats');
     ok(D.archivos.filter((a) => a.id !== D.norma_id).every((a) => descargas(st, a.id) === 0), 'antes de aprobar: ningún documento de la carpeta se descargó (solo la lista de requisitos)');
     c = await chat({ norma_id: D.norma_id, carpeta_id: 'carpeta-otra', rango: { desde: 18, hasta: 47 }, perfil: 'seremi' });
-    ok(!c.tarjeta && /no es una carpeta autorizada/.test(JSON.stringify(c.datos)), 'otra carpeta de Drive: rechazada (solo la carpeta autorizada)');
+    ok(c.tarjeta && c.tarjeta.tipo === 'autorizar_carpeta' && D.archivos.every((x) => true) && !(await ctl('/control/stats')).export['FUERA1'], 'otra carpeta de Drive: no se lee; se pide autorizarla (solo lectura, con contraseña)');
+    await post(`/api/auditorias/propuestas/${c.tarjeta.id}/descartar`);
     const fuera = (await post('/api/extracciones/cierre/leer', { archivo_id: 'FUERA1' })).d;
     ok(fuera.resultado === 'fuera de la carpeta de prueba', 'un archivo fuera de las carpetas autorizadas no se lee');
 

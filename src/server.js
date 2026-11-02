@@ -390,6 +390,12 @@ for (const accion of ['aprobar', 'pausar', 'reanudar', 'cancelar', 'reintentar']
   app.post(`/api/trabajos/:id/${accion}`, auth, soloAdmin, envolver((req) => Trabajos[accion](req.params.id)));
 }
 app.post('/api/trabajos/:id/aprobar-paso', auth, soloAdmin, envolver((req) => Trabajos.aprobarPaso(req.params.id, { lista: (req.body || {}).lista })));
+app.post('/api/auditorias/propuestas/:id/autorizar-carpeta', auth, soloAdmin, envolver((req) => Auditoria.autorizarCarpeta(req.params.id, req.body || {}, { ua: String(req.get('user-agent') || '').slice(0, 300) })));
+app.post('/api/auditorias/propuestas/:id/guardar-lista', auth, soloAdmin, envolver((req) => Auditoria.guardarLista(req.params.id, req.body || {}, { ua: String(req.get('user-agent') || '').slice(0, 300) })));
+app.get('/api/listas', auth, soloAdmin, envolver(() => Auditoria.listas()));
+app.post('/api/listas/:id/archivar', auth, soloAdmin, envolver((req) => Auditoria.archivarLista(req.params.id)));
+app.get('/api/carpetas-autorizadas', auth, soloAdmin, envolver(() => Auditoria.carpetas()));
+app.post('/api/carpetas-autorizadas/:id/revocar', auth, soloAdmin, envolver((req) => Auditoria.revocarCarpeta(req.params.id)));
 app.post('/api/auditorias/propuestas/:id/buscar-en-norma', auth, soloAdmin, envolver((req) => Auditoria.buscarEnNorma(req.params.id, (req.body || {}).frase)));
 app.post('/api/auditorias/propuestas/:id/rehacer-lista', auth, soloAdmin, envolver((req) => Auditoria.rehacerLista(req.params.id)));
 app.post('/api/auditorias/:id/borrar-extracciones', auth, soloAdmin, envolver((req) => Auditoria.borrarExtracciones(req.params.id)));
@@ -524,6 +530,7 @@ app.get('/api/estado', auth, async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 initDb()
+  .then(() => require('./drive').recargarCarpetas())
   .then(() => {
     const servidor = app.listen(PORT, () => console.log(`ADA escuchando en :${PORT} (TZ ${process.env.TZ})`));
     Lab.conectarOido(servidor); // oído en tiempo real del laboratorio (WebSocket)

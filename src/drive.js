@@ -230,7 +230,18 @@ const metadatos = (id) => gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?field
 // Ambas incluyen sus subcarpetas. Todo lo demás de Drive sigue bloqueado en el servidor (antes de descargar).
 const listaIds = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
 const carpetasEscritura = () => listaIds(process.env.ADA_DRIVE_CARPETA_PRUEBA);
-const carpetasLectura = () => [...new Set([...carpetasEscritura(), ...listaIds(process.env.ADA_DRIVE_CARPETAS_LECTURA)])];
+// Carpetas autorizadas desde ADA (tabla carpetas_autorizadas): se suman a las de las variables, siempre SOLO LECTURA.
+let carpetasBD = [];
+async function recargarCarpetas() {
+  try {
+    const { qPrincipal } = require('./db');
+    carpetasBD = (await qPrincipal("SELECT id FROM carpetas_autorizadas WHERE estado = 'activa'")).map((f) => f.id);
+  } catch (_) { /* sin tabla todavía: solo las variables */ }
+  return carpetasBD;
+}
+const carpetasLectura = () => [...new Set([...carpetasEscritura(), ...listaIds(process.env.ADA_DRIVE_CARPETAS_LECTURA), ...carpetasBD])];
+// ¿La carpeta (o una carpeta que la contiene) está autorizada?
+const carpetaAutorizada = async (id) => carpetasLectura().includes(id) || dentroDe({ parents: [id] }, carpetasLectura());
 const padresDe = new Map(); // carpeta → { padres, hasta }
 async function padresDeCarpeta(id) {
   const c = padresDe.get(id);
@@ -259,6 +270,8 @@ async function dentroDe(meta, raices) {
 }
 const autorizadoLectura = (meta) => dentroDe(meta, carpetasLectura());
 const autorizadoEscritura = (meta) => dentroDe(meta, carpetasEscritura());
+// Aislamiento por expediente: dentro de ESA carpeta (y sus subcarpetas), y que la carpeta siga autorizada.
+const autorizadoEn = (raiz) => async (meta) => (await carpetaAutorizada(raiz)) && dentroDe(meta, [raiz]);
 
 const DRIVE_EXTRACCION = { metadatos, extraer: extraerContenido, leible: (m) => LEIBLE(m.mimeType || ''), autorizado: autorizadoLectura };
 
@@ -310,18 +323,29 @@ async function obtenerParaTrabajo(archivoId, ctx) {
   if (!SIMULADO && !carpetasLectura().length) {
     throw Object.assign(new Error('Los encargos todavía no pueden leer documentos reales: solo Drive simulado o la carpeta de prueba aprobada.'), { status: 409, config: true });
   }
+  // Una auditoría de expediente solo lee archivos de SU carpeta (ctx.carpeta), aunque haya otras autorizadas.
+  const permitido = ctx.carpeta ? autorizadoEn(ctx.carpeta) : autorizadoLectura;
+  const { carpeta, ...resto } = ctx;
+  // Aislamiento ANTES de la capa de extracciones: un archivo de otra carpeta se rechaza sin tocar lo guardado de él.
+  if (ctx.carpeta) {
+    const meta = await metadatos(archivoId);
+    if (meta.mimeType === 'application/vnd.google-apps.shortcut') throw Object.assign(new Error('Es un acceso directo: ADA no sigue accesos directos (podrían apuntar fuera de la carpeta del expediente).'), { status: 403, bloqueado: true });
+    if (!(await permitido(meta))) throw Object.assign(new Error('El archivo no pertenece a la carpeta de este expediente (o la carpeta ya no está autorizada).'), { status: 403, bloqueado: true });
+  }
   return Extracciones.obtener(archivoId, {
     metadatos: async (id) => {
       const meta = await metadatos(id);
-      if (!SIMULADO && !(await autorizadoLectura(meta))) {
+      if (meta.mimeType === 'application/vnd.google-apps.shortcut') throw Object.assign(new Error('Es un acceso directo: ADA no sigue accesos directos (podrían apuntar fuera de la carpeta).'), { status: 403, bloqueado: true });
+      if (ctx.carpeta && !(await permitido(meta))) throw Object.assign(new Error('El archivo no pertenece a la carpeta de este expediente.'), { status: 403, bloqueado: true });
+      if (!SIMULADO && !(await permitido(meta))) {
         throw Object.assign(new Error('Los encargos todavía no pueden leer documentos reales: solo Drive simulado o la carpeta de prueba aprobada.'), { status: 409, config: true });
       }
       return meta;
     },
     extraer: extraerContenido,
     leible: (m) => LEIBLE(m.mimeType || ''),
-    autorizado: autorizadoLectura,
-  }, { ...ctx, origen: 'trabajo' });
+    autorizado: permitido,
+  }, { ...resto, origen: 'trabajo' });
 }
 
 async function extraerParaTrabajo(archivoId, ctx) {
@@ -621,7 +645,7 @@ H.registrar([
 
 // Inventario de una carpeta autorizada (Fase 3e a escala): todos los archivos, incluidas subcarpetas, con
 // paginación. Solo metadatos: no descarga ni abre nada.
-async function inventarioCarpeta(carpetaId, { maxArchivos = 400 } = {}) {
+async function inventarioCarpeta(carpetaId, { maxArchivos = 1000 } = {}) {
   const raiz = await metadatos(carpetaId);
   if (raiz.mimeType !== 'application/vnd.google-apps.folder') throw Object.assign(new Error('No es una carpeta'), { status: 400 });
   if (Extracciones.modo() === 'prueba' && !(await autorizadoLectura({ parents: [carpetaId] }))) {
@@ -639,7 +663,8 @@ async function inventarioCarpeta(carpetaId, { maxArchivos = 400 } = {}) {
       for (const f of r.files || []) {
         if (f.mimeType === 'application/vnd.google-apps.folder') { carpetas.push({ id: f.id, nombre: f.name, ruta: c.ruta }); pendientes.push({ id: f.id, ruta: `${c.ruta}${f.name}/` }); continue; }
         archivos.push({ ...f, ruta: c.ruta });
-        if (archivos.length > maxArchivos) throw Object.assign(new Error(`La carpeta tiene más de ${maxArchivos} archivos`), { status: 400 });
+        // Accesos directos: se listan (para que no se omitan en silencio) pero nunca se siguen.
+        if (archivos.length > maxArchivos) throw Object.assign(new Error(`La carpeta tiene más de ${maxArchivos} archivos (incluidas subcarpetas). No omití ninguno: no la inventarié. Divídela en subcarpetas más pequeñas y autoriza cada una.`), { status: 400 });
       }
       token = r.nextPageToken;
     } while (token);
@@ -667,4 +692,4 @@ async function copiasTemporalesVivas() {
   return (r.files || []).map((f) => ({ id_termina_en: f.id.slice(-6), nombre: f.name, creado: f.createdTime }));
 }
 
-module.exports = { autorizadoLectura, autorizadoEscritura, carpetasLectura, inventarioCarpeta, LEIBLE, claveVersionDe: (m) => Extracciones.claveVersion(m), conectado, lecturaVerificacion, copiasTemporalesVivas, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };
+module.exports = { recargarCarpetas, carpetaAutorizada, autorizadoEn, autorizadoLectura, autorizadoEscritura, carpetasLectura, inventarioCarpeta, LEIBLE, claveVersionDe: (m) => Extracciones.claveVersion(m), conectado, lecturaVerificacion, copiasTemporalesVivas, subirComoGoogle, protegerEscritura, FUERA_DE_PRUEBA, buscar, leer, extraerParaTrabajo, textoParaTrabajo, reintentarTemporales, metadatos, DRIVE_EXTRACCION };

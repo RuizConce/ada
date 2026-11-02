@@ -605,3 +605,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-buscar { margin: 6px 0; font-size: 13px; }
 .aud-buscar textarea { width: 100%; box-sizing: border-box; margin: 6px 0; }
 .aud-buscar-res p { margin: 3px 0; overflow-wrap: anywhere; }
+
+.aud-expediente p { margin: 2px 0; overflow-wrap: anywhere; }
+.aud-exp-nombre { font-weight: 600; }
+.aud-guardar { margin: 6px 0; font-size: 13px; }
+.aud-guardar button { margin-top: 6px; }
+.tarjeta-carpeta input[type=text], .tarjeta-carpeta input[type=password], .tarjeta-carpeta select { width: 100%; box-sizing: border-box; }
+.aud-gestion { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.aud-fila-gestion { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; }
+.aud-fila-gestion span { overflow-wrap: anywhere; flex: 1; }
