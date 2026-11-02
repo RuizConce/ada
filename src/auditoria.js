@@ -1237,7 +1237,7 @@ Object.assign(EJECUTORES, {
     const copias = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado);
     const ver = previos.find((x) => x.clave === 'verificar_copias' && x.resultado).resultado;
     const aud = await Trabajos.ver(o.auditoria_trabajo, { conResultado: true });
-    const filas = aud.resultado.matriz.filas;
+    const filas = filasConPlan(aud.resultado.matriz.filas, o);
     const ExcelJS = require('exceljs');
     const libro = new ExcelJS.Workbook();
     const hoja = libro.addWorksheet('Requisitos');
@@ -1256,6 +1256,13 @@ Object.assign(EJECUTORES, {
     hc.columns = [{ header: 'Copia', width: 44 }, { header: 'Requisito', width: 10 }, { header: 'Tipo', width: 22 }, { header: 'Original', width: 40 }, { header: 'Enlace', width: 45 }, { header: 'Estado', width: 30 }];
     hc.getRow(1).font = { bold: true };
     for (const c of copias) hc.addRow([c.copia_nombre || c.nombre_copia, c.requisito, c.clase === 'acredita' ? 'acredita' : 'PENDIENTE de completar', c.archivo, c.url || '', c.estado_copia === 'ok' ? (c.reutilizada ? 'copiada (ya existía)' : 'copiada') : `no copiada: ${c.motivo}`]);
+    if ((o.descartadas || []).length) {
+      const hd = libro.addWorksheet('Asociaciones descartadas');
+      hd.columns = [{ header: 'Requisito', width: 10 }, { header: 'Archivo', width: 40 }, { header: 'Por qué no se copió', width: 70 }, { header: 'Cita de la auditoría', width: 60 }];
+      hd.getRow(1).font = { bold: true };
+      for (const d of o.descartadas) hd.addRow([d.requisito, d.archivo, d.motivo, d.cita || '']);
+      hd.eachRow((row) => { row.alignment = { wrapText: true, vertical: 'top' }; });
+    }
     const hr = libro.addWorksheet('Resumen');
     hr.columns = [{ width: 34 }, { width: 70 }];
     for (const [k, v] of [['Expediente', o.expediente], ['Carpeta de resultados', `${res.nombre} — ${res.url}`], ['Carpeta de origen (solo lectura)', `${o.carpeta_docs.nombre} (id ${o.carpeta_docs.id})`],
@@ -1283,7 +1290,7 @@ Object.assign(EJECUTORES, {
     const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
     const copias = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado).filter((c) => c.estado_copia === 'ok');
     const ver = previos.find((x) => x.clave === 'verificar_copias' && x.resultado).resultado;
-    const filas = (await Trabajos.ver(o.auditoria_trabajo, { conResultado: true })).resultado.matriz.filas;
+    const filas = filasConPlan((await Trabajos.ver(o.auditoria_trabajo, { conResultado: true })).resultado.matriz.filas, o);
     const de = (k) => filas.filter((f) => f.presentacion === k);
     const l = [];
     l.push(`Expediente: ${una(o.expediente)} · Carpeta de resultados: «${una(res.nombre)}».`);
@@ -2336,47 +2343,198 @@ async function revocarCarpeta(id) {
 // ======================= Organizar expediente: plan de copias → copias → Excel y Word en la carpeta de resultados =======================
 const pad2 = (id) => { const m = String(id).match(/^(\d+)(.*)$/); return m ? `${m[1].padStart(2, '0')}${m[2]}` : String(id); };
 const limpiarNombre = (n) => String(n || 'documento').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').slice(0, 150);
-// Una copia por (requisito, archivo) SOLO si ese archivo tiene evidencia verificada a favor del requisito. LISTO y NO
-// APLICA → «05_Nombre»; PARCIAL o REQUIERE REVISIÓN → «05_PENDIENTE_Nombre». Sin evidencia → no se copia.
-function planDeCopias(filas, inventario) {
+// ---- Control de pertinencia (cualquier expediente) ----
+// Una evidencia «verificada» solo prueba que la cita está en el archivo, no que hable de ESTE requisito (caso real: un
+// documento de gas citado para «certificado de número municipal»). Antes de proponer una copia se exige que la cita o el
+// nombre del archivo compartan términos ESPECÍFICOS del requisito (no genéricos como «certificado», «documento» o
+// palabras que aparecen en casi toda la lista), y que el archivo no esté numerado para OTRO requisito.
+// Términos con contenido, incluidas palabras cortas pero decisivas («gas», «SII», «luz»), que raices() descarta.
+const STOP3 = new Set('del los las con por que una uno sus les mas son hay sin ser fue muy sea tal dos tres cual este esta ese esa sus nos ante bajo tras cada otro otra'.split(' '));
+const terminos = (t) => {
+  const siglas = (String(t || '').match(/\b[A-ZÁÉÍÓÚÑ]{2,5}\d?\b/g) || []).map((x) => norm(x));
+  return new Set(norm(t).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !STOP.has(w) && !STOP3.has(w)).map((w) => w.slice(0, 6)).concat(siglas));
+};
+const sinNumero = (n) => String(n || '').replace(/\.[A-Za-z0-9]{2,5}$/, '');
+const numeroDeArchivo = (nombre) => { const m = sinNumero(nombre).match(/^\s*0*(\d{1,3})(?=[\s_.\-)]|[A-Za-z]{2})/); return m ? m[1] : null; };
+const raicesArchivo = (nombre) => terminos(String(nombre || '').replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/[_.-]+/g, ' ').replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, '$1 $2').replace(/([A-Za-zÁÉÍÓÚÑáéíóúñ])(\d)/g, '$1 $2').replace(/(\d)([A-Za-zÁÉÍÓÚÑáéíóúñ])/g, '$1 $2'));
+const PERT_GENERICAS = new Set(['certif', 'docume', 'copia', 'declar', 'formul', 'solici', 'presen', 'adjunt', 'subir', 'requis', 'legibl', 'comple', 'corres', 'firmad', 'firma', 'vigent', 'origin', 'archiv', 'antece', 'acredi', 'respal', 'aplica', 'debe', 'contar', 'nombre', 'fecha']);
+function genericasDeFilas(filas, extra = '') {
+  const frec = {};
+  for (const f of filas) for (const x of terminos(f.texto_requisito)) frec[x] = (frec[x] || 0) + 1;
+  const g = new Set(Object.keys(frec).filter((x) => filas.length >= 6 && frec[x] >= Math.max(3, Math.ceil(filas.length * 0.3))));
+  for (const x of terminos(extra)) g.add(x); // el nombre del expediente («Botiquín Andaluz») no distingue requisitos
+  return g;
+}
+function terminosRequisito(f, genericas) {
+  return [...terminos(f.texto_requisito)].filter((x) => !GENERICAS.has(x) && !genericas.has(x) && !PERT_GENERICAS.has(x));
+}
+function pertinencia(f, e, nombre, genericas, idsLista) {
+  const rq = terminosRequisito(f, genericas);
+  const tc = terminos(e.cita || ''); const enCita = rq.filter((x) => tc.has(x));
+  const rn = raicesArchivo(nombre);
+  const enNombre = rq.filter((x) => rn.has(x));
+  const num = numeroDeArchivo(nombre);
+  const suNumero = num != null && Number(num) === Number(String(f.requisito).match(/^\d+/) ? String(f.requisito).match(/^\d+/)[0] : NaN);
+  const otroNumero = num != null && !suNumero && idsLista.has(String(Number(num)));
+  if (otroNumero && !enNombre.length) return { nivel: 'descartado', motivo: `el archivo está numerado para el requisito ${Number(num)} y su nombre no se relaciona con este` };
+  if (!enCita.length && !enNombre.length && !suNumero) return { nivel: 'descartado', motivo: `ni la cita ni el nombre del archivo mencionan lo específico del requisito (${rq.slice(0, 4).join(', ') || 'sin términos específicos'})` };
+  // Nombre (o número) del archivo relacionado con el requisito + cita verificada de ese archivo → respalda el requisito.
+  if (enNombre.length || suNumero) return { nivel: 'principal', terminos: enCita.length ? enCita : enNombre, donde: enCita.length ? 'la cita' : 'el nombre del archivo' };
+  return { nivel: 'apoyo', terminos: enCita, donde: 'la cita', motivo: 'la cita menciona el requisito, pero el nombre del archivo no se relaciona con él' };
+}
+const esNoAplica = (t) => /no\s*aplica|n\/a/i.test(String(t || ''));
+
+// Plan de copias: una copia por (requisito, archivo) SOLO si la evidencia es verificada Y pertinente. LISTO → «05_Nombre»;
+// PARCIAL o REQUIERE REVISIÓN → «05_PENDIENTE_Nombre». NO ENCONTRADO → nunca se copia. NO APLICA → solo el documento que
+// respalda que no aplica, si es pertinente. Lo dudoso (apoyo, archivos relacionados no leídos o sin cita) va DESMARCADO
+// y explicado; lo descartado se muestra con su motivo. `requisitos` trae el estado declarado en la lista (referencia).
+function planDeCopias(filas, inventario, { requisitos = [], expediente = '', lectura = {} } = {}) {
   const inv = new Map((inventario || []).map((a) => [a.id, a]));
-  const plan = []; const sinCopia = []; const usados = new Set();
+  const declarado = new Map(requisitos.map((r) => [String(r.id), r.estado_declarado || '']));
+  const genericas = genericasDeFilas(filas, expediente);
+  const idsLista = new Set(filas.map((f) => String(Number(String(f.requisito).match(/^\d+/) || NaN))));
+  const plan = []; const sinCopia = []; const descartadas = []; const sinEvidencia = []; const ajustes = {}; const usados = new Set();
+  const usadoComoEvidencia = new Set(filas.flatMap((f) => (f.evidencias || []).filter((e) => e.verificada && e.aporta !== 'en_contra').map((e) => e.archivo_id)));
+  const nombreCopia = (f, original, pendiente) => {
+    const n = (String(f.requisito).match(/^\d+/) || [])[0];
+    const sinPrefijo = n != null && numeroDeArchivo(original) === String(Number(n)) ? String(original).replace(/^\s*0*\d{1,3}[\s_.\-)]*/, '') || original : original; // «04_CONTRATOS…» → «04_PENDIENTE_CONTRATOS…»
+    let nombre = `${pad2(f.requisito)}_${pendiente ? 'PENDIENTE_' : ''}${limpiarNombre(sinPrefijo)}`;
+    const base = nombre; let k = 2;
+    while (usados.has(nombre.toLowerCase())) { const m = base.match(/^(.*?)(\.[^.]+)?$/); nombre = `${m[1]}_${k}${m[2] || ''}`; k += 1; }
+    usados.add(nombre.toLowerCase()); return nombre;
+  };
   for (const f of filas) {
+    const decl = declarado.get(String(f.requisito)) || '';
+    const estado = f.clasificacion || f.estado;
     const aFavor = (f.evidencias || []).filter((e) => e.verificada && e.aporta !== 'en_contra' && e.archivo_id);
     const porArchivo = [...new Map(aFavor.map((e) => [e.archivo_id, e])).values()];
-    if (!porArchivo.length) { sinCopia.push({ requisito: f.requisito, texto: f.texto_requisito, estado: f.clasificacion || f.estado, accion: f.accion || f.justificacion || '' }); continue; }
-    const acredita = f.presentacion === 'listo' || f.presentacion === 'no_aplica';
-    for (const e of porArchivo) {
-      const a = inv.get(e.archivo_id) || {};
-      const original = e.archivo || a.nombre || e.archivo_id;
-      let nombre = `${pad2(f.requisito)}_${acredita ? '' : 'PENDIENTE_'}${limpiarNombre(original)}`;
-      const base = nombre; let k = 2;
-      while (usados.has(nombre.toLowerCase())) { const m = base.match(/^(.*?)(\.[^.]+)?$/); nombre = `${m[1]}_${k}${m[2] || ''}`; k += 1; }
-      usados.add(nombre.toLowerCase());
-      plan.push({ clave: `${f.requisito}:${e.archivo_id}`, requisito: f.requisito, estado: f.clasificacion || f.estado, clase: acredita ? 'acredita' : 'pendiente', archivo_id: e.archivo_id, archivo: original,
-        nombre_copia: nombre, cita: String(e.cita || '').slice(0, 300), ubicacion: e.ubicacion || '', sensible: !!(a.incluido_por_decision || esSensible(original)), falta: acredita ? '' : (f.accion || '') });
+    const evaluadas = porArchivo.map((e) => { const a = inv.get(e.archivo_id) || {}; const original = e.archivo || a.nombre || e.archivo_id; return { e, a, original, p: pertinencia(f, e, original, genericas, idsLista) }; });
+    for (const x of evaluadas.filter((y) => y.p.nivel === 'descartado')) descartadas.push({ requisito: f.requisito, archivo: x.original, estado, motivo: x.p.motivo, cita: String(x.e.cita || '').slice(0, 200) });
+    let validas = evaluadas.filter((y) => y.p.nivel !== 'descartado');
+    // Declarado «No aplica» en la lista y la auditoría no lo confirmó ni encontró nada que lo contradiga: se informa como
+    // «no aplica según la lista, por confirmar», sin pedir documentos ni declaraciones que nadie exige.
+    if (esNoAplica(decl) && f.presentacion === 'no_encontrado' && !validas.some((y) => y.p.nivel === 'principal')) {
+      ajustes[f.requisito] = { estado: 'NO APLICA (según la lista) — por confirmar', nota: `La lista de requisitos lo declara «No aplica» y la auditoría clasificó «${estado}» sin un antecedente pertinente que lo contradiga. Confirma que no aplica; no se exige un documento adicional salvo que la autoridad lo pida.` };
+      for (const y of validas) descartadas.push({ requisito: f.requisito, archivo: y.original, estado, motivo: 'requisito declarado «No aplica»: el documento no lo contradice de forma concreta', cita: String(y.e.cita || '').slice(0, 200) });
+      sinCopia.push({ requisito: f.requisito, texto: f.texto_requisito, estado: ajustes[f.requisito].estado, accion: ajustes[f.requisito].nota });
+      continue;
     }
+    if (f.presentacion === 'no_encontrado') {
+      for (const y of validas) descartadas.push({ requisito: f.requisito, archivo: y.original, estado, motivo: 'el requisito quedó NO ENCONTRADO: la cita no lo acredita, así que el archivo no se copia', cita: String(y.e.cita || '').slice(0, 200) });
+      validas = [];
+    }
+    if (f.presentacion === 'no_aplica') {
+      for (const y of validas.filter((z) => z.p.nivel !== 'principal')) descartadas.push({ requisito: f.requisito, archivo: y.original, estado, motivo: 'NO APLICA: solo se copia un documento que respalde concretamente que no aplica', cita: String(y.e.cita || '').slice(0, 200) });
+      validas = validas.filter((z) => z.p.nivel === 'principal');
+    }
+    if (esNoAplica(decl) && !['no_aplica', 'no_encontrado'].includes(f.presentacion)) ajustes[f.requisito] = { solo_nota: true, nota: `La lista lo declara «No aplica»; la auditoría lo dejó en «${estado}». Verifica cuál corresponde antes de presentar.` };
+    const acredita = f.presentacion === 'listo' || f.presentacion === 'no_aplica';
+    const hayPrincipal = validas.some((y) => y.p.nivel === 'principal');
+    for (const y of validas) {
+      // Un documento de «apoyo» va desmarcado si ya hay uno principal; si es el único, va marcado pero como PENDIENTE.
+      const opcional = y.p.nivel === 'apoyo' && hayPrincipal;
+      const pendiente = !acredita || y.p.nivel === 'apoyo';
+      plan.push({ clave: `${f.requisito}:${y.e.archivo_id}`, requisito: f.requisito, estado, clase: pendiente ? 'pendiente' : 'acredita', archivo_id: y.e.archivo_id, archivo: y.original,
+        nombre_copia: nombreCopia(f, y.original, pendiente), cita: String(y.e.cita || '').slice(0, 300), ubicacion: y.e.ubicacion || '', sensible: !!(y.a.incluido_por_decision || esSensible(y.original)),
+        pertinencia: y.p.nivel, ...(opcional ? { opcional: true } : {}),
+        acredita: `${y.p.nivel === 'principal' ? 'Respalda el requisito' : 'Apoyo'}: ${y.p.donde || 'la cita'} menciona ${(y.p.terminos || []).slice(0, 3).join(', ') || 'el requisito'}.${y.p.motivo ? ` Ojo: ${y.p.motivo}.` : ''}`,
+        falta: acredita && y.p.nivel === 'principal' ? '' : (f.accion || (y.p.nivel === 'apoyo' ? 'Comprobar que este archivo realmente acredita el requisito.' : '')) });
+    }
+    // Archivos del inventario relacionados por su NOMBRE con el requisito que no quedaron en el plan: no leídos (sensibles,
+    // sin texto, planos o escaneos) o leídos sin una cita pertinente. Se muestran DESMARCADOS con lo que hay que comprobar;
+    // nunca se dan por acreditados.
+    if (f.presentacion !== 'no_aplica') {
+      const yaEn = new Set(validas.map((y) => y.e.archivo_id));
+      const rq = terminosRequisito(f, genericas);
+      for (const a of inventario || []) {
+        if (yaEn.has(a.id) || a.estado === 'fuente de requisitos' || a.estado === 'duplicado exacto' || /acceso directo/.test(a.estado || '')) continue;
+        const num = numeroDeArchivo(a.nombre); const rn = raicesArchivo(a.nombre);
+        const porNumero = num != null && Number(num) === Number((String(f.requisito).match(/^\d+/) || [])[0]);
+        const porNombre = rq.filter((x) => rn.has(x));
+        // Relacionado: por su número, o por su nombre si no es ya evidencia de otro requisito (un listado general no se
+        // ofrece para cada requisito que menciona «medicamentos»).
+        if (!porNumero && (!porNombre.length || usadoComoEvidencia.has(a.id))) continue;
+        if (num != null && !porNumero && idsLista.has(String(Number(num))) && porNombre.length < 2) continue; // numerado para otro requisito
+        const leido = lectura[a.id];
+        const noLeido = (/sensible/.test(a.estado || '') && !a.incluido_por_decision) || /no legible/.test(a.estado || '') || (leido && leido !== 'ok');
+        // Leído y sin una cita que acredite el requisito: no se ofrece como copia (el contenido no lo respalda); se informa.
+        if (!noLeido) { sinEvidencia.push({ requisito: f.requisito, archivo: a.nombre, motivo: `relacionado por ${porNumero ? `su número (${num})` : `su nombre (${porNombre.slice(0, 3).join(', ')})`}; ADA lo leyó y no encontró una cita que acredite el requisito` }); continue; }
+        const situacion = /sensible/.test(a.estado || '') && !a.incluido_por_decision ? 'no se leyó: posible dato sensible; requiere tu autorización y revisión'
+          : /no legible/.test(a.estado || '') || (leido && leido !== 'ok') ? 'no se pudo leer su texto (plano, imagen o escaneo): ADA no puede comprobar su contenido'
+            : 'se leyó, pero no tiene una cita que acredite este requisito';
+        plan.push({ clave: `${f.requisito}:${a.id}`, requisito: f.requisito, estado, clase: 'pendiente', archivo_id: a.id, archivo: a.nombre, nombre_copia: nombreCopia(f, a.nombre, true), cita: '', ubicacion: '',
+          sensible: /sensible/.test(a.estado || '') || esSensible(a.nombre), pertinencia: 'relacionado', opcional: true,
+          acredita: `Relacionado por ${porNumero ? `su número (${num})` : `su nombre (${porNombre.slice(0, 3).join(', ')})`}; ${situacion}. Sin conclusión de ADA.`,
+          falta: `Abrir el archivo y comprobar que acredita: ${String(f.texto_requisito || '').replace(/\s+/g, ' ').slice(0, 220)}${f.accion ? ` (${f.accion})` : ''}` });
+      }
+    }
+    if (!plan.some((x) => x.requisito === f.requisito)) sinCopia.push({ requisito: f.requisito, texto: f.texto_requisito, estado, accion: f.accion || f.justificacion || '' });
   }
-  return { plan, sinCopia };
+  return { plan, sinCopia, descartadas, ajustes, sinEvidencia };
+}
+// Entregables del expediente coherentes con el plan revisado: sin las evidencias descartadas por no pertinentes y con
+// los «No aplica» de la lista que la auditoría no contradijo marcados «por confirmar» (no como faltantes).
+function filasConPlan(filas, o) {
+  const desc = new Set((o.descartadas || []).map((d) => `${d.requisito}|${d.archivo}`));
+  return filas.map((f) => {
+    const evidencias = (f.evidencias || []).filter((e) => !desc.has(`${f.requisito}|${e.archivo}`));
+    const aj = (o.ajustes || {})[f.requisito];
+    if (aj && aj.solo_nota) return { ...f, evidencias, justificacion: `${f.justificacion || ''} ${aj.nota}`.trim() };
+    return aj ? { ...f, evidencias, presentacion: 'no_aplica', clasificacion: aj.estado, justificacion: aj.nota, accion: '' } : { ...f, evidencias };
+  });
+}
+// Estado de lectura de cada archivo de la auditoría (ok, sin texto, no legible…), desde los pasos ya guardados.
+async function lecturaDeAuditoria(trabajoId) {
+  const pasos = await qPrincipal("SELECT clave, resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('aud_extraer', 'extraer') AND estado = 'hecho'", [trabajoId]);
+  const out = {};
+  for (const p of pasos) { try { const r = Cifrado.descifrarJSON(p.resultado_cifrado) || {}; out[p.clave.replace(/^extraer:/, '')] = r.estado || 'ok'; } catch (_) {} }
+  return out;
 }
 async function crearPlanCopias(t, objetivo, final) {
   const filas = final && final.matriz ? final.matriz.filas : [];
   if (!filas.length) return;
-  const { plan, sinCopia } = planDeCopias(filas, objetivo.inventario);
+  const expediente = objetivo.expediente || (objetivo.carpeta && objetivo.carpeta.nombre) || 'Expediente';
+  const { plan, sinCopia, descartadas, ajustes, sinEvidencia } = planDeCopias(filas, objetivo.inventario, { requisitos: objetivo.requisitos || [], expediente, lectura: await lecturaDeAuditoria(t.id) });
   // Un solo plan por auditoría (si el trabajo vuelve a terminar tras un reintento, no se duplica la tarjeta).
   const previas = await qPrincipal("SELECT datos_cifrado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]);
   if (previas.some((x) => { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); return d.tipo === 'plan_copias' && d.auditoria_trabajo === t.id; } catch (_) { return false; } })) return;
-  const expediente = objetivo.expediente || (objetivo.carpeta && objetivo.carpeta.nombre) || 'Expediente';
   const datos = { tipo: 'plan_copias', auditoria_trabajo: t.id, expediente, perfil: objetivo.perfil || null, carpeta_docs: objetivo.carpeta,
-    resultados_nombre: (objetivo.organizar && objetivo.organizar.nombre) || `ADA — ${expediente} — Documentos organizados`, plan, sin_copia: sinCopia, requisitos: filas.length };
+    resultados_nombre: (objetivo.organizar && objetivo.organizar.nombre) || `ADA — ${expediente} — Documentos organizados`, plan, sin_copia: sinCopia, descartadas, ajustes, sin_evidencia: sinEvidencia, requisitos: filas.length, version_plan: 2, entregables: await entregablesAuditoria(t.id) };
   const id = crypto.randomUUID();
   await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [id, usuario().id, objetivo.propuesta ? objetivo.propuesta.conversacion_id : null, 'pendiente', Cifrado.cifrarJSON(datos), 'por_mostrar', new Date(), new Date()]);
   await Trabajos.evento(t.id, 'plan_copias', `${plan.length} copias propuestas (propuesta ${id.slice(0, 8)})`, null, 'ada').catch(() => {});
 }
+// Excel e informe de la auditoría: ¿quedaron generados y comprobados? (desde los pasos guardados, sin regenerarlos)
+async function entregablesAuditoria(trabajoId) {
+  const pasos = await qPrincipal("SELECT tipo, estado, resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('aud_excel', 'aud_informe')", [trabajoId]);
+  const de = (tipo) => { const p = pasos.find((x) => x.tipo === tipo); if (!p) return { listo: false, motivo: 'no existe el paso' }; if (p.estado !== 'hecho') return { listo: false, motivo: `paso ${p.estado}` };
+    try { const r = Cifrado.descifrarJSON(p.resultado_cifrado) || {}; return tipo === 'aud_excel' ? { listo: !!r.xlsx_b64, filas: r.filas, evidencias: r.evidencias } : { listo: !!r.docx_b64, comprobado: !!(r.comprobacion && r.comprobacion.completo), parrafos: r.comprobacion && r.comprobacion.parrafos }; } catch (e) { return { listo: false, motivo: 'no se pudo leer el resultado guardado' }; } };
+  return { excel: de('aud_excel'), informe: de('aud_informe') };
+}
+// Regenerar el plan con los resultados YA guardados de la auditoría: sin IA, sin descargas, sin copiar nada.
+async function regenerarPlan(id) {
+  const p = await propuesta(id);
+  if (p.datos.tipo !== 'plan_copias') throw err('Esta tarjeta no es un plan de copias', 409);
+  if (p.estado !== 'pendiente') throw err(`La tarjeta ya está "${p.estado}"`, 409);
+  const tId = p.datos.auditoria_trabajo;
+  const [t] = await qPrincipal('SELECT * FROM trabajos WHERE id = ? AND usuario_id = ?', [tId, usuario().id]);
+  if (!t || t.estado !== 'completado' || !t.resultado_cifrado) throw err('La auditoría de origen no está completa', 409);
+  const final = Cifrado.descifrarJSON(t.resultado_cifrado) || {};
+  const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  if (!final.matriz) throw err('No encuentro los resultados guardados de la auditoría', 409);
+  const r = planDeCopias(final.matriz.filas, objetivo.inventario, { requisitos: objetivo.requisitos || [], expediente: p.datos.expediente, lectura: await lecturaDeAuditoria(tId) });
+  const entregables = await entregablesAuditoria(tId);
+  const datos = { ...p.datos, plan: r.plan, sin_copia: r.sinCopia, descartadas: r.descartadas, ajustes: r.ajustes, sin_evidencia: r.sinEvidencia, version_plan: 2, regenerado_en: new Date().toISOString(), plan_anterior: { copias: p.datos.plan.length }, entregables };
+  const u = await qPrincipal("UPDATE auditoria_propuestas SET datos_cifrado = ?, actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [Cifrado.cifrarJSON(datos), new Date(), id, usuario().id]);
+  if (!u.affectedRows) throw err('La tarjeta cambió mientras la revisaba', 409);
+  await Trabajos.evento(tId, 'plan_regenerado', `plan ${id.slice(0, 8)}: ${p.datos.plan.length} → ${r.plan.length} filas (${r.descartadas.length} asociaciones descartadas por no pertinentes); sin IA ni costo`, 0, `u${usuario().id}`).catch(() => {});
+  return { propuesta: tarjetaPlanCopias(id, datos, 'pendiente'), antes: p.datos.plan.length, ahora: r.plan.length, descartadas: r.descartadas.length, llamadas_ia_nuevas: 0, costo_usd: 0, entregables };
+}
 function tarjetaPlanCopias(id, datos, estado) {
   return { id, estado, tipo: 'plan_copias', expediente: datos.expediente, resultados_nombre: datos.resultados_nombre, auditoria_trabajo: datos.auditoria_trabajo, requisitos: datos.requisitos,
-    plan: datos.plan, sin_copia: datos.sin_copia, copias: datos.plan.length, sensibles: datos.plan.filter((f) => f.sensible).length, trabajo_id: datos.trabajo_id || null };
+    plan: datos.plan, sin_copia: datos.sin_copia, descartadas: datos.descartadas || [], sin_evidencia: datos.sin_evidencia || [], ajustes: datos.ajustes || {}, version_plan: datos.version_plan || 1, entregables: datos.entregables || null, regenerado_en: datos.regenerado_en || null,
+    copias: datos.plan.filter((f) => !f.opcional && !f.sensible).length, sensibles: datos.plan.filter((f) => f.sensible).length, opcionales: datos.plan.filter((f) => f.opcional).length, trabajo_id: datos.trabajo_id || null };
 }
 // Aprobar las copias: contraseña del propietario (autorización de ESCRITURA separada de la de lectura), filas elegidas,
 // y los archivos sensibles solo si se marcan uno a uno. Crea el trabajo de copias; no hay IA ni costo.
@@ -2386,12 +2544,14 @@ async function aprobarCopias(propuestaId, { password, omitir = [], incluir_sensi
   const p = await propuesta(propuestaId);
   if (p.datos.tipo !== 'plan_copias') throw err('Esta tarjeta no es un plan de copias', 409);
   if (p.estado !== 'pendiente') throw err(`La tarjeta ya está "${p.estado}"`, 409);
-  const sel = p.datos.plan.filter((f) => !omitir.includes(f.clave) && (!f.sensible || incluirSensibles.includes(f.clave)));
+  // Sensibles y opcionales (apoyo, relacionados sin cita) solo si se marcan uno a uno; nunca por defecto.
+  const sel = p.datos.plan.filter((f) => !omitir.includes(f.clave) && (!(f.sensible || f.opcional) || incluirSensibles.includes(f.clave)));
   if (!sel.length) throw err('No quedó ninguna copia seleccionada', 400);
   const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobando', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), propuestaId]);
   if (!r.affectedRows) throw err('La tarjeta cambió mientras la aprobabas', 409);
   const objetivo = { modo: 'copias', encargo: propuestaId, expediente: p.datos.expediente, resultados_nombre: p.datos.resultados_nombre, carpeta_docs: p.datos.carpeta_docs, carpeta: p.datos.carpeta_docs,
-    filas: sel, auditoria_trabajo: p.datos.auditoria_trabajo, perfil: p.datos.perfil, propuesta: { id: propuestaId, conversacion_id: p.conversacion_id } };
+    filas: sel, auditoria_trabajo: p.datos.auditoria_trabajo, perfil: p.datos.perfil, propuesta: { id: propuestaId, conversacion_id: p.conversacion_id },
+    ajustes: p.datos.ajustes || {}, descartadas: p.datos.descartadas || [], plan_completo: p.datos.plan.map((f) => ({ requisito: f.requisito, archivo_id: f.archivo_id, archivo: f.archivo, pertinencia: f.pertinencia, acredita: f.acredita })) };
   const pasos = [{ clave: 'carpeta_resultados', tipo: 'org_carpeta', etapa: 'carpeta de resultados', entrada: {} },
     ...sel.map((f) => ({ clave: `copiar:${f.clave}`, tipo: 'org_copiar', etapa: 'copias', entrada: { fila: f } })),
     { clave: 'verificar_copias', tipo: 'org_verificar', etapa: 'comprobación', entrada: {} },
@@ -2755,4 +2915,4 @@ async function textosGuardados(trabajoId, objetivo) {
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { regenerarPlan, _planDeCopias: planDeCopias, _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

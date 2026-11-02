@@ -120,13 +120,24 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     // ---- Aprobación 4: plan de copias (vista previa completa) ----
     const plan = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias');
     const nombres = plan.plan.map((f) => f.nombre_copia);
-    ok(plan && plan.copias === 20 && plan.resultados_nombre === NOMBRE, `plan: ${plan && plan.copias} copias en «${plan && plan.resultados_nombre}»`);
+    if (process.env.VER) console.log(plan.plan.map((f) => `${f.nombre_copia} [${f.pertinencia}${f.opcional ? ' opc' : ''}${f.sensible ? ' sens' : ''}] ${f.acredita}`).join('\n'), '\nDESC', JSON.stringify(plan.descartadas, null, 0), '\nAJ', JSON.stringify(plan.ajustes));
+    ok(plan && plan.plan.length === 21 && plan.copias === 19 && plan.opcionales === 1 && plan.resultados_nombre === NOMBRE, `plan: ${plan && plan.plan.length} filas (${plan && plan.copias} marcadas por defecto, ${plan && plan.opcionales} relacionada sin leer, desmarcada) en «${plan && plan.resultados_nombre}»`);
+    ok(plan.plan.find((f) => f.requisito === '7' && f.opcional && /no se pudo leer/.test(f.acredita)) && (plan.sin_evidencia || []).some((x) => x.requisito === '15' && /no encontró una cita/.test(x.motivo)), 'pertinencia: el plano sin texto del 7 se ofrece desmarcado; el archivo leído sin cita del 15 se informa y no se ofrece');
+    {
+      // «Revisar el plan otra vez (sin costo)»: con los resultados guardados, sin IA, sin descargas y sin escribir en Drive.
+      const stP = await ctl('/control/stats'); const llP = sql('SELECT COUNT(*) FROM llamadas_ia');
+      const rg = await post(`/api/auditorias/propuestas/${plan.id}/regenerar-plan`);
+      const stP2 = await ctl('/control/stats');
+      ok(rg.status === 200 && rg.d.llamadas_ia_nuevas === 0 && sql('SELECT COUNT(*) FROM llamadas_ia') === llP && JSON.stringify(stP.export) === JSON.stringify(stP2.export) && !Object.keys(stP2.escrituras_en || {}).length
+        && rg.d.propuesta.plan.length === plan.plan.length && rg.d.entregables.excel.listo && rg.d.entregables.excel.filas === 22 && rg.d.entregables.informe.listo && rg.d.entregables.informe.comprobado,
+        `regenerar el plan: sin IA, sin descargas ni escrituras; Excel (${rg.d.entregables && rg.d.entregables.excel.filas} filas) e informe comprobados (${rg.status} ${rg.d.error || ''})`);
+    }
     ok(nombres.includes('04_Contrato_QF_y_nombramiento.pdf') && nombres.includes('05_Contrato_QF_y_nombramiento.pdf'), 'un archivo que acredita dos requisitos → una copia identificada para cada uno (04_ y 05_)');
     ok(nombres.includes('10_Registro_temperatura_enero.pdf') && nombres.includes('10_Registro_temperatura_febrero.pdf'), 'un requisito con dos documentos → ambos llevan su número (10_)');
     ok(nombres.includes('09_PENDIENTE_Procedimiento_recepcion.pdf') && nombres.includes('18_PENDIENTE_Declaracion_condiciones_sanitarias.pdf') && nombres.includes('01_PENDIENTE_Solicitud_autorizacion_botiquin.pdf'), 'parciales y por revisar (firma) → prefijo PENDIENTE');
-    ok(nombres.includes('12_NO_APLICA_estupefacientes.pdf') && !plan.plan.some((f) => f.archivo_id === 'D_SENUELO') && plan.sin_copia.map((x) => x.requisito).join() === '7,15,21',
+    ok(nombres.includes('12_NO_APLICA_estupefacientes.pdf') && !plan.plan.some((f) => f.archivo_id === 'D_SENUELO') && plan.sin_copia.map((x) => x.requisito).join() === '15,21',
       'NO APLICA con su declaración; el archivo de nombre engañoso NO se copia; 7, 15 y 21 sin copia, con lo que falta');
-    ok(plan.plan.every((f) => f.cita && f.estado) && plan.sin_copia.find((x) => x.requisito === '21').accion.length > 10, 'cada copia tiene su evidencia citada; cada faltante dice qué conseguir');
+    ok(plan.plan.every((f) => (f.cita || f.pertinencia === 'relacionado') && f.estado) && plan.sin_copia.find((x) => x.requisito === '21').accion.length > 10, 'cada copia tiene su evidencia citada; cada faltante dice qué conseguir');
     const sens = plan.plan.find((f) => f.archivo_id === 'D_RUT');
     ok(sens && sens.sensible && sens.nombre_copia === '02_RUT_empresa.pdf', 'el RUT (sensible) aparece marcado y solo se copia si lo autorizas');
     r = await post(`/api/auditorias/propuestas/${plan.id}/aprobar-copias`, { password: 'equivocada' });

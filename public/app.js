@@ -399,24 +399,54 @@
     for (const f of p.plan) {
       const li = document.createElement('li'); li.className = `aud-plan-fila ${f.clase === 'pendiente' ? 'aud-pendiente' : ''} ${f.sensible ? 'aud-sensible-fila' : ''}`;
       const l = document.createElement('label'); const c = document.createElement('input'); c.type = 'checkbox'; c.value = f.clave;
-      c.checked = f.sensible ? bor.sensibles.includes(f.clave) : !bor.omitir.includes(f.clave);
+      // Sensibles y opcionales (apoyo, relacionados sin cita) vienen DESMARCADOS: solo se copian si los marcas.
+      const exige = f.sensible || f.opcional;
+      c.checked = exige ? bor.sensibles.includes(f.clave) : !bor.omitir.includes(f.clave);
       c.addEventListener('change', () => {
         const b = borradorPlan.get(p.id) || { omitir: [], sensibles: [] };
-        if (f.sensible) b.sensibles = c.checked ? [...new Set([...b.sensibles, f.clave])] : b.sensibles.filter((x) => x !== f.clave);
+        if (exige) b.sensibles = c.checked ? [...new Set([...b.sensibles, f.clave])] : b.sensibles.filter((x) => x !== f.clave);
         else b.omitir = c.checked ? b.omitir.filter((x) => x !== f.clave) : [...new Set([...b.omitir, f.clave])];
         borradorPlan.set(p.id, b); contar();
       });
       const tx = document.createElement('span');
-      tx.textContent = `${f.nombre_copia}  ← «${f.archivo}» · requisito ${f.requisito} · ${f.estado}${f.clase === 'pendiente' ? ' · PENDIENTE de completar' : ''}${f.sensible ? ' · POSIBLE DATO SENSIBLE: márcalo solo si quieres copiarlo' : ''}`;
-      const ev = document.createElement('small'); ev.textContent = `Evidencia: «${f.cita}»${f.ubicacion ? ` (${f.ubicacion})` : ''}${f.falta ? ` · Falta: ${f.falta}` : ''}`;
+      tx.textContent = `${f.nombre_copia}  ← «${f.archivo}» · requisito ${f.requisito} · ${f.estado}${f.clase === 'pendiente' ? ' · PENDIENTE de completar' : ''}${f.pertinencia === 'apoyo' ? ' · DOCUMENTO DE APOYO (desmarcado)' : ''}${f.pertinencia === 'relacionado' ? ' · SIN EVIDENCIA: solo relacionado (desmarcado)' : ''}${f.sensible ? ' · POSIBLE DATO SENSIBLE: márcalo solo si quieres copiarlo' : ''}`;
+      const ev = document.createElement('small'); ev.textContent = `${f.acredita ? `${f.acredita} ` : ''}${f.cita ? `Evidencia: «${f.cita}»${f.ubicacion ? ` (${f.ubicacion})` : ''}` : ''}${f.falta ? ` · Falta: ${f.falta}` : ''}`;
       l.appendChild(c); l.appendChild(tx); li.appendChild(l); li.appendChild(ev); ul.appendChild(li);
     }
     const falta = t.querySelector('.aud-plan-falta');
+    if ((p.descartadas || []).length) {
+      const h = document.createElement('p'); h.className = 'meta'; h.textContent = `No se copian por no ser pertinentes (${p.descartadas.length}):`; falta.appendChild(h);
+      for (const x of p.descartadas) { const e = document.createElement('p'); e.className = 'meta aud-descartada'; e.textContent = `${x.requisito} · «${x.archivo}»: ${x.motivo}.`; falta.appendChild(e); }
+    }
+    if ((p.sin_evidencia || []).length) {
+      const h = document.createElement('p'); h.className = 'meta'; h.textContent = `Revisados sin evidencia (no se copian) (${p.sin_evidencia.length}):`; falta.appendChild(h);
+      for (const x of p.sin_evidencia) { const e = document.createElement('p'); e.className = 'meta aud-descartada'; e.textContent = `${x.requisito} · «${x.archivo}»: ${x.motivo}.`; falta.appendChild(e); }
+    }
     if ((p.sin_copia || []).length) {
       const h = document.createElement('p'); h.className = 'meta'; h.textContent = `Sin documento para copiar (${p.sin_copia.length}):`; falta.appendChild(h);
       for (const x of p.sin_copia) { const e = document.createElement('p'); e.className = 'meta aud-aviso'; e.textContent = `${x.requisito} · ${x.estado}: ${x.accion}`; falta.appendChild(e); }
     }
+    const en = p.entregables;
+    if (en) {
+      const e = document.createElement('p'); e.className = 'meta';
+      const x = en.excel || {}; const i = en.informe || {};
+      e.textContent = `Entregables de la auditoría: Excel ${x.listo ? `generado (${x.filas} requisitos)` : `NO disponible (${x.motivo || '—'})`} · Informe Word ${i.listo ? (i.comprobado ? 'generado y comprobado completo' : 'generado (sin comprobación registrada)') : `NO disponible (${i.motivo || '—'})`}. Se descargan en la tarjeta de la auditoría.`;
+      falta.appendChild(e);
+    }
+    if (p.regenerado_en) { const e = document.createElement('p'); e.className = 'meta'; e.textContent = 'Plan revisado con el control de pertinencia, usando los resultados ya guardados (sin IA ni costo).'; t.querySelector('.aud-plan-destino').after(e); }
     contar();
+    const reg = document.createElement('button'); reg.type = 'button'; reg.textContent = 'Revisar el plan otra vez (sin costo)';
+    reg.addEventListener('click', async () => {
+      reg.disabled = true; reg.textContent = 'Revisando…';
+      try {
+        const r = await api(`/api/auditorias/propuestas/${p.id}/regenerar-plan`, { method: 'POST', body: '{}' });
+        borradorPlan.delete(p.id);
+        propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id).concat([r.propuesta]);
+        aviso(`Plan revisado sin costo: ${r.antes} → ${r.ahora} filas; ${r.descartadas} asociaciones descartadas por no pertinentes. Nada se copió.`);
+        pintarEntregas();
+      } catch (e) { reg.disabled = false; reg.textContent = 'Revisar el plan otra vez (sin costo)'; aviso(e.message, true); }
+    });
+    t.querySelector('.tarjeta-botones').insertBefore(reg, t.querySelector('.tarjeta-botones .descartar'));
     const botones = t.querySelectorAll('.tarjeta-botones button');
     boton.addEventListener('click', async () => {
       botones.forEach((b) => { b.disabled = true; });

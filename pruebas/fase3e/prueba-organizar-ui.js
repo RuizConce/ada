@@ -74,7 +74,12 @@ const PASS = 'clave-org-ui';
       ok(sql(`SELECT estado FROM trabajos WHERE id='${tAud}'`) === 'completado', '3b: tras el reintento la auditoría termina y vuelve el plan de copias');
     }
     t = await p.textContent('.tarjeta-plan');
-    ok(/Se creará la carpeta «ADA — Botiquín Andaluz — Documentos organizados» en la raíz de Mi unidad/.test(t) && /04_Contrato_QF_y_nombramiento\.pdf/.test(t) && /09_PENDIENTE_Procedimiento_recepcion\.pdf/.test(t) && /Sin documento para copiar \(3\)/.test(t), '4: vista previa completa: destino, nombres, PENDIENTE y lo que falta');
+    ok(/Se creará la carpeta «ADA — Botiquín Andaluz — Documentos organizados» en la raíz de Mi unidad/.test(t) && /04_Contrato_QF_y_nombramiento\.pdf/.test(t) && /09_PENDIENTE_Procedimiento_recepcion\.pdf/.test(t) && /Sin documento para copiar \(2\)/.test(t) && /Revisados sin evidencia \(no se copian\) \(1\)/.test(t) && /Excel generado \(22 requisitos\)/.test(t) && /Informe Word generado y comprobado completo/.test(t), '4: vista previa completa: destino, nombres, PENDIENTE, lo que falta, lo revisado sin evidencia y los entregables');
+    ok(!!(await p.$('.tarjeta-plan input[value^="7:"]')) && !(await p.isChecked('.tarjeta-plan input[value^="7:"]')), '4: el archivo relacionado sin leer viene desmarcado');
+    await p.click('.tarjeta-plan >> text=Revisar el plan otra vez (sin costo)');
+    await p.waitForSelector('text=/Plan revisado sin costo/', { timeout: 10000 });
+    ok(/Plan revisado con el control de pertinencia/.test(await p.textContent('.tarjeta-plan')), '4: «Revisar el plan otra vez» lo rehace sin costo y lo indica en la tarjeta');
+    t = await p.textContent('.tarjeta-plan');
     ok(!(await p.isChecked('.tarjeta-plan input[value="2:D_RUT"]')) && /Crear carpeta y copiar \(19\)/.test(t), 'el RUT (sensible) viene desmarcado: 19 copias por defecto');
     await p.check('.tarjeta-plan input[value="2:D_RUT"]');
     await p.uncheck('.tarjeta-plan input[value="10:D_TEMP2"]');

@@ -401,6 +401,7 @@ app.post('/api/listas/:id/archivar', auth, soloAdmin, envolver((req) => Auditori
 app.get('/api/carpetas-autorizadas', auth, soloAdmin, envolver(() => Auditoria.carpetas()));
 app.post('/api/carpetas-autorizadas/:id/revocar', auth, soloAdmin, envolver((req) => Auditoria.revocarCarpeta(req.params.id)));
 app.post('/api/auditorias/propuestas/:id/buscar-en-norma', auth, soloAdmin, envolver((req) => Auditoria.buscarEnNorma(req.params.id, (req.body || {}).frase)));
+app.post('/api/auditorias/propuestas/:id/regenerar-plan', auth, soloAdmin, envolver((req) => Auditoria.regenerarPlan(req.params.id)));
 app.post('/api/auditorias/propuestas/:id/rehacer-lista', auth, soloAdmin, envolver((req) => Auditoria.rehacerLista(req.params.id)));
 app.post('/api/auditorias/:id/borrar-extracciones', auth, soloAdmin, envolver((req) => Auditoria.borrarExtracciones(req.params.id)));
 app.post('/api/trabajos/:id/ampliar', auth, soloAdmin, envolver((req) => Trabajos.ampliar(req.params.id, (req.body || {}).monto)));
