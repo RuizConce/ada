@@ -46,7 +46,8 @@ const PASS = 'clave-org-ui';
     // 3. Lista de 22 + auditoría (incluyo el RUT).
     await p.waitForSelector('text=Revisa los 22 requisitos y aprueba la auditoría', { timeout: 30000 });
     t = await p.textContent('.tarjeta-auditoria[data-propuesta]');
-    ok(/Requisitos 1 al 22: 22 de 22/.test(t) && /Tomados literalmente.*: 16/.test(t), '3: 22 de 22 requisitos (el 16 tomado del PDF)');
+    ok(/Requisitos 1 al 22: 22 de 22/.test(t) && /Tabla detectada/.test(t) && /referencia/i.test(t) && !/12\.345\.678|juan\.perez/.test(t), '3: 22 de 22 requisitos desde la tabla, estado del PDF solo como referencia, sin datos de la página 3');
+    if (process.env.VER) console.log(t.slice(0, 1500));
     await p.check('.tarjeta-auditoria[data-propuesta] .aud-sensible input[value="D_RUT"]');
     await p.click('.tarjeta-auditoria[data-propuesta] >> text=Aprobar y empezar');
     // 4. Plan de copias.
