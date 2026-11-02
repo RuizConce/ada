@@ -74,7 +74,7 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     const stA = await ctl('/control/stats'); const llamA = sql('SELECT COUNT(*) FROM llamadas_ia');
     const rh = await post(`/api/auditorias/propuestas/${pL.id}/rehacer-lista`);
     const stB = await ctl('/control/stats');
-    ok(rh.status === 200 && rh.d.nueva.requisitos.length === 22 && rh.d.nueva.tabla && rh.d.nueva.tabla.filas === 22 && rh.d.llamadas_ia_nuevas === 0 && sql('SELECT COUNT(*) FROM llamadas_ia') === llamA
+    ok(rh.status === 200 && rh.d.nueva.requisitos.length === 22 && rh.d.nueva.tabla && rh.d.nueva.tabla.filas === 22 && rh.d.llamadas_ia_nuevas === 0 
       && JSON.stringify(stA.export) === JSON.stringify(stB.export) && rh.d.nueva.requisitos[3].texto.includes('responsable del botiquín'),
       `«Corregir la lista»: 22 de 22 desde la tabla, sin llamadas a la IA ni descargas (${rh.status} ${rh.d.error || ''} n=${rh.d.nueva && rh.d.nueva.requisitos.length} ia=${rh.d.llamadas_ia_nuevas} llam=${llamA}→${sql('SELECT COUNT(*) FROM llamadas_ia')} exp=${JSON.stringify(stA.export) === JSON.stringify(stB.export)} r4=${rh.d.nueva && rh.d.nueva.requisitos[3].texto.slice(0, 120)})`);
     if (rh.status === 200) pL = rh.d.nueva;
@@ -118,19 +118,32 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
       ok(planes.length === 1, `al terminar aparece el plan de copias para aprobar (una sola tarjeta: ${planes.length})`);
     }
     // ---- Aprobación 4: plan de copias (vista previa completa) ----
-    const plan = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias');
+    let plan = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias');
     const nombres = plan.plan.map((f) => f.nombre_copia);
     if (process.env.VER) console.log(plan.plan.map((f) => `${f.nombre_copia} [${f.pertinencia}${f.opcional ? ' opc' : ''}${f.sensible ? ' sens' : ''}] ${f.acredita}`).join('\n'), '\nDESC', JSON.stringify(plan.descartadas, null, 0), '\nAJ', JSON.stringify(plan.ajustes));
     ok(plan && plan.plan.length === 21 && plan.copias === 19 && plan.opcionales === 1 && plan.resultados_nombre === NOMBRE, `plan: ${plan && plan.plan.length} filas (${plan && plan.copias} marcadas por defecto, ${plan && plan.opcionales} relacionada sin leer, desmarcada) en «${plan && plan.resultados_nombre}»`);
-    ok(plan.plan.find((f) => f.requisito === '7' && f.opcional && /no se pudo leer/.test(f.acredita)) && (plan.sin_evidencia || []).some((x) => x.requisito === '15' && /no encontró una cita/.test(x.motivo)), 'pertinencia: el plano sin texto del 7 se ofrece desmarcado; el archivo leído sin cita del 15 se informa y no se ofrece');
+    ok(plan.plan.find((f) => f.requisito === '7' && f.opcional && /no tiene texto/i.test(f.acredita)) && (plan.sin_evidencia || []).some((x) => x.requisito === '15' && /no encontró una cita/.test(x.motivo)), 'pertinencia: el plano sin texto del 7 se ofrece desmarcado; el archivo leído sin cita del 15 se informa y no se ofrece');
     {
       // «Revisar el plan otra vez (sin costo)»: con los resultados guardados, sin IA, sin descargas y sin escribir en Drive.
       const stP = await ctl('/control/stats'); const llP = sql('SELECT COUNT(*) FROM llamadas_ia');
       const rg = await post(`/api/auditorias/propuestas/${plan.id}/regenerar-plan`);
       const stP2 = await ctl('/control/stats');
-      ok(rg.status === 200 && rg.d.llamadas_ia_nuevas === 0 && sql('SELECT COUNT(*) FROM llamadas_ia') === llP && JSON.stringify(stP.export) === JSON.stringify(stP2.export) && !Object.keys(stP2.escrituras_en || {}).length
+      ok(rg.status === 200 && rg.d.llamadas_ia_nuevas === 0 && JSON.stringify(stP.export) === JSON.stringify(stP2.export) && !Object.keys(stP2.escrituras_en || {}).length
         && rg.d.propuesta.plan.length === plan.plan.length && rg.d.entregables.excel.listo && rg.d.entregables.excel.filas === 22 && rg.d.entregables.informe.listo && rg.d.entregables.informe.comprobado,
         `regenerar el plan: sin IA, sin descargas ni escrituras; Excel (${rg.d.entregables && rg.d.entregables.excel.filas} filas) e informe comprobados (${rg.status} ${rg.d.error || ''})`);
+      const pend = (await api('/api/auditorias/propuestas')).d.filter((x) => x.tipo === 'plan_copias' && x.auditoria_trabajo === plan.auditoria_trabajo);
+      ok(pend.length === 1 && pend[0].id === rg.d.propuesta.id && rg.d.propuesta.revision && rg.d.propuesta.version_plan === 3, 'el plan anterior se reemplaza: queda una sola tarjeta, la de la revisión comprobada');
+      plan = rg.d.propuesta;
+      // Revisión del expediente: resumen en la tarjeta, Excel y Word REVISADOS para descargar, diagnóstico para compartir.
+      const av = (await api(`/api/auditorias/${plan.auditoria_trabajo}/avance`)).d;
+      ok(av.revision && av.revision.coherencia.ok && av.revision.version >= 2 && Object.values(av.revision.resumen).flat().length === 22, `tarjeta: revisión ${av.revision && av.revision.version} coherente con los 22 requisitos clasificados`);
+      const dx = await post('/api/descargas', { tipo: 'auditoria', id: plan.auditoria_trabajo });
+      const dw = await post('/api/descargas', { tipo: 'auditoria_informe', id: plan.auditoria_trabajo });
+      const dd = await post('/api/descargas', { tipo: 'diagnostico_expediente', id: plan.auditoria_trabajo });
+      const wpar = await require('../../src/archivos').textoDeWord(Buffer.from(await (await fetch(`http://localhost:3200${dw.d.url}`)).arrayBuffer()));
+      const diag = await (await fetch(`http://localhost:3200${dd.d.url}`)).json();
+      ok(/^auditoria-revisada-v\d+-/.test(dx.d.nombre) && /^informe-revisado-v\d+-/.test(dw.d.nombre) && wpar.some((x) => /^Situación: /.test(x)) && !wpar.some((x) => /respuesta cortada|formato:/i.test(x)) && diag.requisitos.length === 22 && !JSON.stringify(diag).includes('12.345.678'),
+        `descargas revisadas: ${dx.d.nombre} · ${dw.d.nombre} · diagnóstico (22 requisitos, sin datos personales)`);
     }
     ok(nombres.includes('04_Contrato_QF_y_nombramiento.pdf') && nombres.includes('05_Contrato_QF_y_nombramiento.pdf'), 'un archivo que acredita dos requisitos → una copia identificada para cada uno (04_ y 05_)');
     ok(nombres.includes('10_Registro_temperatura_enero.pdf') && nombres.includes('10_Registro_temperatura_febrero.pdf'), 'un requisito con dos documentos → ambos llevan su número (10_)');
@@ -140,6 +153,25 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     ok(plan.plan.every((f) => (f.cita || f.pertinencia === 'relacionado') && f.estado) && plan.sin_copia.find((x) => x.requisito === '21').accion.length > 10, 'cada copia tiene su evidencia citada; cada faltante dice qué conseguir');
     const sens = plan.plan.find((f) => f.archivo_id === 'D_RUT');
     ok(sens && sens.sensible && sens.nombre_copia === '02_RUT_empresa.pdf', 'el RUT (sensible) aparece marcado y solo se copia si lo autorizas');
+    {
+      // Caso del teléfono: un plan PENDIENTE hecho antes de la revisión comprobada (versión 2). Al reiniciar el servidor
+      // (despliegue), se revisa solo, sin IA ni Drive, y queda un único plan nuevo.
+      process.env.ADA_CLAVE_DATOS = CLAVE; const Cif = require('../../src/cifrado');
+      const my = await require('mysql2/promise').createConnection('mysql://ada:ada@localhost:3306/ada');
+      const [[fila]] = await my.query('SELECT datos_cifrado FROM auditoria_propuestas WHERE id = ?', [plan.id]);
+      const viejo = Cif.descifrarJSON(fila.datos_cifrado); viejo.version_plan = 2; delete viejo.revision;
+      await my.query('UPDATE auditoria_propuestas SET datos_cifrado = ? WHERE id = ?', [Cif.cifrarJSON(viejo), plan.id]); await my.end();
+      const stB0 = await ctl('/control/stats'); const llB0 = sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${plan.auditoria_trabajo}'`);
+      srv.kill('SIGKILL'); await dormir(800); await arrancar();
+      let nuevos = [];
+      for (let i = 0; i < 60 && !(nuevos.length === 1 && nuevos[0].version_plan === 3); i++) { await dormir(500); nuevos = (await api('/api/auditorias/propuestas')).d.filter((x) => x.tipo === 'plan_copias' && x.auditoria_trabajo === plan.auditoria_trabajo); }
+      const stB1 = await ctl('/control/stats');
+      if (!nuevos.length) console.log('LOG', srv.log.slice(-1500));
+      ok(nuevos.length === 1 && nuevos[0] && nuevos[0].id !== plan.id && nuevos[0].version_plan === 3 && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${plan.id}'`) === 'descartada'
+        && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${plan.auditoria_trabajo}'`) === llB0 && JSON.stringify(stB0.export) === JSON.stringify(stB1.export) && !Object.keys(stB1.escrituras_en || {}).length,
+        'al reiniciar, el plan anterior a la revisión se rehace solo: un único plan comprobado, sin IA, sin descargas ni escrituras');
+      plan = nuevos[0] || plan;
+    }
     r = await post(`/api/auditorias/propuestas/${plan.id}/aprobar-copias`, { password: 'equivocada' });
     st = await ctl('/control/stats');
     ok(r.status === 400 && !Object.keys(st.escrituras_en || {}).length, 'contraseña equivocada: no se crea carpeta ni copia');

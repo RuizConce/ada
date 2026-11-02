@@ -380,6 +380,19 @@ async function initDb() {
     creado_en DATETIME(3) NOT NULL,
     INDEX idx_usuario (usuario_id, estado)
   ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  // Revisión de un expediente auditado (sin IA): clasificación corregida, Excel, Word y comprobación de coherencia.
+  await qPrincipal(`CREATE TABLE IF NOT EXISTS revisiones_expediente (
+    id CHAR(36) PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    trabajo_id CHAR(36) NOT NULL,
+    version INT NOT NULL,
+    estado VARCHAR(20) NOT NULL,
+    datos_cifrado LONGTEXT NOT NULL,
+    excel_cifrado LONGTEXT NULL,
+    word_cifrado LONGTEXT NULL,
+    creado_en DATETIME(3) NOT NULL,
+    INDEX idx_trabajo (trabajo_id, version)
+  ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   // Copias temporales propias ("ADA temporal - …") que no se pudieron borrar al primer intento.
   await qPrincipal(`CREATE TABLE IF NOT EXISTS temporales_drive (
     usuario_id INT NOT NULL,

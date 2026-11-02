@@ -430,10 +430,10 @@
     if (en) {
       const e = document.createElement('p'); e.className = 'meta';
       const x = en.excel || {}; const i = en.informe || {};
-      e.textContent = `Entregables de la auditoría: Excel ${x.listo ? `generado (${x.filas} requisitos)` : `NO disponible (${x.motivo || '—'})`} · Informe Word ${i.listo ? (i.comprobado ? 'generado y comprobado completo' : 'generado (sin comprobación registrada)') : `NO disponible (${i.motivo || '—'})`}. Se descargan en la tarjeta de la auditoría.`;
+      e.textContent = `Entregables${x.revisado ? ' revisados' : ''} de la auditoría: Excel ${x.listo ? `generado (${x.filas} requisitos)` : `NO disponible (${x.motivo || '—'})`} · Informe Word ${i.listo ? (i.comprobado ? 'generado y comprobado completo' : 'generado (sin comprobación registrada)') : `NO disponible (${i.motivo || '—'})`}. Se descargan en la tarjeta de la auditoría.`;
       falta.appendChild(e);
     }
-    if (p.regenerado_en) { const e = document.createElement('p'); e.className = 'meta'; e.textContent = 'Plan revisado con el control de pertinencia, usando los resultados ya guardados (sin IA ni costo).'; t.querySelector('.aud-plan-destino').after(e); }
+    if (p.regenerado_en) { const e = document.createElement('p'); e.className = 'meta'; e.textContent = p.revision ? `Plan de la revisión ${p.revision.version} del expediente, comprobada: Excel, Word y este plan concuerdan (sin IA ni costo).` : 'Plan revisado con el control de pertinencia, usando los resultados ya guardados (sin IA ni costo).'; t.querySelector('.aud-plan-destino').after(e); }
     contar();
     const reg = document.createElement('button'); reg.type = 'button'; reg.textContent = 'Revisar el plan otra vez (sin costo)';
     reg.addEventListener('click', async () => {
@@ -441,8 +441,8 @@
       try {
         const r = await api(`/api/auditorias/propuestas/${p.id}/regenerar-plan`, { method: 'POST', body: '{}' });
         borradorPlan.delete(p.id);
-        propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id).concat([r.propuesta]);
-        aviso(`Plan revisado sin costo: ${r.antes} → ${r.ahora} filas; ${r.descartadas} asociaciones descartadas por no pertinentes. Nada se copió.`);
+        propuestasAuditoria = propuestasAuditoria.filter((x) => x.id !== p.id).concat(r.propuesta ? [r.propuesta] : []);
+        aviso(r.propuesta ? `Plan revisado sin costo (revisión ${r.revision.version}, comprobada): ${r.antes} → ${r.ahora} filas; ${r.descartadas} asociaciones descartadas por no pertinentes. Nada se copió.` : `La revisión ${r.revision.version} no pasó la comprobación: no hay plan. ${r.revision.coherencia.problemas.slice(0, 2).join('; ')}`, !r.propuesta);
         pintarEntregas();
       } catch (e) { reg.disabled = false; reg.textContent = 'Revisar el plan otra vez (sin costo)'; aviso(e.message, true); }
     });
@@ -687,8 +687,29 @@
       boton('Cerrar', () => cerrarAuditoria(a.id), 'descartar');
     } else if (terminado && a.excel_listo) {
       if (a.organizar) { const n = document.createElement('p'); n.className = 'meta aud-aviso'; n.textContent = 'Paso 4: revisa el plan de copias (tarjeta «Plan de copias») y apruébalo para crear la carpeta organizada.'; t.querySelector('.aud-matriz').before(n); }
+      // Revisión del expediente (sin IA): clasificación corregida, comprobación de coherencia y qué falta.
+      if (a.revision) {
+        const rv = a.revision; const box = document.createElement('div'); box.className = 'meta aud-aviso aud-revision';
+        const linea = (txt, cls) => { const p = document.createElement('p'); p.textContent = txt; if (cls) p.className = cls; box.appendChild(p); return p; };
+        linea(`Revisión ${rv.version} del expediente (sin IA ni costo, sobre lo ya analizado): ${Object.entries(rv.resumen).filter(([, ids]) => ids.length).map(([k, ids]) => `${rv.etiquetas[k]} ${ids.length} (${ids.join(', ')})`).join(' · ')}.`);
+        linea(rv.coherencia.ok ? 'Comprobación de coherencia: Excel, Word y plan de copias concuerdan; ninguna asociación descartada aparece como evidencia.' : `Comprobación de coherencia: NO se entregó por estos problemas: ${rv.coherencia.problemas.slice(0, 5).join('; ')}.`, rv.coherencia.ok ? '' : 'aud-reintento-fallo');
+        if (rv.cambios.length) linea(`Clasificaciones corregidas (${rv.cambios.length}): ${rv.cambios.map((c) => `${c.requisito}: ${c.antes} → ${c.ahora}`).join('; ')}.`);
+        if (rv.descartadas) linea(`Asociaciones descartadas por no pertinentes: ${rv.descartadas} (detalle en el Excel y el Word).`);
+        if (rv.por_revisar.length) linea(`Documentos que ADA no pudo comprobar con texto (${rv.por_revisar.length}): ${rv.por_revisar.map((x) => `${x.requisito} «${x.archivo}»`).join('; ')}.`);
+        if (rv.reanalisis.requisitos.length) linea(`Reanálisis sugerido (NO ejecutado; requiere tu aprobación): ${rv.reanalisis.requisitos.map((x) => x.requisito).join(', ')} · ≈ ${usdAud(rv.reanalisis.costo_estimado_usd)}.`);
+        t.querySelector('.aud-matriz').before(box);
+      }
       boton('Descargar Excel', (b) => descargar('auditoria', a.id, b), 'principal');
       if (a.informe_listo) boton('Descargar informe', (b) => descargar('auditoria_informe', a.id, b), 'principal');
+      if (a.perfil === 'expediente' || a.organizar) {
+        boton(a.revision ? 'Revisar expediente otra vez (sin costo)' : 'Revisar expediente (sin costo)', async (b) => {
+          b.disabled = true; b.textContent = 'Revisando…';
+          try { const r = await api(`/api/auditorias/${a.id}/revisar-expediente`, { method: 'POST', body: '{}' }); aviso(r.revision.coherencia.ok ? `Revisión ${r.revision.version} lista y comprobada: ${r.revision.cambios.length} clasificaciones corregidas. El plan de copias se actualizó (falta tu aprobación).` : `Revisión ${r.revision.version} con problemas: no se entregó. ${r.revision.coherencia.problemas.slice(0, 2).join('; ')}`, !r.revision.coherencia.ok); propuestasAuditoria = propuestasAuditoria.filter((x) => !(x.tipo === 'plan_copias' && x.auditoria_trabajo === a.id)); await cargarAuditoriasActivas(); } catch (e) { b.disabled = false; aviso(e.message, true); }
+        });
+        if (a.revision) {
+          boton('Descargar diagnóstico', (b) => descargar('diagnostico_expediente', a.id, b));
+        }
+      }
       boton('Guardar lista de requisitos', (b) => { if (t.querySelector('.aud-guardar-panel')) return; botones.after(panelGuardarLista(a.id)); b.disabled = true; });
       if (a.textos_guardados > 0) {
         boton('Borrar textos extraídos de esta auditoría', async (b) => {

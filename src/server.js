@@ -271,6 +271,11 @@ const DESCARGABLES = {
     const x = await Auditoria.informe(id);
     return { nombre: x.nombre, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', datos: x.datos };
   },
+  diagnostico_expediente: async (id, u) => {
+    if (!u.admin) return null;
+    const d = await Auditoria.diagnosticoRevision(id);
+    return { nombre: `diagnostico-expediente-${String(id).slice(0, 8)}-v${d.revision}.json`, mime: 'application/json; charset=utf-8', datos: Buffer.from(JSON.stringify(d, null, 2), 'utf8') };
+  },
   documento: async (id) => {
     const d = await C.obtenerDocumento(parseInt(id, 10));
     if (!d) return null;
@@ -401,6 +406,10 @@ app.post('/api/listas/:id/archivar', auth, soloAdmin, envolver((req) => Auditori
 app.get('/api/carpetas-autorizadas', auth, soloAdmin, envolver(() => Auditoria.carpetas()));
 app.post('/api/carpetas-autorizadas/:id/revocar', auth, soloAdmin, envolver((req) => Auditoria.revocarCarpeta(req.params.id)));
 app.post('/api/auditorias/propuestas/:id/buscar-en-norma', auth, soloAdmin, envolver((req) => Auditoria.buscarEnNorma(req.params.id, (req.body || {}).frase)));
+app.post('/api/auditorias/:id/revisar-expediente', auth, soloAdmin, envolver((req) => Auditoria.revisarExpediente(req.params.id, { origen: 'tarjeta' })));
+app.get('/api/auditorias/:id/revision/diagnostico', auth, soloAdmin, async (req, res) => {
+  try { const d = await Auditoria.diagnosticoRevision(req.params.id); res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="diagnostico-expediente-${req.params.id.slice(0, 8)}-v${d.revision}.json"` }); res.send(JSON.stringify(d, null, 2)); } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
 app.post('/api/auditorias/propuestas/:id/regenerar-plan', auth, soloAdmin, envolver((req) => Auditoria.regenerarPlan(req.params.id)));
 app.post('/api/auditorias/propuestas/:id/rehacer-lista', auth, soloAdmin, envolver((req) => Auditoria.rehacerLista(req.params.id)));
 app.post('/api/auditorias/:id/borrar-extracciones', auth, soloAdmin, envolver((req) => Auditoria.borrarExtracciones(req.params.id)));
@@ -542,6 +551,8 @@ initDb()
     Avisos.iniciar();
     require('./registro').marcarInterrumpidos(); // turnos que el reinicio dejó a medias
     Trabajos.iniciar(); // ejecutor de encargos complejos (ADA_TRABAJOS=no lo apaga)
+    // Planes de copias pendientes hechos antes de la revisión comprobada: se rehacen en segundo plano (sin IA ni Drive).
+    setTimeout(() => require('./auditoria').revisarPendientesAlArrancar().catch((e) => console.error('Revisión al arrancar:', e.message)), 3000);
     // Extracciones vencidas (30 días): limpieza al arrancar y cada 6 horas (además, nunca se usan vencidas).
     const limpiar = () => comoUsuario({ id: 1, nombre: 'Cristian', admin: true }, () => Extracciones.limpiarVencidas()).catch((e) => console.error('Extracciones (limpieza):', e.message));
     limpiar();

@@ -114,7 +114,8 @@ const llamadasDe = (id) => sql(`SELECT CONCAT(l.modelo,'|',IFNULL(l.error,'')) F
   r = await auditoria('K1', est.d.presupuesto_minimo.K1);
   v = await esperar(r.d.id);
   const r1 = v.resultado.matriz.filas.find((f) => f.requisito === 'R1');
-  ok(r1.estado === 'no_evaluado' && /sin cita/.test(r1.justificacion), `"cumple" sin cita en los dos intentos: R1 queda "${r1.estado}"`);
+  if (process.env.VER) console.log(JSON.stringify(r1).slice(0, 600));
+  ok(r1.estado === 'no_evaluado' && /sin cita/.test(r1.motivo_tecnico) && /no pudo completar la evaluación/.test(r1.justificacion), `"cumple" sin cita en los dos intentos: R1 queda "${r1.estado}"`);
   await parar();
 
   // ---- Presupuesto: si el costo real supera lo autorizado, se pausa ----
