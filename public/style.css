@@ -601,3 +601,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-aviso { color: #fbbf24; }
 .aud-corregir { margin: 6px 0; }
 .aud-corregir button { width: 100%; }
+
+.aud-buscar { margin: 6px 0; font-size: 13px; }
+.aud-buscar textarea { width: 100%; box-sizing: border-box; margin: 6px 0; }
+.aud-buscar-res p { margin: 3px 0; overflow-wrap: anywhere; }

@@ -96,6 +96,11 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     ok(rh.status === 200 && rh.d.nueva.requisitos.length === 30 && rh.d.nueva.agrupada && rh.d.llamadas_ia_nuevas === 0 && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${r.d.trabajo_id}'`) === llamadasExtr && sql(`SELECT estado FROM auditoria_propuestas WHERE id='${pB.id}'`) === 'descartada',
       `«Corregir la lista»: 30 filas, sin llamadas nuevas a la IA ni costo; la tarjeta anterior queda reemplazada`);
     pB = rh.d.nueva;
+    const bq = await post(`/api/auditorias/propuestas/${pB.id}/buscar-en-norma`, { frase: 'Contar con señalética de vías de evacuación.' });
+    ok(bq.status === 200 && bq.d.coincidencia === 'completa' && bq.d.encontrados[0].entre.anterior.numero === 35 && bq.d.en_lista.join() === '35' && /después del encabezado 35/.test(bq.d.resumen),
+      `buscar una frase en el original: ${bq.d.resumen}`);
+    pB = (await api('/api/auditorias/propuestas')).d.find((x) => x.id === pB.id);
+    ok(pB.busquedas.length === 1, 'la búsqueda queda registrada en la propuesta');
     ok(pB && pB.requisitos.map((x) => x.id).join(',') === Array.from({ length: 30 }, (_, i) => String(i + 18)).join(','), `lista: ${pB && pB.requisitos.length} requisitos con sus números originales 18…47`);
     ok(pB.perfil === 'seremi' && pB.faltantes.length === 0 && pB.lotes === 5 && pB.inventario.total === 98, `la tarjeta 2 conserva perfil SEREMI, inventario y lotes (${pB.lotes} lotes de hasta 20)`);
 
@@ -164,6 +169,8 @@ const descargas = (st, id) => (st.export[id] || 0) + ((st.media || {})[id] || 0)
     const invDe = (n) => inventario.find((x) => x.nombre === n) || {};
     ok(/revisar a mano para [\d, ]*35/.test(invDe('Plano_evacuacion_piso_1.jpg').rel) && /revisar a mano para [\d, ]*34/.test(invDe('Cedula_identidad_director_tecnico.pdf').rel) && /evidencia en 20/.test(invDe('Z_Certificado_RCP_Carla_Soto.pdf').rel) && invDe('Certificados_SIS_personal.pdf').estado === 'auditado por tu decisión (posible dato sensible)',
       `cada archivo omitido dice para qué requisito revisarlo; cada auditado, en qué requisito aporta evidencia ${JSON.stringify(['Plano_evacuacion_piso_1.jpg', 'Cedula_identidad_director_tecnico.pdf', 'Z_Certificado_RCP_Carla_Soto.pdf', 'Certificados_SIS_personal.pdf'].map((n) => [invDe(n).rel, invDe(n).estado]))}`);
+    const notas = []; libro.getWorksheet('Resumen').eachRow((row) => { if (String(row.getCell(1).value) === 'Nota sobre la lista de requisitos') notas.push(String(row.getCell(2).value)); });
+    ok(notas.some((x) => /señalética/.test(x) && /encabezado 35/.test(x)), `el Excel deja constancia de las búsquedas y movimientos de la lista (${notas.length} notas)`);
     ok(hojas === 'Matriz,Evidencias,Resumen,Inventario' && encab.slice(0, 8).join(' | ') === 'Requisito | Texto del requisito | Clasificación SEREMI | Archivo | Cita principal | Ubicación | Justificación | Acción concreta', `Excel: ${hojas}; columnas ${encab.slice(0, 8).join(' | ')}`);
     ok(inventario.length === 98 && inventario.find((x) => /escaneado/.test(x.nombre)).estado === 'omitido: sin texto (¿escaneado?)',
       `hoja Inventario con los 98 archivos y el estado final de cada uno (${inventario.length} filas; ${JSON.stringify(inventario.reduce((m, x) => { m[x.estado] = (m[x.estado] || 0) + 1; return m; }, {}))})`);

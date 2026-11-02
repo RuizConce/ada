@@ -573,6 +573,7 @@ const EJECUTORES = {
     else for (const d of (sel ? sel.resultado.docs : [])) res.addRow([`  ${d.nombre}`, `versión ${d.version}`]);
     const totalMasc = (sel ? sel.resultado.docs : []).reduce((a, d) => { for (const [k, n] of Object.entries(d.enmascarados || {})) a[k] = (a[k] || 0) + n; return a; }, {});
     res.addRow(['Datos personales enmascarados antes del análisis', Object.keys(totalMasc).length ? Object.entries(totalMasc).map(([k, n]) => `${n} ${k === 'telefono' ? 'teléfonos' : k === 'correo' ? 'correos' : k === 'nacimiento' ? 'fechas de nacimiento' : 'RUT'}`).join(', ') : 'ninguno encontrado']);
+    for (const nota of objetivo.notas_lista || []) res.addRow(['Nota sobre la lista de requisitos', nota]);
     res.addRow(['Generado', new Date().toISOString()]);
     if (objetivo.inventario) {
       const inv = libro.addWorksheet('Inventario');
@@ -954,7 +955,7 @@ function validarEntrada(d) {
   const esperado = (d.esperado || []).filter((x) => x && x.id && x.estado).map((x) => ({ id: String(x.id), estado: String(x.estado) }));
   for (const x of esperado) if (!Trabajos.ESTADOS_EVIDENCIA.includes(x.estado)) throw err(`Estado esperado inválido para ${x.id}: ${x.estado}`);
   const perfil = d.perfil === 'seremi' ? 'seremi' : null;
-  return { archivo_ids, archivo_id: archivo_ids[0], requisitos, esperado, perfil, ...(Array.isArray(d.inventario) ? { inventario: d.inventario, carpeta: d.carpeta || null } : {}) };
+  return { archivo_ids, archivo_id: archivo_ids[0], requisitos, esperado, perfil, ...(Array.isArray(d.inventario) ? { inventario: d.inventario, carpeta: d.carpeta || null } : {}), ...(Array.isArray(d.notas_lista) && d.notas_lista.length ? { notas_lista: d.notas_lista.slice(0, 40).map((x) => String(x).slice(0, 600)) } : {}) };
 }
 
 // Estimación previa por configuración (peor caso: segundo intento incluido). Sirve para proponer presupuesto.
@@ -1027,7 +1028,7 @@ function pasosDe(e, config) {
 
 async function crearYAprobar(e, config, presupuesto, serie, propuesta) {
   const objetivo = { archivo_id: e.archivo_id, archivo_ids: e.archivo_ids, requisitos: e.requisitos, esperado: e.esperado, config, requisitos_hash: hash(JSON.stringify(e.requisitos)), informe: true,
-    ...(e.perfil ? { perfil: e.perfil } : {}), ...(e.inventario ? { inventario: e.inventario, carpeta: e.carpeta || null } : {}), ...(serie ? { serie } : {}), ...(propuesta ? { propuesta } : {}) };
+    ...(e.perfil ? { perfil: e.perfil } : {}), ...(e.inventario ? { inventario: e.inventario, carpeta: e.carpeta || null } : {}), ...(e.notas_lista ? { notas_lista: e.notas_lista } : {}), ...(serie ? { serie } : {}), ...(propuesta ? { propuesta } : {}) };
   const t = await Trabajos.crear({ tipo: 'auditoria', titulo: `Auditoría ${config} (${e.requisitos.length} requisitos, ${e.archivo_ids.length} documento${e.archivo_ids.length === 1 ? '' : 's'})`, objetivo, presupuesto, pasos: pasosDe(e, config) });
   return Trabajos.aprobar(t.id);
 }
@@ -1487,8 +1488,11 @@ function listaRango(bloquesOriginales, rango, textoNorma) {
     if (d < desde || d > hasta) { x.destino = 'fuera_de_rango'; continue; }
     if (!conAI.has(d)) { x.destino = 'texto_completo'; continue; }
     const g = porNumero.get(d);
-    const parecido = (a, b) => { const ra = raices(a); const rb = raices(b); if (!ra.size || !rb.size) return false; let k = 0; for (const w of ra) if (rb.has(w)) k += 1; return k / Math.min(ra.size, rb.size) >= 0.6; };
-    const ya = g.some((y) => limpia(y.texto) === limpia(x.item.texto) || parecido(y.texto, x.item.texto) || limpia(y.cita || '').includes(limpia(x.item.cita).slice(0, 60)) || limpia(x.item.cita).includes(limpia(y.cita || '').slice(0, 60)));
+    // "Ya estaba" solo si el número destino ya cita la MISMA oración del original (no por parecido de palabras):
+    // así nunca se descarta una exigencia distinta.
+    const oracion = (c) => { if (c < 0) return null; const t = String(textoNorma); const a = Math.max(t.lastIndexOf('.', c - 1), t.lastIndexOf('\n', c - 1)); let b = t.indexOf('.', c); if (b < 0) b = t.length; return `${a}:${b}`; };
+    const oX = oracion(posicionCita(textoNorma, x.item.cita));
+    const ya = g.some((y) => limpia(y.texto) === limpia(x.item.texto) || (oX && oracion(posicionCita(textoNorma, y.cita)) === oX));
     if (ya) { x.destino = 'ya_estaba'; continue; }
     g.push({ ...x.item, referencia: String(d), movido_desde: x.referencia });
     x.destino = 'movido';
@@ -1612,7 +1616,7 @@ function tarjetaDe(id, datos, estado = 'pendiente') {
   return { tipo: 'auditoria', origen: datos.origen || null, id, estado, archivos: datos.archivos, requisitos: datos.requisitos, configuracion: datos.config, configuraciones: est.configuraciones,
     estimados: est.por_configuracion, estimado_usd: est.por_configuracion[datos.config],
     presupuesto_sugerido: Math.ceil(est.presupuesto_minimo[datos.config] * 100) / 100, presupuesto_minimo: est.presupuesto_minimo, motivo: datos.motivo,
-    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [], menciones: datos.menciones || [], recuperados_detalle: datos.recuperados_detalle || [], ubicacion: datos.ubicacion || null, texto_norma_disponible: datos.texto_norma_disponible,
+    rango: datos.rango || null, perfil: datos.perfil || null, faltantes: datos.faltantes || [], recuperados: datos.recuperados || [], subapartados: datos.subapartados || [], menciones: datos.menciones || [], recuperados_detalle: datos.recuperados_detalle || [], ubicacion: datos.ubicacion || null, busquedas: datos.busquedas || [], texto_norma_disponible: datos.texto_norma_disponible,
     agrupada: !!datos.rango && Array.isArray(datos.recuperados), lotes: Math.ceil(datos.archivos.length / LOTE), ...extrasInventario(datos) };
 }
 
@@ -1674,6 +1678,62 @@ async function rehacerLista(id) {
   return { reemplazada: id, nueva: tarjetaDe(n.id, n.datos), llamadas_ia_nuevas: llamadasDespues - llamadasAntes, costo_usd: 0 };
 }
 
+// Constancia de cómo quedó la lista: exigencias movidas o fuera del rango, y búsquedas de frases en el original.
+function notasLista(datos) {
+  const notas = [];
+  for (const x of (datos.ubicacion && datos.ubicacion.reubicados) || []) {
+    const que = { movido: `se movió al ${x.esta_en}`, ya_estaba: `el ${x.esta_en} ya cita la misma oración`, en_texto_completo: `queda dentro del texto completo del ${x.esta_en}`, fuera_de_rango: `está en el ${x.esta_en}, fuera del rango pedido: no se audita`, revisar: 'no se pudo confirmar' }[x.destino] || x.destino;
+    notas.push(`${x.referencia} (extraído como parte del ${x.numero}): en el original está dentro del requisito ${x.esta_en}; ${que}. «${x.texto}»`);
+  }
+  for (const b of datos.busquedas || []) notas.push(b.resumen);
+  return notas;
+}
+// Busca una frase EXACTA (todas sus palabras, en orden) en el texto ya guardado de la norma y dice entre qué
+// encabezados numerados está. Solo lee; no descarga ni llama a la IA. Deja constancia en la propuesta.
+function buscarFraseEnNorma(texto, frase) {
+  const t = String(texto || '');
+  const palabras = String(frase || '').replace(/[«»"“”…]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (palabras.length < 4) throw err('Escribe al menos 4 palabras de la frase');
+  const patron = (ws) => new RegExp(ws.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s\\-–—]+'), 'gi');
+  let usadas = palabras.length; let re = patron(palabras); let ms = [...t.matchAll(re)];
+  for (const n of [40, 25, 15, 10, 6]) { if (ms.length || palabras.length <= n) break; usadas = n; ms = [...t.matchAll(patron(palabras.slice(0, n)))]; }
+  const pos = iniciosDeNumeros(t, 1, 200);
+  const nums = Object.keys(pos).map(Number).sort((a, b) => a - b);
+  const plano = (a, b) => t.slice(Math.max(0, a), b).replace(/\s+/g, ' ').trim();
+  const encontrados = ms.slice(0, 3).map((m) => {
+    const antes = nums.filter((n) => pos[n] <= m.index).pop();
+    const despues = nums.find((n) => pos[n] > m.index);
+    return { posicion: m.index, entre: { anterior: antes != null ? { numero: antes, encabezado: plano(pos[antes], pos[antes] + 110) } : null, siguiente: despues != null ? { numero: despues, encabezado: plano(pos[despues], pos[despues] + 110) } : null },
+      contexto: plano(m.index - 80, m.index + m[0].length + 80) };
+  });
+  return { frase: palabras.join(' '), palabras: palabras.length, coincidencia: !ms.length ? 'no_encontrada' : usadas === palabras.length ? 'completa' : `parcial (primeras ${usadas} de ${palabras.length} palabras)`, encontrados };
+}
+async function buscarEnNorma(id, frase) {
+  const p = await propuesta(id);
+  const extraccionId = p.datos.origen && p.datos.origen.extraccion_trabajo;
+  if (!extraccionId) throw err('Esta propuesta no viene de una extracción de requisitos', 409);
+  const [t] = await qPrincipal('SELECT * FROM trabajos WHERE id = ? AND usuario_id = ?', [extraccionId, usuario().id]);
+  const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  const texto = await textoDeNorma(t, objetivo, { soloGuardado: true });
+  if (!texto) throw err('No encuentro guardado el texto de la norma (no descargo nada de nuevo).', 409);
+  const r = buscarFraseEnNorma(texto, frase);
+  const rango = p.datos.rango;
+  // ¿Está en la lista actual? (algún requisito cuyo texto contenga el comienzo de la frase)
+  const inicio = limpia(r.frase).split(' ').slice(0, 8).join(' ');
+  r.en_lista = (p.datos.requisitos || []).filter((x) => limpia(x.texto).includes(inicio)).map((x) => x.id);
+  const e0 = r.encontrados[0];
+  const n = e0 && e0.entre.anterior ? e0.entre.anterior.numero : null;
+  r.dentro_del_rango = n != null && rango ? n >= rango.desde && n <= rango.hasta : null;
+  r.resumen = r.coincidencia === 'no_encontrada' ? `La frase «${r.frase.slice(0, 120)}…» no aparece en el texto guardado de la norma.`
+    : `La frase «${r.frase.slice(0, 120)}…» (coincidencia ${r.coincidencia}) está en el original después del encabezado ${n != null ? `${n} («${e0.entre.anterior.encabezado.slice(0, 70)}…»)` : '(ninguno antes)'} y antes del ${e0.entre.siguiente ? `${e0.entre.siguiente.numero} («${e0.entre.siguiente.encabezado.slice(0, 70)}…»)` : 'final del documento'}${r.dentro_del_rango === false ? `: está FUERA del rango ${rango.desde}–${rango.hasta}` : ''}${r.en_lista.length ? `; en la lista actual está en: ${r.en_lista.join(', ')}` : '; en la lista actual NO está'}.`;
+  // Constancia en la propuesta (cifrada) y, al aprobar, en el Excel (hoja Resumen).
+  if (p.estado === 'pendiente') {
+    const datos = { ...p.datos, busquedas: [...(p.datos.busquedas || []).slice(-9), { en: new Date().toISOString(), frase: r.frase.slice(0, 400), resumen: r.resumen }] };
+    await qPrincipal('UPDATE auditoria_propuestas SET datos_cifrado = ?, actualizado_en = ? WHERE id = ? AND estado = ?', [Cifrado.cifrarJSON(datos), new Date(), id, 'pendiente']);
+  }
+  return r;
+}
+
 async function propuesta(id) {
   const [p] = await qPrincipal('SELECT * FROM auditoria_propuestas WHERE id = ? AND usuario_id = ?', [id, usuario().id]);
   if (!p) throw err('No existe esa propuesta', 404);
@@ -1715,7 +1775,7 @@ async function aprobarPropuesta(id, { presupuesto, requisitos, configuracion, or
   }
   const archivosAprob = datos.archivos.concat(extra);
   const aprobado = { archivo_ids: archivosAprob.map((a) => a.id), requisitos: requisitos && requisitos.length ? conFuente(requisitos) : datos.requisitos,
-    configuracion: configuracion || datos.config, presupuesto: Number(presupuesto), perfil: datos.perfil || null, ...(inventario ? { inventario, carpeta: datos.carpeta } : {}) };
+    configuracion: configuracion || datos.config, presupuesto: Number(presupuesto), perfil: datos.perfil || null, ...(inventario ? { inventario, carpeta: datos.carpeta } : {}), notas_lista: notasLista(datos) };
   const e = validarEntrada(aprobado);
   if (!CONFIGS[aprobado.configuracion]) throw err('Configuración inválida (K1, K2 o K3)');
   const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobando', actualizado_en = ? WHERE id = ? AND usuario_id = ? AND estado = 'pendiente'", [new Date(), id, usuario().id]);
@@ -1983,4 +2043,4 @@ async function textosGuardados(trabajoId, objetivo) {
 
 Trabajos.extender({ tipo: 'auditoria', ejecutores: EJECUTORES, verificar, alTerminar });
 
-module.exports = { _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

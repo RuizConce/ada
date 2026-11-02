@@ -92,3 +92,29 @@ ok(r24.texto === 'Procedimiento del carro de paro.' && /Sala de recuperación/.t
 const b5 = [{ bloque: 1, requisitos: b4[0].requisitos.filter((x) => x.referencia !== '25') }];
 const g5 = listaRango(b5, { desde: 24, hasta: 26 }, guia4);
 ok(g5.ubicacion.reubicados[0].destino === 'en_texto_completo' && /evaluación anestésica/.test(g5.requisitos.find((x) => x.id === '25').texto), 'si el 25 no tenía ítems extraídos, la exigencia queda dentro de su texto completo tomado de la norma');
+
+// Búsqueda exacta de una frase en el original: entre qué encabezados está (la frase cruza saltos de línea).
+const { _buscarFrase: buscarFrase } = require('../../src/auditoria');
+const guia6 = [
+  '-- 1 24 CARRO DE PARO Contar con un procedimiento de uso y revisión del carro de paro.',
+  '-- 1 25 PABELLÓN DE CIRUGÍA MAYOR AMBULATORIA Contar con una unidad de pabellón de cirugía mayor ambulatoria con sala de recuperación.',
+  'Todo establecimiento de salud que quiera autorizar una unidad de pabellón de cirugía mayor ambulatoria debe incluir en su solicitud un documento con la evaluación',
+  'anestésica y la evaluación de condiciones sociales del paciente, que permita identificar si existen condiciones para un proceso de recuperación post quirúrgica adecuado en su domicilio.',
+  '-- 1 26 ESTERILIZACIÓN Contar con registro de esterilización.',
+].join('\n');
+const frase = 'Todo establecimiento de salud que quiera autorizar una unidad de pabellón de cirugía mayor ambulatoria debe incluir en su solicitud un documento con la evaluación anestésica y la evaluación de condiciones sociales del paciente, que permita identificar si existen condiciones para un proceso de recuperación post quirúrgica adecuado en su domicilio';
+const bf = buscarFrase(guia6, frase);
+ok(bf.coincidencia === 'completa' && bf.encontrados.length === 1 && bf.encontrados[0].entre.anterior.numero === 25 && bf.encontrados[0].entre.siguiente.numero === 26 && /^25 PABELLÓN/.test(bf.encontrados[0].entre.anterior.encabezado),
+  `frase completa encontrada entre «${bf.encontrados[0].entre.anterior.encabezado.slice(0, 40)}…» y «${bf.encontrados[0].entre.siguiente.encabezado.slice(0, 30)}…»`);
+ok(buscarFrase(guia6, 'esta frase no existe en ninguna parte del documento').coincidencia === 'no_encontrada', 'una frase que no está en el original se informa como no encontrada');
+// El 25 ya tiene un ítem con palabras parecidas (pabellón de cirugía mayor ambulatoria) pero es OTRA oración: el 24 b)
+// movido se agrega; antes se descartaba por "parecido" y la exigencia se perdía.
+const b6 = [{ bloque: 1, requisitos: [
+  { referencia: '24 a)', texto: 'Procedimiento del carro de paro.', cita: 'Contar con un procedimiento de uso y revisión del carro de paro.' },
+  { referencia: '24 b)', texto: 'Documento con evaluación anestésica y evaluación de condiciones sociales del paciente para cirugía mayor ambulatoria.', cita: 'Todo establecimiento de salud que quiera autorizar una unidad de pabellón de cirugía mayor ambulatoria' },
+  { referencia: '25', texto: 'Unidad de pabellón de cirugía mayor ambulatoria con sala de recuperación.', cita: 'Contar con una unidad de pabellón de cirugía mayor ambulatoria con sala de recuperación.' },
+  { referencia: '26', texto: 'Registro de esterilización.', cita: 'Contar con registro de esterilización.' },
+] }];
+const g6 = listaRango(b6, { desde: 24, hasta: 26 }, guia6);
+const t25 = g6.requisitos.find((x) => x.id === '25').texto;
+ok(g6.ubicacion.reubicados[0].destino === 'movido' && /sala de recuperación/.test(t25) && /evaluación anestésica/.test(t25) && g6.requisitos.length === 3, `aunque el 25 tenga palabras parecidas, la exigencia distinta se agrega (no se pierde): 25 = «${t25}»`);

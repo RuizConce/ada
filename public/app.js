@@ -381,6 +381,27 @@
         });
         c.appendChild(nota); c.appendChild(b);
         r.after(c);
+        // Buscar una frase exacta en el texto original ya guardado: dice entre qué encabezados numerados está.
+        const bus = document.createElement('details'); bus.className = 'aud-buscar';
+        bus.innerHTML = '<summary>Buscar una frase en el texto original de la norma</summary><textarea rows="3" class="aud-frase" placeholder="Pega la frase completa"></textarea><button type="button" class="aud-buscar-btn">Buscar (sin costo)</button><div class="aud-buscar-res meta"></div>';
+        const res = bus.querySelector('.aud-buscar-res');
+        const pintar = (lineas) => { res.innerHTML = ''; for (const l of lineas) { const x = document.createElement('p'); x.textContent = l; res.appendChild(x); } };
+        if ((p.busquedas || []).length) pintar(p.busquedas.map((x) => `Búsqueda anterior: ${x.resumen}`));
+        bus.querySelector('.aud-buscar-btn').addEventListener('click', async (ev) => {
+          const btn = ev.currentTarget; btn.disabled = true;
+          try {
+            const r3 = await api(`/api/auditorias/propuestas/${p.id}/buscar-en-norma`, { method: 'POST', body: JSON.stringify({ frase: bus.querySelector('.aud-frase').value }) });
+            const lineas = [r3.resumen];
+            for (const e of r3.encontrados) {
+              lineas.push(`Encabezado anterior: ${e.entre.anterior ? `«${e.entre.anterior.encabezado}…»` : 'ninguno'}`);
+              lineas.push(`Encabezado siguiente: ${e.entre.siguiente ? `«${e.entre.siguiente.encabezado}…»` : 'fin del documento'}`);
+              lineas.push(`Texto original: «…${e.contexto}…»`);
+            }
+            if (r3.encontrados.length > 1) lineas.push(`Aparece ${r3.encontrados.length} veces; se muestran todas.`);
+            pintar(lineas);
+          } catch (e) { aviso(e.message, true); } finally { btn.disabled = false; }
+        });
+        c.after(bus);
       }
     }
     const inv = bloqueInventario(p, { conCasillas: true });
