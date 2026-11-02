@@ -177,7 +177,7 @@ Perfil de esta auditoría: preparar la presentación ante la SEREMI de Salud. Ad
 - listo: hay un documento pertinente y su CONTENIDO permite comprobar todo lo exigido (datos completos, vigente, del establecimiento correcto, y firmado o timbrado cuando se exige y eso consta en el texto). Nunca "listo" solo porque existe un archivo con un nombre parecido.
 - modificar: hay un documento pertinente, pero le falta algo o tiene errores (datos incompletos, vencido, sin firma consignada, de otro establecimiento, desactualizado).
 - no_encontrado: ningún fragmento contiene un documento pertinente.
-- no_aplica: el requisito no aplica al establecimiento y la evidencia lo muestra (por ejemplo, un documento "NO APLICA" con su justificación).
+- no_aplica: el requisito es condicional y el TEXTO de un documento explica por qué la condición no se da (por ejemplo, "el establecimiento no utiliza gases medicinales"); cita esa frase. Un título o nombre de archivo "NO APLICA" sin la razón no basta: usa "modificar" y en "accion" pide agregar la justificación.
 - revisar: con el texto no se puede concluir (documentos que se contradicen, o algo que solo se vería en imágenes: firmas, timbres, fotos, planos; vigencia sin fecha; documento incompleto o cortado; o texto ilegible).
 Si algo de lo exigido no se puede comprobar con el texto, descríbelo en "pendiente_verificar" y no uses "listo".
 Si el requisito tiene subapartados (a), b)…), la clasificación es del requisito completo: "listo" solo si todos los subapartados están acreditados; en "justificacion" indica qué pasa con cada subapartado.
@@ -194,6 +194,7 @@ function presentacionValida(ev) {
   if (p === 'modificar' && !['parcial', 'no_cumple'].includes(e)) return '"modificar" exige estado parcial o no_cumple';
   if (p === 'no_encontrado' && e !== 'sin_evidencia') return '"no_encontrado" exige estado sin_evidencia';
   if (p === 'no_aplica' && e !== 'no_aplica_justificado') return '"no_aplica" exige estado no_aplica_justificado';
+  if (p === 'no_aplica' && !ev.evidencias.some((x) => x.aporta !== 'en_contra')) return '"no_aplica" exige una cita del documento que explique por qué no aplica';
   return null;
 }
 
