@@ -2455,6 +2455,8 @@ const esNoAplica = (t) => /no\s*aplica|n\/a/i.test(String(t || ''));
 //   listo (ACREDITADO) · modificar (PARCIAL) · revisar (REQUIERE REVISIÓN: hay un documento que comprobar o la evaluación
 //   automática no se completó) · no_encontrado (NO ENCONTRADO: no existe nada relacionado) · no_aplica (NO APLICA) ·
 //   no_aplica_pc (NO APLICA — POR CONFIRMAR: así lo declara la lista y nada pertinente lo contradice).
+// Sube cuando cambian las reglas de revisión: los planes pendientes hechos con reglas anteriores se rehacen al arrancar.
+const ALGORITMO_REVISION = 2;
 const ETIQUETA_REVISION = { listo: 'LISTO', modificar: 'PARCIAL', revisar: 'REQUIERE REVISIÓN', no_encontrado: 'NO ENCONTRADO', no_aplica: 'NO APLICA', no_aplica_pc: 'NO APLICA — POR CONFIRMAR' };
 const ORDEN_REVISION = ['listo', 'modificar', 'revisar', 'no_encontrado', 'no_aplica', 'no_aplica_pc'];
 // Mensajes técnicos que nunca deben llegar a un informe («respuesta cortada», «formato: …», etc.).
@@ -2930,7 +2932,7 @@ async function revisarExpediente(trabajoId, { origen = 'manual' } = {}) {
     const dp = { tipo: 'plan_copias', auditoria_trabajo: trabajoId, expediente, perfil: objetivo.perfil || null, carpeta_docs: objetivo.carpeta,
       resultados_nombre: (previas.carpeta && previas.carpeta.nombre) || (objetivo.organizar && objetivo.organizar.nombre) || `ADA — ${expediente} — Documentos organizados`, plan: plan.plan, sin_copia: plan.sinCopia, descartadas: plan.descartadas, ajustes: plan.ajustes, sin_evidencia: plan.sinEvidencia,
       ...(previas.encargo ? { encargo_previo: previas.encargo, carpeta_existente: previas.carpeta, copias_existentes: previas.copias, copias_sin_respaldo: plan.copiasSinRespaldo } : {}),
-      requisitos: r.filas.length, version_plan: 3, revision: { id, version: r.version }, regenerado_en: new Date().toISOString(), entregables: { excel: { listo: true, filas: r.filas.length, revisado: true }, informe: { listo: true, comprobado: true, revisado: true } } };
+      requisitos: r.filas.length, version_plan: 3, algoritmo: ALGORITMO_REVISION, revision: { id, version: r.version }, regenerado_en: new Date().toISOString(), entregables: { excel: { listo: true, filas: r.filas.length, revisado: true }, informe: { listo: true, comprobado: true, revisado: true } } };
     await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [planId, usuario().id, objetivo.propuesta ? objetivo.propuesta.conversacion_id : null, 'pendiente', Cifrado.cifrarJSON(dp), 'por_mostrar', new Date(), new Date()]);
   }
@@ -3395,7 +3397,7 @@ async function revisarPendientesAlArrancar() {
   const filas = await qPrincipal("SELECT id, usuario_id, datos_cifrado FROM auditoria_propuestas WHERE estado = 'pendiente' AND usuario_id = 1");
   for (const f of filas) {
     let d; try { d = Cifrado.descifrarJSON(f.datos_cifrado); } catch (_) { continue; }
-    if (d.tipo !== 'plan_copias' || (d.version_plan || 1) >= 3) continue;
+    if (d.tipo !== 'plan_copias' || ((d.version_plan || 1) >= 3 && (d.algoritmo || 1) >= ALGORITMO_REVISION)) continue;
     try { const r = await revisarExpediente(d.auditoria_trabajo, { origen: 'arranque' }); console.log(`Expediente ${String(d.auditoria_trabajo).slice(0, 8)} revisado al arrancar: revisión ${r.revision.version} ${r.revision.estado}`); } catch (e) { console.error(`No pude revisar ${String(d.auditoria_trabajo).slice(0, 8)} al arrancar: ${e.message}`); }
   }
 }
