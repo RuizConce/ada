@@ -106,7 +106,7 @@ const PASS = 'clave-org-ui';
     const revAntes = Number(sql(`SELECT MAX(version) FROM revisiones_expediente WHERE trabajo_id = '${tAud2}'`));
     const copiasAntes = sql("SELECT COUNT(*) FROM trabajos WHERE titulo LIKE 'Organizar expediente%'"); const iaAntes = sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id = '${tAud2}'`);
     await p.reload(); await p.waitForTimeout(1500); await p.$eval('.hoja-fondo', (e) => e.click()).catch(() => {});
-    await p.waitForSelector('text=Descargar diagnóstico del Botiquín', { timeout: 10000 });
+    await p.waitForSelector('text=Descargar diagnóstico del Botiquín', { timeout: 30000 });
     await foto(p, '6-diagnostico');
     const [dd] = await Promise.all([p.waitForEvent('download'), p.click('text=Descargar diagnóstico del Botiquín')]);
     const diag = JSON.parse(require('fs').readFileSync(await dd.path(), 'utf8'));

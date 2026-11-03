@@ -2989,9 +2989,12 @@ async function revisarExpediente(trabajoId, { origen = 'manual' } = {}) {
   await qPrincipal('INSERT INTO revisiones_expediente (id, usuario_id, trabajo_id, version, estado, datos_cifrado, excel_cifrado, word_cifrado, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [id, usuario().id, trabajoId, r.version, coherencia.ok ? 'lista' : 'con_problemas', Cifrado.cifrarJSON(datos), Cifrado.cifrar(excelBuf.toString('base64')), Cifrado.cifrar(wordBuf.toString('base64')), new Date()]);
   let planId = null;
-  if (coherencia.ok) {
+  // Un plan por LOTE (preparado a pedido, con correspondencias indicadas por la persona) nunca se reemplaza ni se le
+  // agrega al lado un plan completo: la revisión solo actualiza Excel, Word y diagnóstico.
+  const planesPendientes = await qPrincipal("SELECT id, datos_cifrado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]);
+  const hayLote = planesPendientes.some((x) => { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); return d.tipo === 'plan_copias' && d.auditoria_trabajo === trabajoId && d.lote; } catch (_) { return false; } });
+  if (coherencia.ok && !hayLote) {
     // El plan anterior (si lo había y seguía pendiente) se reemplaza: nunca quedan dos planes para la misma auditoría.
-    const planesPendientes = await qPrincipal("SELECT id, datos_cifrado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]);
     for (const x of planesPendientes) { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); if (d.tipo === 'plan_copias' && d.auditoria_trabajo === trabajoId) await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), x.id]); } catch (_) {} }
     planId = crypto.randomUUID();
     const dp = { tipo: 'plan_copias', auditoria_trabajo: trabajoId, expediente, perfil: objetivo.perfil || null, carpeta_docs: objetivo.carpeta,
@@ -3004,6 +3007,90 @@ async function revisarExpediente(trabajoId, { origen = 'manual' } = {}) {
   const llamadasDespues = Number(((await qPrincipal('SELECT COUNT(*) AS n FROM llamadas_ia WHERE trabajo_id = ?', [trabajoId]))[0] || {}).n || 0);
   await Trabajos.evento(trabajoId, 'expediente_revisado', `revisión ${r.version}: ${coherencia.ok ? 'coherente' : `con ${coherencia.problemas.length} problemas`}; ${cambios.length} clasificaciones corregidas; ${r.descartadas.length} asociaciones descartadas; sin IA (${llamadasDespues - llamadasAntes} llamadas)`, 0, origen === 'arranque' ? 'ada' : `u${usuario().id}`).catch(() => {});
   return { revision: resumenRevision({ id, version: r.version, estado: coherencia.ok ? 'lista' : 'con_problemas', creado_en: new Date() }, datos), plan_id: planId, llamadas_ia_nuevas: llamadasDespues - llamadasAntes, costo_usd: 0 };
+}
+// ======================= Plan por LOTE (requisitos elegidos, archivos indicados por la persona) =======================
+// Sin IA ni Drive: usa el inventario ya guardado de la auditoría. Cada archivo se busca por su NOMBRE exacto en la carpeta
+// de origen autorizada; lo que no está se informa como FALTA (nunca se inventa). Las copias van a la carpeta de
+// resultados que ya existe, sin duplicar las anteriores, y solo se crean cuando la persona aprueba con su contraseña.
+// tipo: 'pendiente' (marcada, prefijo PENDIENTE) · 'respaldo' (desmarcada, prefijo RESPALDO) · 'buscar' (localizar por
+// palabras; si no hay, FALTA).
+const claveNombre = (n) => norm(String(n || '')).replace(/\.[a-z0-9]{2,5}$/, '').replace(/[^a-z0-9ñ]+/g, '');
+// El número con que el archivo venía en OTRO trámite («03_», «3.1») no se arrastra al nombre de la copia.
+const sinNumeroInicial = (n) => String(n || '').replace(/^\s*\d{1,3}(\.\d{1,2})?[\s_.\-)]*(?=[A-Za-zÁÉÍÓÚÑáéíóúñ])/, '') || String(n || '');
+async function prepararLote(trabajoId, { clave, nombre, requisitos, asignaciones }, { origen = 'manual' } = {}) {
+  const [t] = await qPrincipal('SELECT * FROM trabajos WHERE id = ? AND usuario_id = ?', [trabajoId, usuario().id]);
+  if (!t || t.tipo !== 'auditoria' || t.estado !== 'completado') throw err('La auditoría de origen no está completa', 409);
+  const objetivo = Cifrado.descifrarJSON(t.objetivo_cifrado) || {};
+  const final = Cifrado.descifrarJSON(t.resultado_cifrado) || {};
+  const inventario = objetivo.inventario || [];
+  const previas = await copiasPrevias(trabajoId);
+  if (!previas.carpeta) throw err('Todavía no existe la carpeta de resultados de este expediente', 409);
+  const rv = await ultimaRevision(trabajoId, { soloLista: true });
+  const filasRev = rv ? Cifrado.descifrarJSON(rv.datos_cifrado).filas : (final.matriz ? final.matriz.filas : []);
+  const filaDe = (n) => filasRev.find((f) => String(f.requisito) === String(n)) || {};
+  const plan = []; const sinCopia = []; const noEncontrados = [];
+  for (const n of requisitos) {
+    const f = filaDe(n); const qv = f.texto_requisito ? queVerificar(f) : '';
+    const asig = (asignaciones || []).filter((a) => String(a.requisito) === String(n));
+    let candidatos = [];
+    for (const a of asig) {
+      if (a.tipo === 'buscar') {
+        const re = new RegExp(a.patron, 'i');
+        const enc = inventario.filter((x) => re.test(norm(x.nombre)) && x.estado !== 'duplicado exacto' && !/acceso directo/.test(x.estado || ''));
+        if (!enc.length) { sinCopia.push({ requisito: String(n), texto: f.texto_requisito || '', estado: 'FALTA', accion: `No hay en la carpeta de origen un ${a.descripcion || 'documento'}: conseguirlo. ADA no lo inventa.` }); continue; }
+        candidatos.push(...enc.map((x) => ({ x, a: { ...a, tipo: 'pendiente', opcional: true, nota: `localizado por su nombre como posible ${a.descripcion || 'documento'}; comprobar su contenido` } })));
+        continue;
+      }
+      const k = claveNombre(a.archivo);
+      const x = inventario.find((y) => claveNombre(y.nombre) === k) || inventario.find((y) => claveNombre(y.nombre).includes(k) || k.includes(claveNombre(y.nombre)));
+      if (!x) { noEncontrados.push(a.archivo); sinCopia.push({ requisito: String(n), texto: f.texto_requisito || '', estado: 'FALTA', accion: `«${a.archivo}» no está en la carpeta de origen autorizada.` }); continue; }
+      candidatos.push({ x, a });
+    }
+    for (const { x, a } of candidatos) {
+      const prefijo = a.tipo === 'respaldo' ? 'RESPALDO_' : 'PENDIENTE_';
+      const nombreCopia = `${pad2(n)}_${prefijo}${limpiarNombre(ocultarRutNombre(sinNumeroInicial(x.nombre)))}`;
+      const ya = previas.copias.find((c) => c.archivo_id === x.id && String(c.requisito).replace(/^0+/, '') === String(n));
+      const sensible = /sensible/.test(x.estado || '') || esSensible(x.nombre);
+      plan.push({ clave: `${n}:${x.id}`, requisito: String(n), estado: a.tipo === 'respaldo' ? 'RESPALDO (opcional)' : (f.clasificacion || 'REQUIERE REVISIÓN'), clase: a.tipo === 'respaldo' ? 'respaldo' : 'pendiente',
+        archivo_id: x.id, archivo: ocultarRutNombre(x.nombre), nombre_copia: ya ? ya.copia_nombre : nombreCopia, cita: '', ubicacion: '', sensible, pertinencia: a.tipo === 'respaldo' ? 'respaldo' : 'indicado',
+        ...(a.tipo === 'respaldo' || a.opcional || sensible ? { opcional: true } : {}), ...(ya ? { ya_copiada: { nombre: ya.copia_nombre, url: ya.url || '' } } : {}),
+        acredita: `${a.nota ? `${a.nota.charAt(0).toUpperCase()}${a.nota.slice(1)}.` : 'Indicado por ti para este requisito.'}${a.tipo === 'respaldo' ? ' Copia de respaldo: márcala solo si quieres incluirla.' : ''}`,
+        falta: a.falta || (qv ? `Comprobar: ${qv}.` : '') });
+    }
+  }
+  // El lote reemplaza cualquier plan pendiente de esta auditoría (una sola tarjeta de plan).
+  const pend = await qPrincipal("SELECT id, datos_cifrado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]);
+  for (const x of pend) { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); if (d.tipo === 'plan_copias' && d.auditoria_trabajo === trabajoId) await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), x.id]); } catch (_) {} }
+  const id = crypto.randomUUID();
+  const expediente = objetivo.expediente || (objetivo.carpeta && objetivo.carpeta.nombre) || 'Expediente';
+  const dp = { tipo: 'plan_copias', lote: { clave, nombre, requisitos: requisitos.map(String) }, auditoria_trabajo: trabajoId, expediente, perfil: objetivo.perfil || null, carpeta_docs: objetivo.carpeta,
+    resultados_nombre: previas.carpeta.nombre, plan, sin_copia: sinCopia, descartadas: [], sin_evidencia: [], ajustes: {}, requisitos: requisitos.length,
+    encargo_previo: previas.encargo, carpeta_existente: previas.carpeta, copias_existentes: previas.copias, copias_sin_respaldo: [],
+    version_plan: 3, algoritmo: ALGORITMO_REVISION, ...(rv ? { revision: { id: rv.id, version: rv.version } } : {}), regenerado_en: new Date().toISOString(), no_encontrados: noEncontrados };
+  await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, usuario().id, objetivo.propuesta ? objetivo.propuesta.conversacion_id : null, 'pendiente', Cifrado.cifrarJSON(dp), 'por_mostrar', new Date(), new Date()]);
+  await Trabajos.evento(trabajoId, 'plan_lote', `${nombre}: ${plan.filter((c) => !c.ya_copiada).length} copias propuestas (${plan.filter((c) => !c.opcional && !c.ya_copiada).length} marcadas); ${sinCopia.length} sin documento; sin IA ni copias`, 0, origen === 'arranque' ? 'ada' : `u${usuario().id}`).catch(() => {});
+  return { propuesta_id: id, plan: plan.length, sin_copia: sinCopia, no_encontrados: noEncontrados };
+}
+// Lotes pedidos por la persona y dejados listos al arrancar (una sola vez cada uno; nunca crean copias).
+const LOTES = [
+  { clave: 'botiquin-andaluz-3-7', trabajo: 'dd8008fd', nombre: 'Botiquín Andaluz — requisitos 3 al 7', requisitos: [3, 4, 5, 6, 7], asignaciones: [
+    { requisito: 3, tipo: 'buscar', patron: 'constituc|vigencia|estatut|inscripcion.*sociedad|sociedad', descripcion: 'certificado de constitución o vigencia de la sociedad' },
+    { requisito: 4, tipo: 'pendiente', archivo: '04_ CONTRATOS DE ARRIENDO.pdf', falta: 'Comprobar que el contrato acredita el uso del inmueble (dirección y vigencia).' },
+    { requisito: 5, tipo: 'pendiente', archivo: '05_ plano1erPiso_merged.pdf', falta: 'Comprobar a la vista que el plano marca el botiquín, el refrigerador y las vías de evacuación.' },
+    { requisito: 6, tipo: 'respaldo', archivo: '03_ Recepción obras.pdf', nota: 'documento existente (en el trámite de Estética era el n.º 3); en el Botiquín el requisito 6 está «No aplica — por confirmar»' },
+    { requisito: 7, tipo: 'respaldo', archivo: '3.1Certificado numero.pdf', nota: 'candidato del requisito 7 (certificado de número municipal)' },
+  ] },
+];
+async function prepararLotesAlArrancar() {
+  const ya = await qPrincipal("SELECT datos_cifrado FROM auditoria_propuestas WHERE usuario_id = 1");
+  const hechos = new Set(ya.map((x) => { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); return d.lote && d.lote.clave; } catch (_) { return null; } }).filter(Boolean));
+  for (const L of LOTES) {
+    if (hechos.has(L.clave)) continue;
+    const [t] = await qPrincipal("SELECT id FROM trabajos WHERE usuario_id = 1 AND id LIKE ? AND estado = 'completado' LIMIT 1", [`${L.trabajo}%`]);
+    if (!t) continue;
+    try { const r = await prepararLote(t.id, L, { origen: 'arranque' }); console.log(`Lote «${L.nombre}» listo para aprobar: ${r.plan} filas, ${r.sin_copia.length} sin documento${r.no_encontrados.length ? `; no encontrados: ${r.no_encontrados.length}` : ''}`); } catch (e) { console.error(`No pude preparar el lote «${L.nombre}»: ${e.message}`); }
+  }
 }
 function resumenRevision(fila, d) {
   return { id: fila.id, version: fila.version, estado: fila.estado, creado_en: fila.creado_en, resumen: d.resumen, cambios: d.cambios, descartadas: d.descartadas.length, coherencia: d.coherencia,
@@ -3074,7 +3161,7 @@ async function regenerarPlan(id) {
 }
 function tarjetaPlanCopias(id, datos, estado) {
   return { id, estado, tipo: 'plan_copias', expediente: datos.expediente, resultados_nombre: datos.resultados_nombre, auditoria_trabajo: datos.auditoria_trabajo, requisitos: datos.requisitos,
-    plan: datos.plan, sin_copia: datos.sin_copia, descartadas: datos.descartadas || [], sin_evidencia: datos.sin_evidencia || [], carpeta_existente: datos.carpeta_existente || null, copias_existentes: datos.copias_existentes || [], copias_sin_respaldo: datos.copias_sin_respaldo || [], ajustes: datos.ajustes || {}, version_plan: datos.version_plan || 1, entregables: datos.entregables || null, regenerado_en: datos.regenerado_en || null, revision: datos.revision || null,
+    plan: datos.plan, sin_copia: datos.sin_copia, descartadas: datos.descartadas || [], sin_evidencia: datos.sin_evidencia || [], carpeta_existente: datos.carpeta_existente || null, copias_existentes: datos.copias_existentes || [], copias_sin_respaldo: datos.copias_sin_respaldo || [], ajustes: datos.ajustes || {}, version_plan: datos.version_plan || 1, entregables: datos.entregables || null, regenerado_en: datos.regenerado_en || null, revision: datos.revision || null, lote: datos.lote || null, carpeta_docs: datos.carpeta_docs ? { nombre: datos.carpeta_docs.nombre } : null,
     copias: datos.plan.filter((f) => !f.opcional && !f.sensible && !f.ya_copiada).length, sensibles: datos.plan.filter((f) => f.sensible).length, opcionales: datos.plan.filter((f) => f.opcional).length, trabajo_id: datos.trabajo_id || null };
 }
 // Aprobar las copias: contraseña del propietario (autorización de ESCRITURA separada de la de lectura), filas elegidas,
@@ -3372,7 +3459,7 @@ async function pendientes({ conversacionId } = {}) {
 
 // Expedientes auditados recientes (para el botón de la pantalla principal «Descargar diagnóstico…»).
 async function expedientesRecientes() {
-  const ts = await qPrincipal("SELECT id, titulo, terminado_en, objetivo_cifrado FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria' AND estado = 'completado' AND terminado_en > ? AND titulo NOT LIKE 'Organizar expediente%' ORDER BY terminado_en DESC LIMIT 20", [usuario().id, new Date(Date.now() - 60 * 864e5)]);
+  const ts = await qPrincipal("SELECT id, titulo, terminado_en, objetivo_cifrado FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria' AND estado = 'completado' AND terminado_en > ? AND titulo NOT LIKE 'Organizar expediente%' AND EXISTS (SELECT 1 FROM trabajo_pasos p WHERE p.trabajo_id = trabajos.id AND p.tipo = 'aud_informe') ORDER BY terminado_en DESC LIMIT 60", [usuario().id, new Date(Date.now() - 60 * 864e5)]);
   const out = [];
   for (const t of ts) {
     let o; try { o = Cifrado.descifrarJSON(t.objetivo_cifrado) || {}; } catch (_) { continue; }
@@ -3489,7 +3576,7 @@ async function revisarPendientesAlArrancar() {
   const filas = await qPrincipal("SELECT id, usuario_id, datos_cifrado FROM auditoria_propuestas WHERE estado = 'pendiente' AND usuario_id = 1");
   for (const f of filas) {
     let d; try { d = Cifrado.descifrarJSON(f.datos_cifrado); } catch (_) { continue; }
-    if (d.tipo !== 'plan_copias' || ((d.version_plan || 1) >= 3 && (d.algoritmo || 1) >= ALGORITMO_REVISION)) continue;
+    if (d.tipo !== 'plan_copias' || d.lote || ((d.version_plan || 1) >= 3 && (d.algoritmo || 1) >= ALGORITMO_REVISION)) continue;
     try { const r = await revisarExpediente(d.auditoria_trabajo, { origen: 'arranque' }); console.log(`Expediente ${String(d.auditoria_trabajo).slice(0, 8)} revisado al arrancar: revisión ${r.revision.version} ${r.revision.estado}`); } catch (e) { console.error(`No pude revisar ${String(d.auditoria_trabajo).slice(0, 8)} al arrancar: ${e.message}`); }
   }
   // Y los expedientes recientes cuya última revisión es de reglas anteriores (aunque no tengan un plan pendiente).
@@ -3500,4 +3587,4 @@ async function revisarPendientesAlArrancar() {
     try { const r = await revisarExpediente(x.id, { origen: 'arranque' }); console.log(`Expediente ${x.id.slice(0, 8)} revisado al arrancar (reglas ${ALGORITMO_REVISION}): revisión ${r.revision.version} ${r.revision.estado}`); } catch (e) { console.error(`No pude revisar ${x.id.slice(0, 8)} al arrancar: ${e.message}`); }
   }
 }
-module.exports = { diagnosticoActualizado, expedientesRecientes, _copiasPrevias: copiasPrevias, _informeExpedienteMd: informeExpedienteMd, _excelExpediente: excelExpediente, _coherenciaExpediente: coherenciaExpediente, revisarPendientesAlArrancar, revisarExpediente, diagnosticoRevision, ultimaRevision, _revisarFilas: revisarFilas, regenerarPlan, _planDeCopias: planDeCopias, _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { prepararLote, prepararLotesAlArrancar, _LOTES: LOTES, diagnosticoActualizado, expedientesRecientes, _copiasPrevias: copiasPrevias, _informeExpedienteMd: informeExpedienteMd, _excelExpediente: excelExpediente, _coherenciaExpediente: coherenciaExpediente, revisarPendientesAlArrancar, revisarExpediente, diagnosticoRevision, ultimaRevision, _revisarFilas: revisarFilas, regenerarPlan, _planDeCopias: planDeCopias, _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

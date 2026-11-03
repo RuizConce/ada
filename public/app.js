@@ -400,9 +400,9 @@
       + '<label class="campo">Tu contraseña de ADA (autoriza crear la carpeta y copiar)<input type="password" class="aud-clave" autocomplete="current-password"></label>'
       + '<div class="tarjeta-botones"><button type="button" class="principal"></button><button type="button" class="descartar">Descartar</button></div>';
     t.querySelector('.aud-estado').textContent = `Paso 4 · ${p.id.slice(0, 8)}`;
-    t.querySelector('strong').textContent = `Plan de copias — ${p.expediente}`;
+    t.querySelector('strong').textContent = p.lote ? `Plan de copias — ${p.lote.nombre}` : `Plan de copias — ${p.expediente}`;
     t.querySelector('.aud-plan-destino').textContent = p.carpeta_existente
-      ? `Se usará la carpeta que ya existe, «${p.carpeta_existente.nombre}». Las ${(p.copias_existentes || []).length} copias que ya tiene se conservan y no se duplican. ADA solo escribe ahí: los originales no se modifican, mueven ni borran.`
+      ? `${p.carpeta_docs && p.carpeta_docs.nombre ? `Origen (solo lectura): «${p.carpeta_docs.nombre}». ` : ''}Destino: la carpeta que ya existe, «${p.carpeta_existente.nombre}». Las ${(p.copias_existentes || []).length} copias que ya tiene se conservan y no se duplican. ADA solo escribe ahí: los originales no se modifican, mueven ni borran.`
       : `Se creará la carpeta «${p.resultados_nombre}» en la raíz de Mi unidad. ADA solo escribe ahí: los originales no se modifican, mueven ni borran. Desmarca lo que no quieras copiar.`;
     const bor = borradorPlan.get(p.id) || { omitir: [], sensibles: [] };
     const ul = t.querySelector('.aud-plan');
@@ -422,7 +422,7 @@
         borradorPlan.set(p.id, b); contar();
       });
       const tx = document.createElement('span');
-      tx.textContent = `${f.nombre_copia}  ← «${f.archivo}» · requisito ${f.requisito} · ${f.estado}${f.clase === 'pendiente' ? ' · PENDIENTE de completar' : ''}${f.pertinencia === 'apoyo' ? ' · DOCUMENTO DE APOYO (desmarcado)' : ''}${f.pertinencia === 'relacionado' ? ' · SIN EVIDENCIA: solo relacionado (desmarcado)' : ''}${f.sensible ? ' · POSIBLE DATO SENSIBLE: márcalo solo si quieres copiarlo' : ''}`;
+      tx.textContent = `${f.nombre_copia}  ← «${f.archivo}» · requisito ${f.requisito} · ${f.estado}${f.clase === 'pendiente' ? ' · PENDIENTE de completar' : ''}${f.pertinencia === 'apoyo' ? ' · DOCUMENTO DE APOYO (desmarcado)' : ''}${f.clase === 'respaldo' ? ' · RESPALDO opcional' : ''}${f.pertinencia === 'relacionado' ? ' · SIN EVIDENCIA: solo relacionado (desmarcado)' : ''}${f.sensible ? ' · POSIBLE DATO SENSIBLE: márcalo solo si quieres copiarlo' : ''}`;
       const ev = document.createElement('small'); ev.textContent = `${f.acredita ? `${f.acredita} ` : ''}${f.cita ? `Evidencia: «${f.cita}»${f.ubicacion ? ` (${f.ubicacion})` : ''}` : ''}${f.falta ? ` · Falta: ${f.falta}` : ''}`;
       l.appendChild(c); l.appendChild(tx); li.appendChild(l); li.appendChild(ev); ul.appendChild(li);
     }

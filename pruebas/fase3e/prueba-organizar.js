@@ -239,6 +239,28 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
       const enl = []; lb.getWorksheet('Requisitos').eachRow((row, n) => { if (n > 1) enl.push(String(row.getCell(11).value || '')); });
       ok(ent2.length === 4 && enl.join('\n').split('https://').length - 1 === 20, `Excel nuevo con los enlaces de las 20 copias (anteriores y nueva); entregables en la carpeta: ${ent2.length}`);
     }
+    // ---- Lote pedido (requisitos 3 al 7) con archivos indicados por la persona: plan solo de ese lote, en la MISMA
+    // carpeta, sin duplicar lo ya copiado, RESPALDO desmarcado, FALTA si un archivo no existe; nada se copia sin aprobar.
+    {
+      const tA = plan.auditoria_trabajo;
+      const en0 = (await (await fetch(`http://localhost:9933/drive/v3/files?q=${encodeURIComponent(`'${resId}' in parents and trashed = false`)}&pageSize=200`)).json()).files.filter((f) => f.appProperties && f.appProperties.ada_origen).length;
+      const lo = await post(`/api/auditorias/${tA}/lote`, { clave: 'prueba-3-7', nombre: 'Botiquín — requisitos 3 al 7', requisitos: [3, 4, 5, 6, 7], asignaciones: [
+        { requisito: 3, tipo: 'buscar', patron: 'constituc', descripcion: 'certificado de constitución' },
+        { requisito: 4, tipo: 'pendiente', archivo: 'Titulo QF.pdf' }, { requisito: 5, tipo: 'pendiente', archivo: 'Listado_medicamentos.pdf', falta: 'Comprobar a la vista botiquín, refrigerador y evacuación.' },
+        { requisito: 6, tipo: 'respaldo', archivo: 'Horario_funcionamiento.pdf' }, { requisito: 7, tipo: 'respaldo', archivo: 'No_existe_en_la_carpeta.pdf' } ] });
+      const pl = (await api('/api/auditorias/propuestas')).d.filter((x) => x.tipo === 'plan_copias' && x.auditoria_trabajo === tA);
+      const L = pl[0]; const R = (n) => L.plan.filter((f) => f.requisito === String(n));
+      ok(lo.status === 200 && pl.length === 1 && L.lote && L.carpeta_existente.id === resId && R(3)[0].ya_copiada && R(4)[0].nombre_copia === '04_PENDIENTE_Titulo_QF.pdf' && !R(4)[0].opcional && !R(5)[0].opcional
+        && R(6)[0].opcional && R(6)[0].nombre_copia === '06_RESPALDO_Horario_funcionamiento.pdf' && L.sin_copia.some((x) => x.requisito === '7' && x.estado === 'FALTA') && L.copias === 2,
+        `lote 3–7: una sola tarjeta, misma carpeta, 3 ya copiado, 4 y 5 marcados (PENDIENTE), 6 RESPALDO desmarcado, 7 FALTA (${lo.status} ${lo.d.error || ''})`);
+      const en1 = (await (await fetch(`http://localhost:9933/drive/v3/files?q=${encodeURIComponent(`'${resId}' in parents and trashed = false`)}&pageSize=200`)).json()).files.filter((f) => f.appProperties && f.appProperties.ada_origen).length;
+      ok(en1 === en0, 'preparar el lote no crea ninguna copia');
+      const ap = await post(`/api/auditorias/propuestas/${L.id}/aprobar-copias`, { password: PASS, incluir_sensibles: [R(6)[0].clave] });
+      const fin3 = await esperar(ap.d.trabajo_id);
+      const en2 = (await (await fetch(`http://localhost:9933/drive/v3/files?q=${encodeURIComponent(`'${resId}' in parents and trashed = false`)}&pageSize=200`)).json()).files.filter((f) => f.appProperties && f.appProperties.ada_origen);
+      ok(ap.d.copias === 3 && fin3.estado === 'completado' && en2.length === en0 + 3 && new Set(en2.map((f) => f.name)).size === en2.length && ['04_PENDIENTE_Titulo_QF.pdf', '05_PENDIENTE_Listado_medicamentos.pdf', '06_RESPALDO_Horario_funcionamiento.pdf'].every((n) => en2.some((f) => f.name === n)),
+        `aprobado el lote: 3 copias agregadas a la misma carpeta, sin duplicados (${fin3.estado} ${fin3.motivo || ''})`);
+    }
     // ---- Seguridad en la capa de Drive ----
     Object.assign(process.env, { ADA_DRIVE_URL: 'http://localhost:9933', DATABASE_URL: ENV.DATABASE_URL, ADA_CLAVE_DATOS: CLAVE, ADA_EXTRACCIONES: 'prueba', ADA_DRIVE_CARPETAS_LECTURA: '', ADA_DRIVE_CARPETA_PRUEBA: 'carpeta-prueba' });
     const Drive = require('../../src/drive'); await Drive.recargarCarpetas();
