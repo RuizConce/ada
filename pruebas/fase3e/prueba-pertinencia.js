@@ -34,8 +34,8 @@ ok(de('2').length === 2 && de('2').find((x) => x.archivo_id === 'SII').pertinenc
 const arr = de('4')[0];
 ok(arr && arr.archivo === '04_CONTRATOS DE ARRIENDO.pdf' && arr.opcional && arr.sensible && /requiere tu autorización/.test(arr.acredita), `4. el contrato de arriendo aparece (desmarcado): ${arr && arr.acredita}`);
 const pl = de('5')[0];
-ok(pl && pl.archivo === '05_plano1erPiso_merged.pdf' && pl.opcional && /no tiene texto/i.test(pl.acredita) && /comprobar a la vista/.test(pl.falta) && /PENDIENTE/.test(pl.nombre_copia), `5. el plano aparece como parcial por revisar, con lo que falta: ${pl && pl.falta}`);
+ok(pl && pl.archivo === '05_plano1erPiso_merged.pdf' && /no tiene texto/i.test(pl.acredita) && /comprobar a la vista/.test(pl.falta) && /PENDIENTE/.test(pl.nombre_copia), `5. el plano aparece como PENDIENTE (marcado: ADA no puede leerlo), con lo que falta: ${pl && pl.falta}`);
 ok(ajustes['6'] && ajustes['11'] && /POR CONFIRMAR/.test(ajustes['6'].estado) && !/declaraci[oó]n firmada/i.test(ajustes['6'].nota) && sinCopia.some((x) => x.requisito === '6' && /POR CONFIRMAR/.test(x.estado)), '6. declarados «No aplica»: no se convierten en NO ENCONTRADO ni piden declaraciones; quedan «por confirmar»');
 ok(de('8').length === 1 && de('8')[0].pertinencia === 'principal' && de('8')[0].clase === 'acredita', 'el documento de gas SÍ respalda el requisito de gas (8, no aplica)');
-ok(marcadas.map((x) => x.requisito).sort().join() === '1,2,3,8', `marcadas por defecto solo las pertinentes: ${marcadas.map((x) => x.nombre_copia).join(', ')}`);
+ok(marcadas.map((x) => x.requisito).sort().join() === '1,2,3,5,8', `marcadas por defecto solo las pertinentes: ${marcadas.map((x) => x.nombre_copia).join(', ')}`);
 setTimeout(() => process.exit(), 100);

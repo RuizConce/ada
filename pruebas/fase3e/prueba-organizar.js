@@ -122,8 +122,8 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     let plan = await esperarPlan(tAud);
     const nombres = plan.plan.map((f) => f.nombre_copia);
     if (process.env.VER) console.log(plan.plan.map((f) => `${f.nombre_copia} [${f.pertinencia}${f.opcional ? ' opc' : ''}${f.sensible ? ' sens' : ''}] ${f.acredita}`).join('\n'), '\nDESC', JSON.stringify(plan.descartadas, null, 0), '\nAJ', JSON.stringify(plan.ajustes));
-    ok(plan && plan.plan.length === 22 && plan.copias === 19 && plan.opcionales === 2 && plan.resultados_nombre === NOMBRE, `plan: ${plan && plan.plan.length} filas (${plan && plan.copias} marcadas por defecto, ${plan && plan.opcionales} relacionada sin leer, desmarcada) en «${plan && plan.resultados_nombre}»`);
-    ok(plan.plan.find((f) => f.requisito === '7' && f.opcional && /no tiene texto/i.test(f.acredita)) && plan.plan.some((f) => f.requisito === '15' && f.opcional && /solo por su nombre/.test(f.acredita)), 'pertinencia: el plano sin texto del 7 y el archivo leído sin cita del 15 se ofrecen DESMARCADOS (solo por nombre)');
+    ok(plan && plan.plan.length === 22 && plan.copias === 20 && plan.opcionales === 1 && plan.resultados_nombre === NOMBRE, `plan: ${plan && plan.plan.length} filas (${plan && plan.copias} marcadas por defecto, ${plan && plan.opcionales} relacionada sin leer, desmarcada) en «${plan && plan.resultados_nombre}»`);
+    ok(plan.plan.find((f) => f.requisito === '7' && !f.opcional && /no tiene texto/i.test(f.acredita)) && plan.plan.some((f) => f.requisito === '15' && f.opcional && /relacionado por su nombre/.test(f.acredita)), 'pertinencia: el plano sin texto del 7 se propone como PENDIENTE (ADA no puede leerlo); el archivo examinado sin cita del 15 va DESMARCADO');
     {
       // «Revisar el plan otra vez (sin costo)»: con los resultados guardados, sin IA, sin descargas y sin escribir en Drive.
       const stP = await ctl('/control/stats'); const llP = sql('SELECT COUNT(*) FROM llamadas_ia');
@@ -178,7 +178,7 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     ok(r.status === 400 && !Object.keys(st.escrituras_en || {}).length, 'contraseña equivocada: no se crea carpeta ni copia');
     ok((await post(`/api/auditorias/propuestas/${plan.id}/aprobar`, { presupuesto: 9, origen: 'tarjeta_chat' })).status === 409, 'el plan de copias no se puede aprobar por la ruta de auditorías');
     // Apruebo: incluyo el RUT y omito una copia (el registro de febrero).
-    r = await post(`/api/auditorias/propuestas/${plan.id}/aprobar-copias`, { password: PASS, incluir_sensibles: [sens.clave], omitir: ['10:D_TEMP2'] });
+    r = await post(`/api/auditorias/propuestas/${plan.id}/aprobar-copias`, { password: PASS, incluir_sensibles: [sens.clave], omitir: ['10:D_TEMP2', `7:${plan.plan.find((f) => f.requisito === '7').archivo_id}`] });
     ok(r.status === 200 && r.d.copias === 19, `copias aprobadas: ${r.d.copias} (incluido el RUT por decisión expresa, omitida una)`);
     const tCop = r.d.trabajo_id;
     // Corte del servidor a mitad de las copias → reanuda sin duplicar.
