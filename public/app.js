@@ -391,12 +391,15 @@
       + '<div class="tarjeta-botones"><button type="button" class="principal"></button><button type="button" class="descartar">Descartar</button></div>';
     t.querySelector('.aud-estado').textContent = `Paso 4 · ${p.id.slice(0, 8)}`;
     t.querySelector('strong').textContent = `Plan de copias — ${p.expediente}`;
-    t.querySelector('.aud-plan-destino').textContent = `Se creará la carpeta «${p.resultados_nombre}» en la raíz de Mi unidad. ADA solo escribe ahí: los originales no se modifican, mueven ni borran. Desmarca lo que no quieras copiar.`;
+    t.querySelector('.aud-plan-destino').textContent = p.carpeta_existente
+      ? `Se usará la carpeta que ya existe, «${p.carpeta_existente.nombre}». Las ${(p.copias_existentes || []).length} copias que ya tiene se conservan y no se duplican. ADA solo escribe ahí: los originales no se modifican, mueven ni borran.`
+      : `Se creará la carpeta «${p.resultados_nombre}» en la raíz de Mi unidad. ADA solo escribe ahí: los originales no se modifican, mueven ni borran. Desmarca lo que no quieras copiar.`;
     const bor = borradorPlan.get(p.id) || { omitir: [], sensibles: [] };
     const ul = t.querySelector('.aud-plan');
     const boton = t.querySelector('.tarjeta-botones .principal');
-    const contar = () => { const n = [...ul.querySelectorAll('input:checked')].length; boton.textContent = `Crear carpeta y copiar (${n})`; boton.disabled = !n; };
+    const contar = () => { const n = [...ul.querySelectorAll('input:checked')].length; boton.textContent = p.carpeta_existente ? `Agregar ${n} copias a la carpeta` : `Crear carpeta y copiar (${n})`; boton.disabled = !n; };
     for (const f of p.plan) {
+      if (f.ya_copiada) { const li = document.createElement('li'); li.className = 'aud-plan-fila aud-ya-copiada'; li.textContent = `✓ ${f.ya_copiada.nombre} · requisito ${f.requisito} · ya está en la carpeta (se conserva)`; ul.appendChild(li); continue; }
       const li = document.createElement('li'); li.className = `aud-plan-fila ${f.clase === 'pendiente' ? 'aud-pendiente' : ''} ${f.sensible ? 'aud-sensible-fila' : ''}`;
       const l = document.createElement('label'); const c = document.createElement('input'); c.type = 'checkbox'; c.value = f.clave;
       // Sensibles y opcionales (apoyo, relacionados sin cita) vienen DESMARCADOS: solo se copian si los marcas.
@@ -414,6 +417,9 @@
       l.appendChild(c); l.appendChild(tx); li.appendChild(l); li.appendChild(ev); ul.appendChild(li);
     }
     const falta = t.querySelector('.aud-plan-falta');
+    if ((p.copias_sin_respaldo || []).length) {
+      const h = document.createElement('p'); h.className = 'meta aud-aviso'; h.textContent = `Copias que ya están en la carpeta y que la revisión no respalda (${p.copias_sin_respaldo.length}): ${p.copias_sin_respaldo.map((x) => `${x.copia_nombre} (requisito ${x.requisito})`).join('; ')}. Se conservan; ADA no borra: revísalas.`; falta.appendChild(h);
+    }
     if ((p.descartadas || []).length) {
       const h = document.createElement('p'); h.className = 'meta'; h.textContent = `No se copian por no ser pertinentes (${p.descartadas.length}):`; falta.appendChild(h);
       for (const x of p.descartadas) { const e = document.createElement('p'); e.className = 'meta aud-descartada'; e.textContent = `${x.requisito} · «${x.archivo}»: ${x.motivo}.`; falta.appendChild(e); }

@@ -28,7 +28,7 @@ const { plan, sinCopia, descartadas, ajustes } = planDeCopias(filas, inventario,
 const de = (r) => plan.filter((x) => x.requisito === r);
 const marcadas = plan.filter((x) => !x.opcional && !x.sensible);
 console.log(plan.map((x) => `${x.nombre_copia} [${x.pertinencia}${x.opcional ? ', desmarcada' : ''}]`).join('\n'));
-ok(!plan.some((x) => x.requisito === '7') && descartadas.some((d) => d.requisito === '7' && /numerado para el requisito 8|no mencionan/.test(d.motivo)), '1. el documento de gas NO se copia para el 7 (número municipal) y queda descartado con su motivo');
+ok(!plan.some((x) => x.requisito === '7') && descartadas.some((d) => d.requisito === '7' && /tratan del requisito 8|no tratan de lo que pide/.test(d.motivo)), '1. el documento de gas NO se copia para el 7 (número municipal) y queda descartado con su motivo');
 ok(!de('11').length && descartadas.filter((d) => d.requisito === '11').length === 2, '2. agua potable (no encontrado / declarado no aplica): no se propone el documento de gas ni el formulario');
 ok(de('2').length === 2 && de('2').find((x) => x.archivo_id === 'SII').pertinencia === 'principal' && !de('2').find((x) => x.archivo_id === 'SII').opcional && de('2').find((x) => x.archivo_id === 'F').opcional, '3. SII: el certificado va marcado; el formulario complementario queda DESMARCADO como apoyo');
 const arr = de('4')[0];

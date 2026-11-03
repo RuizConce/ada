@@ -32,6 +32,7 @@ async function chat(input) {
   const fin = ev.find((e) => e.tipo === 'fin'); const m = (fin ? fin.d.respuesta : '').match(/DATOS=(.*)$/s);
   return { tarjeta: (ev.find((e) => e.tipo === 'auditoria_propuesta') || {}).d, datos: m ? JSON.parse(m[1]) : null };
 }
+const esperarPlan = async (tId) => { for (let i = 0; i < 80; i++) { const x = (await api('/api/auditorias/propuestas')).d.find((y) => y.tipo === 'plan_copias' && (!tId || y.auditoria_trabajo === tId)); if (x) return x; await dormir(250); } return null; };
 const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pausado_presupuesto']) => { for (let i = 0; i < 1500; i++) { const a = (await api(`/api/auditorias/${id}/avance`)).d; if (hasta.includes(a.estado)) return a; await dormir(150); } return null; };
 
 (async () => {
@@ -93,7 +94,7 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     // ---- Caso real dd8008fd: el informe (último paso) falla y el trabajo queda bloqueado. «Reintentar» repite SOLO ese
     // paso (sin IA, sin descargas), la tarjeta explica dónde se detuvo y qué pasó, y al terminar aparece el plan de copias.
     {
-      const planAntes = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias');
+      const planAntes = await esperarPlan(tAud);
       sql(`DELETE FROM auditoria_propuestas WHERE id='${planAntes.id}'`);
       sql(`UPDATE trabajo_pasos SET estado='fallido', intentos=3, error='el informe salió incompleto y no se entrega: termina a media frase: «…Plano del local»' WHERE trabajo_id='${tAud}' AND tipo='aud_informe'`);
       sql(`UPDATE trabajos SET estado='bloqueado', motivo='paso informe: el informe salió incompleto y no se entrega: termina a media frase', resultado_cifrado=NULL, terminado_en=NULL WHERE id='${tAud}'`);
@@ -113,16 +114,16 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
       ok(sql(`SELECT GROUP_CONCAT(fin ORDER BY orden) FROM trabajo_pasos WHERE trabajo_id='${tAud}' AND tipo<>'aud_informe'`) === finAntes && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id='${tAud}'`) === llamAntes
         && sql(`SELECT gastado_usd FROM trabajos WHERE id='${tAud}'`) === gastoAntes && JSON.stringify(stR.export) === JSON.stringify(stR2.export),
         'solo se repitió el informe: los demás pasos intactos, sin llamadas a la IA, sin gasto nuevo y sin descargas');
-      await dormir(800);
+      await esperarPlan(tAud); await dormir(500);
       const planes = (await api('/api/auditorias/propuestas')).d.filter((x) => x.tipo === 'plan_copias' && x.auditoria_trabajo === tAud);
       ok(planes.length === 1, `al terminar aparece el plan de copias para aprobar (una sola tarjeta: ${planes.length})`);
     }
     // ---- Aprobación 4: plan de copias (vista previa completa) ----
-    let plan = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias');
+    let plan = await esperarPlan(tAud);
     const nombres = plan.plan.map((f) => f.nombre_copia);
     if (process.env.VER) console.log(plan.plan.map((f) => `${f.nombre_copia} [${f.pertinencia}${f.opcional ? ' opc' : ''}${f.sensible ? ' sens' : ''}] ${f.acredita}`).join('\n'), '\nDESC', JSON.stringify(plan.descartadas, null, 0), '\nAJ', JSON.stringify(plan.ajustes));
-    ok(plan && plan.plan.length === 21 && plan.copias === 19 && plan.opcionales === 1 && plan.resultados_nombre === NOMBRE, `plan: ${plan && plan.plan.length} filas (${plan && plan.copias} marcadas por defecto, ${plan && plan.opcionales} relacionada sin leer, desmarcada) en «${plan && plan.resultados_nombre}»`);
-    ok(plan.plan.find((f) => f.requisito === '7' && f.opcional && /no tiene texto/i.test(f.acredita)) && (plan.sin_evidencia || []).some((x) => x.requisito === '15' && /no encontró una cita/.test(x.motivo)), 'pertinencia: el plano sin texto del 7 se ofrece desmarcado; el archivo leído sin cita del 15 se informa y no se ofrece');
+    ok(plan && plan.plan.length === 22 && plan.copias === 19 && plan.opcionales === 2 && plan.resultados_nombre === NOMBRE, `plan: ${plan && plan.plan.length} filas (${plan && plan.copias} marcadas por defecto, ${plan && plan.opcionales} relacionada sin leer, desmarcada) en «${plan && plan.resultados_nombre}»`);
+    ok(plan.plan.find((f) => f.requisito === '7' && f.opcional && /no tiene texto/i.test(f.acredita)) && plan.plan.some((f) => f.requisito === '15' && f.opcional && /solo por su nombre/.test(f.acredita)), 'pertinencia: el plano sin texto del 7 y el archivo leído sin cita del 15 se ofrecen DESMARCADOS (solo por nombre)');
     {
       // «Revisar el plan otra vez (sin costo)»: con los resultados guardados, sin IA, sin descargas y sin escribir en Drive.
       const stP = await ctl('/control/stats'); const llP = sql('SELECT COUNT(*) FROM llamadas_ia');
@@ -148,7 +149,7 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     ok(nombres.includes('04_Contrato_QF_y_nombramiento.pdf') && nombres.includes('05_Contrato_QF_y_nombramiento.pdf'), 'un archivo que acredita dos requisitos → una copia identificada para cada uno (04_ y 05_)');
     ok(nombres.includes('10_Registro_temperatura_enero.pdf') && nombres.includes('10_Registro_temperatura_febrero.pdf'), 'un requisito con dos documentos → ambos llevan su número (10_)');
     ok(nombres.includes('09_PENDIENTE_Procedimiento_recepcion.pdf') && nombres.includes('18_PENDIENTE_Declaracion_condiciones_sanitarias.pdf') && nombres.includes('01_PENDIENTE_Solicitud_autorizacion_botiquin.pdf'), 'parciales y por revisar (firma) → prefijo PENDIENTE');
-    ok(nombres.includes('12_NO_APLICA_estupefacientes.pdf') && !plan.plan.some((f) => f.archivo_id === 'D_SENUELO') && plan.sin_copia.map((x) => x.requisito).join() === '15,21',
+    ok(nombres.includes('12_NO_APLICA_estupefacientes.pdf') && !plan.plan.some((f) => f.archivo_id === 'D_SENUELO' && !f.opcional) && plan.sin_copia.map((x) => x.requisito).join() === '21',
       'NO APLICA con su declaración; el archivo de nombre engañoso NO se copia; 7, 15 y 21 sin copia, con lo que falta');
     ok(plan.plan.every((f) => (f.cita || f.pertinencia === 'relacionado') && f.estado) && plan.sin_copia.find((x) => x.requisito === '21').accion.length > 10, 'cada copia tiene su evidencia citada; cada faltante dice qué conseguir');
     const sens = plan.plan.find((f) => f.archivo_id === 'D_RUT');
@@ -193,7 +194,7 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     const copiasEn = en.files.filter((f) => f.appProperties && f.appProperties.ada_origen);
     const entregables = en.files.filter((f) => f.appProperties && f.appProperties.ada_entregable);
     ok(copiasEn.length === 19 && new Set(copiasEn.map((f) => f.name)).size === 19, `la carpeta de resultados tiene exactamente 19 copias, sin duplicados pese al corte`);
-    ok(entregables.map((f) => f.name).sort().join(' | ') === `${NOMBRE} — Matriz de requisitos.xlsx | ${NOMBRE} — Resumen.docx`, 'el Excel y el Word también quedaron dentro de la carpeta de resultados');
+    ok(entregables.length === 2 && entregables.some((f) => f.name.startsWith(`${NOMBRE} — Matriz de requisitos (revisión `)) && entregables.some((f) => f.name.startsWith(`${NOMBRE} — Resumen (revisión `)), `el Excel y el Word (de la revisión) también quedaron dentro de la carpeta de resultados: ${entregables.map((f) => f.name).join(' | ')}`);
     ok(Object.keys(st.escrituras_en).every((k) => k === resId || k === 'root') && (st.escrituras_en.root || 0) === 1, `solo se escribió en la carpeta de resultados (y se creó una vez en la raíz): ${JSON.stringify(st.escrituras_en)}`);
     const fuente = ['carpeta-botdocs', 'botdocs-procedimientos', 'carpeta-botreq'];
     ok(!Object.keys(st.escrituras_en).some((k) => fuente.includes(k)) && docs.every((a) => !st.escrituras[a.id]), 'ninguna escritura en las carpetas de origen ni en sus archivos');
@@ -207,15 +208,37 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
     await libro.xlsx.load(Buffer.from(await (await fetch(`http://localhost:3200${e.d.url}`)).arrayBuffer()));
     const h = libro.getWorksheet('Requisitos'); const enc = []; h.getRow(1).eachCell((x) => enc.push(String(x.value)));
     const filasX = []; h.eachRow((row, n) => { if (n > 1) filasX.push(row.values.slice(1).map((v) => String(v == null ? '' : v))); });
-    ok(enc.join(' | ') === 'N.º | Requisito | Estado | Documentos encontrados | Evidencia | Qué falta o qué corregir | Nombre de la copia | Enlace a la copia' && filasX.length === 22, `Excel: exactamente 22 requisitos con las columnas pedidas`);
+    ok(enc.join(' | ') === 'N.º | Requisito | Clasificación | Situación | Documentos pertinentes | Evidencia (cita textual) | Archivos por revisar a mano | Qué falta o qué revisar | Estado declarado en la lista | Cambio respecto de la auditoría | Copias en la carpeta (enlaces)' && filasX.length === 22 && libro.getWorksheet('Documentos por requisito'), `Excel: exactamente 22 requisitos, con la hoja «Documentos por requisito» (A–E)`);
     const f4 = filasX.find((x) => x[0] === '4'); const f21 = filasX.find((x) => x[0] === '21'); const f10 = filasX.find((x) => x[0] === '10');
-    ok(f4[2] === 'LISTO' && f4[6] === '04_Contrato_QF_y_nombramiento.pdf' && /^https:\/\/drive\.simulado\/copia-/.test(f4[7]) && /Nombramiento del químico/.test(f4[4]), 'fila 4: LISTO, evidencia citada, nombre de la copia y enlace a la copia');
-    ok(f21[2] === 'NO ENCONTRADO' && !f21[6] && f21[5].length > 10, 'fila 21: NO ENCONTRADO, sin copia, con qué documento conseguir');
-    ok(f10[6] === '10_Registro_temperatura_enero.pdf', 'fila 10: solo la copia aprobada');
+    ok(f4[2] === 'LISTO' && /^04_Contrato_QF_y_nombramiento\.pdf — https:\/\/drive\.simulado\/copia-/.test(f4[10]) && /Nombramiento del químico/.test(f4[5]), 'fila 4: LISTO, evidencia citada, nombre de la copia y enlace a la copia');
+    ok(f21[2] === 'NO ENCONTRADO' && !f21[10] && f21[7].length > 10, 'fila 21: NO ENCONTRADO, sin copia, con qué documento conseguir');
+    ok(/10_Registro_temperatura_enero\.pdf/.test(f10[10]) && !/febrero/.test(f10[10]), 'fila 10: solo la copia aprobada');
     const w = await post('/api/descargas', { tipo: 'auditoria_informe', id: tCop });
     const par = await require('../../src/archivos').textoDeWord(Buffer.from(await (await fetch(`http://localhost:3200${w.d.url}`)).arrayBuffer()));
-    ok(par.some((x) => /^Expediente: Botiquín Andaluz \(ficticio\)/.test(x)) && par.some((x) => /Documentos que faltan/.test(x)) && par.some((x) => /^21: /.test(x)) && par.some((x) => /09_PENDIENTE_Procedimiento_recepcion\.pdf/.test(x)), 'Word: aprovechados, pendientes, faltantes y acciones');
+    ok(par.some((x) => /^Expediente: Botiquín Andaluz \(ficticio\)/.test(x)) && par.some((x) => /Copias en la carpeta de resultados/.test(x)) && par.some((x) => /^21 — NO ENCONTRADO/.test(x)) && par.some((x) => /09_PENDIENTE_Procedimiento_recepcion\.pdf — https/.test(x)), 'Word: requisitos, pendientes, faltantes y copias con enlace');
     ok(/^auditoria-botiquin-andaluz-ficticio-/.test(e.d.nombre), `descarga con el expediente: ${e.d.nombre}`);
+    // ---- Segunda entrega en la MISMA carpeta (caso dd8008fd): se revisa otra vez, las 19 copias ya hechas se reconocen
+    // (no se duplican) y se agrega solo lo que marques; Excel y Word nuevos con TODOS los enlaces.
+    {
+      const tA = plan.auditoria_trabajo;
+      const rv = await post(`/api/auditorias/${tA}/revisar-expediente`);
+      const p2 = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias' && x.auditoria_trabajo === tA);
+      const ya = p2.plan.filter((f) => f.ya_copiada);
+      if (process.env.VER) console.log("NUEVAS", JSON.stringify(p2.plan.filter((f) => !f.ya_copiada && !f.opcional && !f.sensible).map((f) => [f.requisito, f.archivo, f.pertinencia]))); if (process.env.VER) console.log("P2", JSON.stringify((await api("/api/auditorias/propuestas")).d.filter((x) => x.tipo === "plan_copias").map((x) => [x.id.slice(0,8), x.auditoria_trabajo.slice(0,8), x.version_plan, !!x.carpeta_existente, x.revision && x.revision.version])), p2 && JSON.stringify({ c: p2.carpeta_existente, n: (p2.copias_existentes || []).length, ya: ya.length, copias: p2.copias, id: p2.id, prev: plan.id }));
+      ok(rv.status === 200 && p2 && p2.carpeta_existente && p2.carpeta_existente.id === resId && ya.length === 19 && p2.copias === 0, `plan nuevo: reutiliza la carpeta existente y reconoce las ${ya.length} copias ya hechas (0 duplicados marcados)`);
+      const extra = p2.plan.find((f) => f.requisito === '7' && f.opcional);
+      const ap = await post(`/api/auditorias/propuestas/${p2.id}/aprobar-copias`, { password: PASS, incluir_sensibles: [extra.clave] });
+      const fin2 = await esperar(ap.d.trabajo_id);
+      const en2 = await (await fetch(`http://localhost:9933/drive/v3/files?q=${encodeURIComponent(`'${resId}' in parents and trashed = false`)}&pageSize=200`)).json();
+      const cps = en2.files.filter((f) => f.appProperties && f.appProperties.ada_origen);
+      const ent2 = en2.files.filter((f) => f.appProperties && f.appProperties.ada_entregable);
+      ok(ap.status === 200 && ap.d.copias === 1 && fin2.estado === 'completado' && cps.length === 20 && new Set(cps.map((f) => f.name)).size === 20 && cps.some((f) => f.name === '07_PENDIENTE_Plano_local_botiquin.jpg'),
+        `se agregó solo la copia marcada a la misma carpeta: ${cps.length} copias, sin duplicados (${fin2.estado} ${fin2.motivo || ''})`);
+      const ex2 = await post('/api/descargas', { tipo: 'auditoria', id: ap.d.trabajo_id });
+      const lb = new ExcelJS.Workbook(); await lb.xlsx.load(Buffer.from(await (await fetch(`http://localhost:3200${ex2.d.url}`)).arrayBuffer()));
+      const enl = []; lb.getWorksheet('Requisitos').eachRow((row, n) => { if (n > 1) enl.push(String(row.getCell(11).value || '')); });
+      ok(ent2.length === 4 && enl.join('\n').split('https://').length - 1 === 20, `Excel nuevo con los enlaces de las 20 copias (anteriores y nueva); entregables en la carpeta: ${ent2.length}`);
+    }
     // ---- Seguridad en la capa de Drive ----
     Object.assign(process.env, { ADA_DRIVE_URL: 'http://localhost:9933', DATABASE_URL: ENV.DATABASE_URL, ADA_CLAVE_DATOS: CLAVE, ADA_EXTRACCIONES: 'prueba', ADA_DRIVE_CARPETAS_LECTURA: '', ADA_DRIVE_CARPETA_PRUEBA: 'carpeta-prueba' });
     const Drive = require('../../src/drive'); await Drive.recargarCarpetas();

@@ -1228,11 +1228,13 @@ Object.assign(EJECUTORES, {
     const nombres = copias.filter((c) => c.estado_copia === 'ok').map((c) => c.copia_nombre);
     if (new Set(nombres).size !== nombres.length) problemas.push('hay nombres de copia repetidos');
     const marcadas = en.filter((f) => f.appProperties && f.appProperties.ada_origen);
-    if (marcadas.length > nombres.length) problemas.push(`hay ${marcadas.length - nombres.length} copias de más en la carpeta (posible duplicado)`);
+    const previasN = (o.copias_existentes || []).filter((c) => !copias.some((x) => x.copia_id === c.copia_id)).length; // copias de aprobaciones anteriores, que se conservan
+    if (marcadas.length > nombres.length + previasN) problemas.push(`hay ${marcadas.length - nombres.length - previasN} copias de más en la carpeta (posible duplicado)`);
     return { resultado: { carpeta: res, copias: copias.length, copias_ok: ok, originales_intactos: originales, problemas }, costo: 0 };
   },
   async org_excel({ previos, trabajo, trabajoId }) {
     const o = Cifrado.descifrarJSON(trabajo.objetivo_cifrado) || {};
+    if (o.revision && o.revision.id) return entregableRevisado('excel', { previos, o, trabajoId });
     const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
     const copias = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado);
     const ver = previos.find((x) => x.clave === 'verificar_copias' && x.resultado).resultado;
@@ -1287,6 +1289,7 @@ Object.assign(EJECUTORES, {
   },
   async org_informe({ previos, trabajo, trabajoId }) {
     const o = Cifrado.descifrarJSON(trabajo.objetivo_cifrado) || {};
+    if (o.revision && o.revision.id) return entregableRevisado('informe', { previos, o, trabajoId });
     const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
     const copias = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado).filter((c) => c.estado_copia === 'ok');
     const ver = previos.find((x) => x.clave === 'verificar_copias' && x.resultado).resultado;
@@ -2372,20 +2375,63 @@ function genericasDeFilas(filas, extra = '') {
 function terminosRequisito(f, genericas) {
   return [...terminos(f.texto_requisito)].filter((x) => !GENERICAS.has(x) && !genericas.has(x) && !PERT_GENERICAS.has(x));
 }
-function pertinencia(f, e, nombre, genericas, idsLista, usarNumeros = true) {
-  const rq = terminosRequisito(f, genericas);
-  const tc = terminos(e.cita || ''); const enCita = rq.filter((x) => tc.has(x));
-  const rn = raicesArchivo(nombre);
-  const enNombre = rq.filter((x) => rn.has(x));
-  const num = usarNumeros ? numeroDeArchivo(nombre) : null; // números de OTRA lista (p. ej. del expediente SEREMI anterior) no significan nada aquí
-  const suNumero = num != null && Number(num) === Number(String(f.requisito).match(/^\d+/) ? String(f.requisito).match(/^\d+/)[0] : NaN);
-  const otroNumero = num != null && !suNumero && idsLista.has(String(Number(num)));
-  if (otroNumero && !enNombre.length) return { nivel: 'descartado', motivo: `el archivo está numerado para el requisito ${Number(num)} y su nombre no se relaciona con este` };
-  if (!enCita.length && !enNombre.length && !suNumero) return { nivel: 'descartado', motivo: `ni la cita ni el nombre del archivo mencionan lo específico del requisito (${rq.slice(0, 4).join(', ') || 'sin términos específicos'})` };
-  // Nombre (o número) del archivo relacionado con el requisito + cita verificada de ese archivo → respalda el requisito.
-  if (enNombre.length || suNumero) return { nivel: 'principal', terminos: enCita.length ? enCita : enNombre, donde: enCita.length ? 'la cita' : 'el nombre del archivo' };
-  return { nivel: 'apoyo', terminos: enCita, donde: 'la cita', motivo: 'la cita menciona el requisito, pero el nombre del archivo no se relaciona con él' };
+// ---- Pertinencia por afinidad (cualquier lista) ----
+// Cada palabra pesa según lo RARA que es en la lista de requisitos (1 / n.º de requisitos que la usan): «gas», «TC6»,
+// «arriendo» o «plano» pesan mucho; «medicamentos» o «listado», que aparecen en muchos, pesan poco. Un texto (cita o
+// nombre de archivo) se relaciona con un requisito solo si cubre una parte suficiente de su peso Y si no se relaciona
+// claramente mejor con OTRO requisito («Listado de personal» es del requisito del personal, no del de medicamentos).
+// Los números de los nombres de archivo nunca bastan por sí solos (pueden venir de otra lista).
+const BOILER7 = new Set(['requisi', 'subir', 'documen', 'archivo', 'copia', 'copias', 'adjunta', 'adjunto', 'present', 'legible', 'complet', 'corresp', 'vigente', 'origina', 'nombre', 'fecha', 'debe', 'deben', 'contar', 'cuenta', 'aplica', 'firmado', 'firmada', 'firma', 'firmas', 'escanea', 'pdf', 'docx', 'version', 'final', 'merged', 'copia', 'scan']);
+const terminos7 = (t) => {
+  const siglas = (String(t || '').match(/\b[A-ZÁÉÍÓÚÑ]{2,5}\d?\b/g) || []).map((x) => norm(x));
+  return new Set(norm(t).replace(/([a-z])(\d)/g, '$1$2').split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !STOP.has(w) && !STOP3.has(w)).map((w) => w.slice(0, 7)).concat(siglas).filter((w) => !BOILER7.has(w)));
+};
+const terminosNombre7 = (nombre) => terminos7(String(nombre || '').replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/[_.\-]+/g, ' ').replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, '$1 $2').replace(/([a-záéíóúñ]{4,})(\d)/g, '$1 $2').replace(/(\d)([a-záéíóúñ]{2,})/g, '$1 $2'));
+// Una cita que PIDE el documento («adjuntar boleta de agua») no demuestra que exista.
+const INSTRUCCION = /\b(adjunt(ar|e|ando)|acompañ(ar|e)|present(ar|e)\b|debe(n|r[aá])?\s+(adjuntar|presentar|acompañar|contar|incluir)|se\s+(solicita|requiere|debe|deber[aá])|solicitar|indicar|descargar|complet(ar|e)\s|llen(ar|e)\s)/i;
+function modeloPertinencia(filas, expediente = '') {
+  const extra = terminos7(expediente);
+  const T = new Map(filas.map((f) => [f.requisito, new Set([...terminos7(f.texto_requisito)].filter((x) => !extra.has(x)))]));
+  const df = {}; for (const ts of T.values()) for (const x of ts) df[x] = (df[x] || 0) + 1;
+  const w = (x) => 1 / (df[x] || 1);
+  const total = new Map([...T].map(([k, ts]) => [k, [...ts].reduce((a, x) => a + w(x), 0)]));
+  const afinidad = (S, req) => { const ts = T.get(req); const tot = total.get(req); if (!ts || !tot) return 0; let m = 0; for (const x of ts) if (S.has(x)) m += w(x); return m / tot; };
+  const comunes = (S, req) => [...(T.get(req) || [])].filter((x) => S.has(x));
+  const mejor = (S) => { let req = null; let score = 0; for (const k of T.keys()) { const v = afinidad(S, k); if (v > score) { score = v; req = k; } } return { req, score }; };
+  const todos = (S) => [...T.keys()].map((k) => ({ req: k, score: afinidad(S, k) }));
+  return { afinidad, comunes, mejor, todos, terminos: (req) => [...(T.get(req) || [])] };
 }
+const UMBRAL = 0.2; const CERCA = 0.7;
+function pertinencia(f, e, nombre, M) {
+  const Sc = terminos7(e.cita || ''); const Sn = terminosNombre7(nombre);
+  const instr = INSTRUCCION.test(String(e.cita || ''));
+  const sc = M.afinidad(Sc, f.requisito); const bc = M.mejor(Sc);
+  const sn = M.afinidad(Sn, f.requisito); const bn = M.mejor(Sn);
+  const citaOk = !instr && sc >= UMBRAL && sc >= CERCA * bc.score;
+  const nombreOk = sn >= UMBRAL && sn >= CERCA * bn.score;
+  const nombreDeOtro = !nombreOk && bn.score >= 0.3 && bn.req !== f.requisito;
+  if (instr && sc >= UMBRAL && !nombreOk) return { nivel: 'descartado', motivo: `la cita solo pide o menciona el documento («${corta(e.cita, 90)}»); no demuestra que exista` };
+  // Cita verificada que trata de lleno de ESTE requisito: lo respalda aunque el archivo también sirva para otro
+  // (un «Contrato QF y nombramiento» acredita el contrato y el nombramiento).
+  if (citaOk && sc >= 0.5 && bc.req === f.requisito && sn >= 0.1) return { nivel: 'principal', terminos: M.comunes(Sc, f.requisito), donde: 'la cita', afinidad: sc };
+  if (nombreOk && (citaOk || (!instr && !(bc.score >= 0.3 && bc.req !== f.requisito)))) return { nivel: 'principal', terminos: M.comunes(citaOk ? Sc : Sn, f.requisito), donde: citaOk ? 'la cita' : 'el nombre del archivo', afinidad: Math.max(sc, sn) };
+  if (citaOk) return { nivel: 'apoyo', terminos: M.comunes(Sc, f.requisito), donde: 'la cita', afinidad: sc, ...(nombreDeOtro ? { no_promover: true, motivo: `el archivo trata principalmente del requisito ${bn.req}` } : { motivo: 'la cita menciona el requisito, pero el nombre del archivo no se relaciona con él' }) };
+  const otro = bc.score >= 0.3 && bc.req !== f.requisito ? bc.req : (bn.score >= 0.3 && bn.req !== f.requisito ? bn.req : null);
+  return { nivel: 'descartado', motivo: otro ? `la cita y el archivo tratan del requisito ${otro}, no de este` : `ni la cita ni el nombre del archivo tratan de lo que pide el requisito (${M.terminos(f.requisito).slice(0, 4).join(', ')})` };
+}
+// Relación de un archivo del inventario con un requisito, solo por su NOMBRE (para archivos no leídos o sin cita).
+function relacionNombre(f, nombre, M) {
+  const Sn = terminosNombre7(nombre); const sn = M.afinidad(Sn, f.requisito); const bn = M.mejor(Sn);
+  const fuerte = sn >= 0.3 && bn.req === f.requisito;
+  // Ambiguo: el nombre se relaciona casi igual con otro requisito («21_Sala_de_procedimientos» con «sala de espera» y con
+  // «procedimiento de reclamos»): no se asigna a ninguno salvo que sea claramente el mejor.
+  const otros = M.todos(Sn).filter((x) => x.req !== f.requisito && x.score >= UMBRAL);
+  const ambiguo = !fuerte && otros.some((x) => sn < 1.3 * x.score);
+  return { ok: sn >= UMBRAL && sn >= CERCA * bn.score && !ambiguo, fuerte, afinidad: sn, terminos: M.comunes(Sn, f.requisito) };
+}
+// Lo que hay que verificar a mano: la columna «Qué subir…» de la lista si existe; si no, el requisito completo.
+const queVerificar = (f) => { const t = una(f.texto_requisito); const m = t.match(/Qu[eé] (subir|presentar|adjuntar)[^:]*:\s*(.+)$/i); return corta((m ? m[2] : t).replace(/[.\s]+$/, ''), 240); };
+const pideFirma = (f, nombre = '') => /firm|timbr/i.test(`${f.texto_requisito} ${nombre}`);
 // ¿La numeración de los nombres de archivo corresponde a ESTA lista? Se comprueba con los propios datos: en los archivos
 // cuyo nombre se relaciona por sus palabras con un único requisito, el número del nombre debe coincidir con ese requisito
 // (al menos 3 casos y 70 %). Si no (carpeta numerada para otra lista, como la SEREMI anterior), los números se ignoran.
@@ -2419,152 +2465,138 @@ const corta = (t, n = 220) => { const x = una(t); return x.length > n ? `${x.sli
 function revisarFilas(filas, inventario, { requisitos = [], expediente = '', lectura = {}, vistos = null } = {}) {
   const inv = new Map((inventario || []).map((a) => [a.id, a]));
   const declarado = new Map(requisitos.map((r) => [String(r.id), r.estado_declarado || '']));
+  const M = modeloPertinencia(filas, expediente);
   const genericas = genericasDeFilas(filas, expediente);
-  const numeracion = numeracionCoincide(filas, inventario, genericas);
-  const idsLista = new Set(filas.map((f) => String(Number(String(f.requisito).match(/^\d+/) || NaN))));
-  const pertinentesGlobal = new Set();
+  const numeracion = numeracionCoincide(filas, inventario, genericas); // solo informativo: los números nunca deciden
   const pre = filas.map((f) => {
     const evid = (f.evidencias || []).filter((e) => e.verificada && e.archivo_id);
     const evaluadas = [...new Map(evid.map((e) => [`${e.archivo_id}|${e.aporta}`, e])).values()].map((e) => {
       const a = inv.get(e.archivo_id) || {}; const original = e.archivo || a.nombre || e.archivo_id;
-      return { e: { ...e, archivo: original }, a, p: pertinencia(f, e, original, genericas, idsLista, numeracion.usar) };
+      return { e: { ...e, archivo: original }, a, p: pertinencia(f, { ...e, archivo: original }, original, M) };
     });
-    for (const x of evaluadas) if (x.p.nivel !== 'descartado' && x.e.aporta !== 'en_contra') pertinentesGlobal.add(x.e.archivo_id);
     return { f, evaluadas };
   });
-  const descartadas = []; const sinEvidencia = []; const out = [];
-  // Citas descartadas en un requisito que SÍ tratan de otro (p. ej. la declaración TC6 citada para «número municipal»,
-  // que es del requisito de gas): se reubican allí como evidencia a comprobar, nunca como acreditación automática.
+  // Citas descartadas en un requisito que SÍ tratan de otro: se reubican allí como evidencia a comprobar.
   const malasGlobal = pre.flatMap(({ f, evaluadas }) => evaluadas.filter((y) => y.p.nivel === 'descartado' && y.e.aporta !== 'en_contra').map((y) => ({ origen: f.requisito, e: y.e })));
+  const yaPertinente = new Set(pre.flatMap(({ evaluadas }) => evaluadas.filter((y) => y.p.nivel !== 'descartado' && y.e.aporta !== 'en_contra').map((y) => y.e.archivo_id)));
   for (const { f, evaluadas } of pre) {
     const propias = new Set(evaluadas.map((y) => y.e.archivo_id));
+    // Solo hacia requisitos que todavía no tienen un documento que los acredite, y nunca un archivo que ya es evidencia
+    // pertinente de otro requisito (un listado de personal no se reparte por cada requisito que nombre a una persona).
+    if (evaluadas.some((y) => y.p.nivel === 'principal' && y.e.aporta !== 'en_contra')) continue;
     for (const m of malasGlobal) {
-      if (m.origen === f.requisito || propias.has(m.e.archivo_id)) continue;
-      const p = pertinencia(f, m.e, m.e.archivo, genericas, idsLista, numeracion.usar);
-      if (p.nivel === 'principal') { evaluadas.push({ e: { ...m.e, reubicada_desde: m.origen }, a: inv.get(m.e.archivo_id) || {}, p }); propias.add(m.e.archivo_id); }
+      if (m.origen === f.requisito || propias.has(m.e.archivo_id) || yaPertinente.has(m.e.archivo_id)) continue;
+      const p = pertinencia(f, m.e, m.e.archivo, M);
+      if (p.nivel === 'principal' || (p.nivel === 'apoyo' && (p.afinidad || 0) >= 0.5)) { evaluadas.push({ e: { ...m.e, reubicada_desde: m.origen }, a: inv.get(m.e.archivo_id) || {}, p }); propias.add(m.e.archivo_id); }
     }
   }
+  const pertinentesGlobal = new Set(pre.flatMap(({ evaluadas }) => evaluadas.filter((y) => y.p.nivel !== 'descartado' && y.e.aporta !== 'en_contra').map((y) => y.e.archivo_id)));
+  const descartadas = []; const sinEvidencia = []; const out = [];
+  const lista = (xs) => xs.slice(0, 3).map((x) => `«${x.archivo}»`).join(', ');
   for (const { f, evaluadas } of pre) {
     const decl = declarado.get(String(f.requisito)) || '';
+    const dna = esNoAplica(decl);
     const antes = f.presentacion || 'revisar';
     const etiquetaAntes = f.clasificacion || ETIQUETA_REVISION[antes] || antes;
+    const qv = queVerificar(f);
     const malas = evaluadas.filter((y) => y.p.nivel === 'descartado');
     for (const y of malas) descartadas.push({ requisito: f.requisito, archivo: y.e.archivo, archivo_id: y.e.archivo_id, estado: etiquetaAntes, motivo: y.p.motivo, cita: corta(y.e.cita, 200) });
     const buenas = evaluadas.filter((y) => y.p.nivel !== 'descartado');
     const aFavor = buenas.filter((y) => y.e.aporta !== 'en_contra');
-    // «Apoyo» solo es secundario frente a un documento principal. Si no hay ninguno propio, la cita que más habla del
-    // requisito pasa a principal (un archivo mal nombrado, como «Scan_2023.pdf», puede acreditar igual).
     const propiasFavor = aFavor.filter((y) => !y.e.reubicada_desde);
+    // «Apoyo» solo es secundario frente a un principal; si no hay ninguno propio, la cita que más trata del requisito
+    // pasa a principal, salvo que el archivo sea claramente de otro requisito.
     if (propiasFavor.length && !propiasFavor.some((y) => y.p.nivel === 'principal')) {
-      const mejor = propiasFavor.slice().sort((x, y) => (y.p.terminos || []).length - (x.p.terminos || []).length)[0];
-      mejor.p = { ...mejor.p, nivel: 'principal', motivo: undefined };
+      const cand = propiasFavor.filter((y) => !y.p.no_promover).sort((x, y) => (y.p.afinidad || 0) - (x.p.afinidad || 0))[0];
+      if (cand) cand.p = { ...cand.p, nivel: 'principal', motivo: undefined };
     }
-    const principal = aFavor.some((y) => y.p.nivel === 'principal' && !y.e.reubicada_desde);
+    const principal = propiasFavor.some((y) => y.p.nivel === 'principal');
     const reubicadas = aFavor.filter((y) => y.e.reubicada_desde);
-    // Archivos existentes relacionados por sus palabras (y por número solo si la numeración es de esta lista).
-    const rq = terminosRequisito(f, genericas);
+    const evalFail = f.estado === 'no_evaluado' || (!textoLimpio(f.justificacion) && antes === 'revisar');
+    // A. Documentos existentes relacionados con el requisito que no quedaron como evidencia: se revisan, nunca se dan
+    //    por inexistentes. (B, C, D y E se registran por documento en el Excel.)
     const yaEn = new Set(aFavor.map((y) => y.e.archivo_id));
     const porRevisar = [];
-    for (const a of inventario || []) {
+    const firma = (nombre) => (pideFirma(f, nombre) ? ' Verificar también la firma (ADA no verifica firmas y el nombre del archivo no basta).' : '');
+    const acreditado = principal && ['listo', 'no_aplica'].includes(antes) && !evalFail;
+    for (const a of acreditado ? [] : inventario || []) {
       if (yaEn.has(a.id) || a.estado === 'fuente de requisitos' || a.estado === 'duplicado exacto' || /acceso directo/.test(a.estado || '')) continue;
-      const rn = raicesArchivo(a.nombre); const porNombre = rq.filter((x) => rn.has(x));
-      const num = numeracion.usar ? numeroDeArchivo(a.nombre) : null;
-      const porNumero = num != null && Number(num) === Number((String(f.requisito).match(/^\d+/) || [])[0]);
-      if (!porNumero && !porNombre.length) continue;
-      // Una sola palabra en común no basta si el archivo se relaciona igual o mejor con otro requisito
-      // («31_LIBRO_RECLAMOS» con «libro de estupefacientes» y con «reclamos»): se asigna al mejor o a ninguno.
-      if (!porNumero && porNombre.length === 1 && filas.some((g) => g !== f && terminosRequisito(g, genericas).filter((x) => rn.has(x)).length >= 1)) continue;
-      if (!porNumero && pertinentesGlobal.has(a.id) && porNombre.length < 2) continue; // ya es evidencia pertinente de otro requisito
+      const rel = relacionNombre(f, a.nombre, M);
+      const vistoAqui = !!(vistos && vistos[f.requisito] && vistos[f.requisito].has(a.id));
+      if (!rel.ok && !(evalFail && vistoAqui)) continue;
+      if (rel.ok && pertinentesGlobal.has(a.id) && !rel.fuerte) continue; // es evidencia pertinente de otro requisito
       const leido = lectura[a.id];
       const sensibleSinLeer = /sensible/.test(a.estado || '') && !a.incluido_por_decision;
       const sinTexto = /no legible/.test(a.estado || '') || (leido && leido !== 'ok');
-      const como = porNumero ? `su número (${num})` : `su nombre (${porNombre.slice(0, 3).join(', ')})`;
-      // Leído y examinado por la IA PARA ESTE requisito (sus fragmentos se evaluaron) sin cita: se informa, no se reabre.
-      if (!sensibleSinLeer && !sinTexto && vistos && vistos[f.requisito] && vistos[f.requisito].has(a.id)) {
-        sinEvidencia.push({ requisito: f.requisito, archivo: a.nombre, motivo: `relacionado por ${porNumero ? `su número (${num})` : `su nombre (${porNombre.slice(0, 3).join(', ')})`}; ADA examinó sus fragmentos para este requisito y no encontró una cita que lo acredite` });
-        continue;
-      }
-      if (!sensibleSinLeer && !sinTexto) {
-        // Leído sin una cita pertinente: la selección de fragmentos pudo no incluir la parte que acredita → revisión, no «no encontrado».
-        porRevisar.push({ archivo_id: a.id, archivo: a.nombre, tipo: 'leido_sin_cita', sensible: esSensible(a.nombre), motivo: `relacionado por ${como}; ADA lo leyó, pero no encontró una cita que acredite el requisito`, que_revisar: `Abrir «${a.nombre}» y comprobar si acredita el requisito.` });
-        sinEvidencia.push({ requisito: f.requisito, archivo: a.nombre, motivo: `relacionado por ${como}; ADA lo leyó y no encontró una cita que acredite el requisito` });
-        continue;
-      }
-      porRevisar.push({ archivo_id: a.id, archivo: a.nombre, tipo: sensibleSinLeer ? 'sensible' : 'sin_texto', sensible: sensibleSinLeer || esSensible(a.nombre),
-        motivo: sensibleSinLeer ? `relacionado por ${como}; no se leyó porque podría tener datos personales (requiere tu autorización)` : `relacionado por ${como}; no tiene texto que ADA pueda leer (plano, imagen o escaneo)`,
-        que_revisar: sensibleSinLeer ? `Autorizar su lectura o abrir «${a.nombre}» y comprobar si acredita el requisito.` : `Abrir «${a.nombre}» y comprobar a la vista que acredita el requisito (ADA no puede verificarlo con texto).` });
+      const como = rel.ok ? `su nombre corresponde al requisito (${rel.terminos.slice(0, 3).join(', ')})` : 'ADA seleccionó sus fragmentos para este requisito';
+      let x;
+      if (sensibleSinLeer) x = { tipo: 'sensible', motivo: `${como}; no se leyó porque podría tener datos personales (requiere tu autorización)`, que_revisar: `Autorizar la lectura de «${a.nombre}» o abrirlo y comprobar: ${qv}.` };
+      else if (sinTexto) x = { tipo: 'sin_texto', motivo: `${como}; no tiene texto que ADA pueda leer (plano, imagen o escaneo)`, que_revisar: `Abrir «${a.nombre}» y comprobar a la vista: ${qv}.` };
+      else if (evalFail) x = { tipo: 'no_evaluado', motivo: `${como}; la evaluación automática de este requisito no se completó`, que_revisar: `Abrir «${a.nombre}» y verificar: ${qv}.` };
+      else x = { tipo: 'leido_sin_cita', motivo: `${como}; ADA ${vistoAqui ? 'examinó sus fragmentos para este requisito' : 'lo leyó'}, pero no encontró una cita textual que lo acredite: hay que comprobarlo`, que_revisar: `Abrir «${a.nombre}» y comprobar si contiene: ${qv}.` };
+      porRevisar.push({ archivo_id: a.id, archivo: a.nombre, sensible: sensibleSinLeer || esSensible(a.nombre), fuerte: rel.fuerte, ...x, que_revisar: `${x.que_revisar}${firma(a.nombre)}` });
     }
-    const noLeidos = porRevisar.filter((x) => x.tipo !== 'leido_sin_cita');
-    const evaluacionFallida = f.estado === 'no_evaluado' || !textoLimpio(f.justificacion) && antes === 'revisar';
+    // Clasificación final (seis estados). «No pude verificarlo» nunca se convierte en «no existe».
     let presentacion = antes; let motivoCambio = null;
-    const lista = (xs) => xs.slice(0, 3).map((x) => `«${x.archivo}»`).join(', ');
-    if (antes === 'no_aplica') {
-      if (!aFavor.length && evaluadas.some((y) => y.e.aporta !== 'en_contra')) {
-        presentacion = esNoAplica(decl) ? 'no_aplica_pc' : 'revisar';
-        motivoCambio = `la conclusión «no aplica» se apoyaba en un documento no pertinente (${lista(malas.map((y) => y.e))})`;
-      }
+    const nada = !propiasFavor.length && !reubicadas.length && !porRevisar.length;
+    const sinRespaldo = (m) => { presentacion = dna ? 'no_aplica_pc' : 'no_encontrado'; motivoCambio = m; };
+    if (evalFail) { presentacion = dna && !propiasFavor.length && !reubicadas.length ? 'no_aplica_pc' : 'revisar'; }
+    else if (antes === 'no_aplica') {
+      if (!aFavor.length && evaluadas.some((y) => y.e.aporta !== 'en_contra')) { presentacion = dna ? 'no_aplica_pc' : 'revisar'; motivoCambio = `la conclusión «no aplica» se apoyaba en un documento no pertinente (${lista(malas.map((y) => y.e))})`; }
     } else if (antes === 'listo') {
-      if (!principal) { presentacion = porRevisar.length || aFavor.length ? 'revisar' : 'no_encontrado'; motivoCambio = `su evidencia no era pertinente (${lista(malas.map((y) => y.e))})`; }
+      if (!principal) { if (propiasFavor.length || reubicadas.length || porRevisar.length) { presentacion = 'revisar'; motivoCambio = propiasFavor.length ? 'el documento citado no lo acredita directamente' : `su evidencia no era pertinente (${lista(malas.map((y) => y.e))})`; } else sinRespaldo(`su evidencia no era pertinente (${lista(malas.map((y) => y.e))})`); }
     } else if (antes === 'modificar') {
-      if (!propiasFavor.length) { presentacion = porRevisar.length ? 'revisar' : 'no_encontrado'; motivoCambio = `su evidencia no era pertinente (${lista(malas.map((y) => y.e))})`; }
+      if (!propiasFavor.length) { if (reubicadas.length || porRevisar.length) { presentacion = 'revisar'; motivoCambio = `su evidencia no era pertinente (${lista(malas.map((y) => y.e))})`; } else sinRespaldo(`su evidencia no era pertinente (${lista(malas.map((y) => y.e))})`); }
     } else if (antes === 'no_encontrado') {
-      if (propiasFavor.length) { presentacion = 'revisar'; motivoCambio = 'hay un documento pertinente citado que contradice «no encontrado»'; }
-      else if (porRevisar.length) { presentacion = 'revisar'; motivoCambio = 'existen archivos relacionados que hay que revisar a mano'; }
-    } else if (antes === 'revisar' && !aFavor.length && !porRevisar.length && !evaluacionFallida && malas.length) {
-      presentacion = 'no_encontrado'; motivoCambio = `su única evidencia no era pertinente (${lista(malas.map((y) => y.e))})`;
+      if (propiasFavor.length || reubicadas.length) { presentacion = 'revisar'; motivoCambio = reubicadas.length && !propiasFavor.length ? `hay una cita pertinente en ${lista(reubicadas.map((y) => y.e))} que la auditoría había asociado al requisito ${reubicadas[0].e.reubicada_desde}` : 'hay un documento pertinente citado'; }
+      else if (porRevisar.length && !dna) { presentacion = 'revisar'; motivoCambio = 'existe un documento relacionado que hay que revisar'; }
+      else if (dna) presentacion = 'no_aplica_pc';
+    } else if (antes === 'revisar') {
+      if (nada && malas.length) sinRespaldo(`su única evidencia no era pertinente (${lista(malas.map((y) => y.e))})`);
+      else if (nada && dna) presentacion = 'no_aplica_pc';
     }
-    if (reubicadas.length && ['no_encontrado', 'modificar', 'revisar', 'no_aplica_pc'].includes(presentacion) && !principal) {
-      presentacion = 'revisar';
-      motivoCambio = `${motivoCambio ? `${motivoCambio}; además, ` : ''}hay una cita pertinente en ${lista(reubicadas.map((y) => y.e))} que la auditoría había asociado al requisito ${reubicadas[0].e.reubicada_desde}`;
-    }
-    // Declarado «No aplica» en la lista y sin nada pertinente que lo contradiga.
-    if (esNoAplica(decl) && ['no_encontrado'].includes(presentacion) && !aFavor.length) { presentacion = 'no_aplica_pc'; motivoCambio = motivoCambio || 'la lista lo declara «No aplica» y no hay antecedentes que lo contradigan'; }
-    // Textos: los de la IA se conservan solo si no hubo cambios ni evidencia descartada y no traen mensajes técnicos.
+    if (reubicadas.length && ['no_encontrado', 'modificar', 'no_aplica_pc'].includes(presentacion) && !principal) { presentacion = 'revisar'; motivoCambio = `hay una cita pertinente en ${lista(reubicadas.map((y) => y.e))} que la auditoría había asociado al requisito ${reubicadas[0].e.reubicada_desde}`; }
+    // Textos: los de la IA solo si no hubo cambios ni evidencia descartada y no traen mensajes técnicos.
     const citaTxt = (y) => `«${corta(y.e.cita, 160)}» (${y.e.archivo}${y.e.ubicacion ? `, ${una(y.e.ubicacion)}` : ''})`;
     const docsTxt = aFavor.length ? `Documento${aFavor.length > 1 ? 's' : ''} pertinente${aFavor.length > 1 ? 's' : ''}: ${aFavor.slice(0, 3).map(citaTxt).join('; ')}.` : '';
-    const revTxt = porRevisar.length ? `Por revisar: ${porRevisar.slice(0, 4).map((x) => `«${x.archivo}» (${x.motivo.replace(/^relacionado por [^;]+; /, '')})`).join('; ')}.` : '';
     const iaJust = textoLimpio(f.justificacion); const iaAcc = textoLimpio(f.accion);
-    const conservar = !motivoCambio && !malas.length && iaJust;
+    const conservar = !motivoCambio && !malas.length && !evalFail && iaJust;
     let justificacion; let accion;
-    const req = corta(f.texto_requisito, 260);
     switch (presentacion) {
-      case 'listo':
-        justificacion = conservar ? iaJust : `${docsTxt}`; accion = ''; break;
-      case 'modificar':
-        justificacion = conservar ? iaJust : `${docsTxt} Lo citado acredita solo una parte del requisito.`; accion = iaAcc || `Completar lo que falta para: ${req}`; break;
-      case 'no_aplica':
-        justificacion = conservar ? iaJust : (docsTxt || 'La auditoría concluyó que no aplica.'); accion = ''; break;
+      case 'listo': justificacion = conservar ? iaJust : docsTxt; accion = ''; break;
+      case 'modificar': justificacion = conservar ? iaJust : `${docsTxt} Lo citado acredita solo una parte del requisito.`; accion = iaAcc || `Completar lo que falta para: ${qv}`; break;
+      case 'no_aplica': justificacion = conservar ? iaJust : (docsTxt || 'La auditoría concluyó que no aplica.'); accion = ''; break;
       case 'no_aplica_pc':
-        justificacion = `La lista de requisitos lo declara «No aplica» y ningún documento pertinente lo contradice.${motivoCambio && !/declara/.test(motivoCambio) ? ` Antes figuraba «${etiquetaAntes}» porque ${motivoCambio}.` : ''}`;
+        justificacion = `La lista de requisitos lo declara «${decl || 'No aplica'}» para este establecimiento y no hay un documento pertinente ni una razón concreta que obligue a exigirlo.${motivoCambio ? ` Antes figuraba «${etiquetaAntes}» porque ${motivoCambio}.` : ''}${porRevisar.length ? ` Archivos con nombre parecido (no cambian la conclusión): ${lista(porRevisar)}.` : ''}`;
         accion = 'Confirmar que no aplica a este establecimiento. No se exige un documento adicional salvo que la autoridad lo pida.'; break;
       case 'no_encontrado':
-        justificacion = `No hay en la carpeta ningún documento relacionado con este requisito.${motivoCambio ? ` Antes figuraba «${etiquetaAntes}», pero ${motivoCambio}.` : ''}`;
-        accion = iaAcc && !motivoCambio ? iaAcc : `Conseguir o preparar el documento que acredite: ${req}`; break;
-      default: { // revisar
+        justificacion = `No hay en la carpeta ningún documento relacionado con este requisito (se revisaron los nombres de los ${(inventario || []).length} archivos y las citas de la auditoría).${motivoCambio ? ` Antes figuraba «${etiquetaAntes}», pero ${motivoCambio}.` : ''}`;
+        accion = `Conseguir o preparar: ${qv}.`; break;
+      default: {
         const partes = [];
-        if (evaluacionFallida) partes.push('ADA no pudo completar la evaluación automática de este requisito.');
-        if (conservar && !evaluacionFallida) partes.push(iaJust);
-        else if (docsTxt) partes.push(docsTxt);
+        if (evalFail) partes.push('ADA no pudo completar la evaluación automática de este requisito.');
+        if (conservar) partes.push(iaJust); else if (docsTxt) partes.push(docsTxt);
         if (motivoCambio) partes.push(`Antes figuraba «${etiquetaAntes}», pero ${motivoCambio}.`);
-        if (revTxt) partes.push(revTxt);
+        if (porRevisar.length) partes.push(`Documento${porRevisar.length > 1 ? 's' : ''} existente${porRevisar.length > 1 ? 's' : ''} por revisar: ${porRevisar.slice(0, 4).map((x) => `«${x.archivo}» (${x.motivo.replace(/^[^;]+; /, '')})`).join('; ')}.`);
         justificacion = partes.join(' ') || 'Hay que revisar este requisito a mano.';
         const acc = [];
-        if (iaAcc && !motivoCambio && !evaluacionFallida) acc.push(iaAcc);
-        for (const y of reubicadas) acc.push(`Comprobar que «${y.e.archivo}» acredita este requisito (su cita se encontró al evaluar el requisito ${y.e.reubicada_desde}).`);
+        if (iaAcc && conservar) acc.push(iaAcc);
+        for (const y of reubicadas) acc.push(`Comprobar que «${y.e.archivo}» acredita este requisito (su cita se encontró al evaluar el requisito ${y.e.reubicada_desde}): ${qv}.${firma(y.e.archivo)}`);
+        if (!conservar && propiasFavor.length) acc.push(`Comprobar en ${lista(propiasFavor.map((y) => y.e))}: ${qv}.${firma(propiasFavor[0].e.archivo)}`);
         for (const x of porRevisar.slice(0, 4)) acc.push(x.que_revisar);
-        if (!acc.length) acc.push(evaluacionFallida ? `Revisar a mano si algún documento acredita: ${req}` : `Comprobar a mano que el documento citado acredita: ${req}`);
+        if (!acc.length) acc.push(evalFail ? `Revisar a mano si algún documento acredita: ${qv}.` : `Comprobar a mano: ${qv}.`);
         accion = acc.join(' ');
       }
     }
-    if (esNoAplica(decl) && !['no_aplica', 'no_aplica_pc'].includes(presentacion)) justificacion = `${justificacion} La lista lo declaraba «No aplica»: confirma cuál corresponde.`;
-    out.push({ ...f, presentacion, clasificacion: ETIQUETA_REVISION[presentacion], estado_declarado: decl || null,
+    if (dna && !['no_aplica', 'no_aplica_pc'].includes(presentacion)) justificacion = `${justificacion} La lista lo declaraba «No aplica», pero hay un documento pertinente que revisar: confirma cuál corresponde.`;
+    out.push({ ...f, presentacion, clasificacion: ETIQUETA_REVISION[presentacion], estado_declarado: decl || null, que_verificar: qv,
       justificacion: cerrar(justificacion), accion: accion ? cerrar(accion) : '',
-      evidencias: buenas.map((y) => ({ ...y.e, pertinencia: y.p.nivel })), por_revisar: porRevisar, descartadas: malas.map((y) => ({ archivo: y.e.archivo, motivo: y.p.motivo })),
+      evidencias: buenas.map((y) => ({ ...y.e, pertinencia: y.p.nivel })), por_revisar: porRevisar, descartadas: malas.map((y) => ({ archivo: y.e.archivo, archivo_id: y.e.archivo_id, motivo: y.p.motivo })),
       archivo: (aFavor.find((y) => y.p.nivel === 'principal') || aFavor[0] || { e: {} }).e.archivo || '', cita: (aFavor[0] || { e: {} }).e.cita || '',
-      antes: { presentacion: antes, clasificacion: etiquetaAntes }, ...(motivoCambio ? { cambio: motivoCambio } : {}), ...(evaluacionFallida ? { evaluacion_incompleta: true } : {}) });
+      antes: { presentacion: antes, clasificacion: etiquetaAntes }, ...(motivoCambio || presentacion !== antes ? { cambio: motivoCambio || `se reclasificó de «${etiquetaAntes}» a «${ETIQUETA_REVISION[presentacion]}»` } : {}), ...(evalFail ? { evaluacion_incompleta: true } : {}) });
   }
   for (const d of descartadas) { const en = out.filter((f) => (f.evidencias || []).some((e) => e.reubicada_desde === d.requisito && e.archivo_id === d.archivo_id)).map((f) => f.requisito); if (en.length) { d.reubicada_en = en; d.motivo = `${d.motivo}; se reubicó como evidencia por comprobar en el requisito ${en.join(', ')}`; } }
-  return { filas: out, descartadas, sinEvidencia, numeracion };
+  return { filas: out, descartadas, sinEvidencia, numeracion, modelo: M };
 }
 
 // Plan de copias: proyección de la revisión. LISTO/NO APLICA → «05_Nombre»; PARCIAL o REQUIERE REVISIÓN → «05_PENDIENTE_…»;
@@ -2599,13 +2631,24 @@ function planDeCopias(filas, inventario, opciones = {}) {
         acredita: e.pertinencia === 'principal' ? 'Respalda el requisito: la cita y el archivo tratan de lo que pide.' : 'Apoyo: la cita menciona el requisito, pero el archivo no trata principalmente de él.',
         falta: acredita && e.pertinencia === 'principal' ? '' : (f.accion || 'Comprobar que este archivo realmente acredita el requisito.') });
     }
-    for (const x of (f.por_revisar || []).filter((y) => y.tipo !== 'leido_sin_cita')) {
+    // Documentos existentes por revisar: se preparan como copias PENDIENTE DESMARCADAS (relación solo por nombre: nunca
+    // se copian sin que las marques; los sensibles requieren además tu autorización específica).
+    for (const x of f.por_revisar || []) {
       plan.push({ clave: `${f.requisito}:${x.archivo_id}`, requisito: f.requisito, estado, clase: 'pendiente', archivo_id: x.archivo_id, archivo: x.archivo, nombre_copia: nombreCopia(f, x.archivo, true), cita: '', ubicacion: '',
-        sensible: !!x.sensible, pertinencia: 'relacionado', opcional: true, acredita: `${x.motivo.charAt(0).toUpperCase()}${x.motivo.slice(1)}. Sin conclusión de ADA.`, falta: x.que_revisar });
+        sensible: !!x.sensible, pertinencia: 'relacionado', opcional: true, acredita: `Documento existente, relacionado solo por su nombre (sin evidencia de su contenido): ${x.motivo}. Sin conclusión de ADA; márcalo si quieres copiarlo como PENDIENTE.`, falta: x.que_revisar });
     }
     if (!plan.some((x) => x.requisito === f.requisito)) sinCopia.push({ requisito: f.requisito, texto: f.texto_requisito, estado, accion: f.accion || f.justificacion || '' });
   }
-  return { plan, sinCopia, descartadas: rev.descartadas, ajustes, sinEvidencia: rev.sinEvidencia, filas: rev.filas };
+  // Copias que YA están en la carpeta de resultados (de una aprobación anterior): no se vuelven a crear.
+  const previas = opciones.copiasExistentes || [];
+  for (const c of plan) {
+    const ya = previas.find((x) => x.archivo_id === c.archivo_id && String(x.requisito).replace(/^0+/, '') === String(c.requisito).replace(/^0+/, ''));
+    if (ya) { c.ya_copiada = { nombre: ya.copia_nombre, url: ya.url || '' }; c.nombre_copia = ya.copia_nombre; }
+  }
+  for (const c of plan) if (!c.ya_copiada && (opciones.omitidas || []).includes(`${c.requisito}:${c.archivo_id}`)) { c.opcional = true; c.acredita = `${c.acredita} La desmarcaste en la aprobación anterior.`; }
+  const sinRespaldo = previas.filter((x) => !plan.some((c) => c.ya_copiada && c.archivo_id === x.archivo_id && String(x.requisito).replace(/^0+/, '') === String(c.requisito).replace(/^0+/, '')))
+    .map((x) => ({ ...x, nota: 'copia existente que la revisión no respalda para este requisito: se conserva (ADA no borra); revísala' }));
+  return { plan, sinCopia, descartadas: rev.descartadas, ajustes, sinEvidencia: rev.sinEvidencia, filas: rev.filas, copiasExistentes: previas, copiasSinRespaldo: sinRespaldo };
 }
 // Estado de lectura de cada archivo de la auditoría (ok, sin texto, no legible…), desde los pasos ya guardados.
 async function lecturaDeAuditoria(trabajoId) {
@@ -2641,37 +2684,81 @@ function informeExpedienteMd(r, { trabajoId, expediente, carpeta }) {
   l.push('', '## 3. Documentos que ADA no pudo comprobar con texto');
   if (!manos.length) l.push('- Ninguno relacionado con los requisitos.');
   for (const x of manos) l.push(`- ${x.requisito}: «${una(x.archivo)}» — ${x.tipo === 'sensible' ? 'no se leyó (posibles datos personales; requiere tu autorización)' : 'plano, imagen o escaneo sin texto legible'}. ${x.que_revisar}`);
-  l.push('', '## 4. Asociaciones descartadas');
+  const cps = r.copias_finales || (r.previas && r.previas.copias) || [];
+  l.push('', '## 4. Copias en la carpeta de resultados');
+  if (!cps.length) l.push('- Todavía no hay copias en la carpeta de resultados.');
+  for (const c of cps) l.push(`- ${una(c.requisito)}: ${una(c.copia_nombre)}${c.url ? ` — ${una(c.url)}` : ''}`);
+  const prop = !r.copias_finales && r.plan ? r.plan.plan.filter((c) => !c.ya_copiada) : [];
+  if (prop.length) {
+    l.push(`Copias adicionales propuestas para tu aprobación (${prop.length}; no se crea ninguna sin tu contraseña):`);
+    for (const c of prop) l.push(`- ${una(c.requisito)}: ${una(c.nombre_copia)} ← «${una(c.archivo)}»${c.sensible ? ' (posible dato sensible: requiere autorización específica)' : c.opcional ? ' (desmarcada)' : ''}`);
+  }
+  l.push('', '## 5. Asociaciones descartadas');
   l.push('Citas que la auditoría había asociado, pero que no tratan del requisito. No se usan como evidencia ni se copian.');
   if (!r.descartadas.length) l.push('- Ninguna.');
   for (const d of r.descartadas) l.push(`- ${d.requisito}: «${una(d.archivo)}» — ${d.motivo}`);
-  l.push('', '## 5. Reanálisis sugerido (no ejecutado)');
+  l.push('', '## 6. Reanálisis sugerido (no ejecutado)');
   if (!r.reanalisis.requisitos.length) l.push('- No hace falta volver a analizar documentos con IA.');
   else {
     l.push(`Solo si lo apruebas: ${r.reanalisis.requisitos.length} requisito(s), costo estimado US$${r.reanalisis.costo_estimado_usd.toFixed(2)}. No se vuelve a cobrar el resto del expediente.`);
     for (const x of r.reanalisis.requisitos) l.push(`- ${x.requisito}: ${x.motivo} Archivos: ${x.archivos.map((a) => `«${una(a)}»`).join(', ') || 'los ya leídos'} (≈ US$${x.costo_estimado_usd.toFixed(2)}).`);
   }
-  l.push('', '## 6. Método y límites');
+  l.push('', '## 7. Método y límites');
   l.push(`- Cada evidencia es una cita encontrada textualmente en el documento y que trata de lo que pide el requisito; una coincidencia de palabras generales o el número del nombre del archivo no bastan${r.numeracion.usar ? '' : ' (los números de los nombres de archivo no corresponden a esta lista y se ignoraron)'}.`);
   l.push('- ADA no verifica firmas, timbres, planos ni imágenes: esos puntos quedan en REQUIERE REVISIÓN con lo que hay que mirar.');
   l.push('- El estado que declara la lista de requisitos se usa solo como referencia, salvo «No aplica» sin nada que lo contradiga.');
   return cerrarLineas(l.join('\n'));
 }
-async function excelExpediente(r, { trabajoId, expediente, inventario, lectura }) {
+// Por cada requisito y documento, los cinco conceptos por separado: A existe y está ubicado · B se leyó y se verificó su
+// contenido · C es pertinente al requisito · D está completo o es parcial · E está seleccionado o ya copiado.
+function documentosAE(r, { copias = [], plan = null } = {}) {
+  const filasOut = [];
+  const copiaDe = (req, id) => copias.find((c) => c.archivo_id === id && String(c.requisito).replace(/^0+/, '') === String(req).replace(/^0+/, ''));
+  const enPlan = (req, id) => (plan || []).find((c) => c.archivo_id === id && c.requisito === req);
+  const E = (req, id) => {
+    const c = copiaDe(req, id); if (c) return { e: `copiada: ${c.copia_nombre}`, url: c.url || '' };
+    const p = enPlan(req, id); if (!p) return { e: 'no se copia', url: '' };
+    if (p.ya_copiada) return { e: `ya copiada: ${p.ya_copiada.nombre}`, url: p.ya_copiada.url || '' };
+    return { e: p.sensible ? 'propuesta: requiere tu autorización específica (posible dato sensible)' : p.opcional ? 'propuesta desmarcada: márcala si corresponde' : `propuesta para copiar como ${p.nombre_copia}`, url: '' };
+  };
+  const D = { listo: 'completo', modificar: 'parcial', revisar: 'por verificar', no_aplica: 'respalda que no aplica', no_aplica_pc: '—', no_encontrado: '—' };
+  for (const f of r.filas) {
+    for (const e of f.evidencias || []) {
+      const x = E(f.requisito, e.archivo_id);
+      filasOut.push([f.requisito, e.archivo, 'sí', 'sí: contenido leído y cita verificada', e.aporta === 'en_contra' ? 'en contra del requisito' : e.pertinencia === 'principal' ? `sí${e.reubicada_desde ? ` (cita hallada al evaluar el ${e.reubicada_desde})` : ''}` : 'apoyo (no lo acredita por sí solo)', e.aporta === 'en_contra' ? '—' : `${D[f.presentacion] || 'por verificar'}${f.presentacion === 'revisar' ? `: ${f.que_verificar || ''}` : ''}`, x.e, x.url, `«${corta(e.cita, 200)}»${e.ubicacion ? ` (${una(e.ubicacion)})` : ''}`]);
+    }
+    for (const y of f.por_revisar || []) {
+      const x = E(f.requisito, y.archivo_id);
+      const b = { sensible: 'no: posible dato sensible, requiere tu autorización', sin_texto: 'no: sin texto legible (plano, imagen o escaneo)', leido_sin_cita: 'sí, pero sin una cita que lo acredite', no_evaluado: 'sí, pero la evaluación automática no se completó' }[y.tipo] || 'no';
+      filasOut.push([f.requisito, y.archivo, 'sí', b, 'por confirmar: su nombre corresponde al requisito', `por verificar: ${f.que_verificar || ''}`, x.e, x.url, y.que_revisar]);
+    }
+    for (const d of f.descartadas || []) filasOut.push([f.requisito, d.archivo, 'sí', 'sí', `no: ${d.motivo}`, '—', 'no se copia', '', '']);
+    if (!(f.evidencias || []).length && !(f.por_revisar || []).length) filasOut.push([f.requisito, '—', f.presentacion === 'no_encontrado' ? 'no: ningún archivo de la carpeta corresponde' : '—', '—', '—', '—', '—', '', f.presentacion === 'no_aplica_pc' ? 'No aplica según la lista: por confirmar.' : f.accion || '']);
+  }
+  return filasOut;
+}
+async function excelExpediente(r, { trabajoId, expediente, inventario, lectura, copias = [], plan = null }) {
   const ExcelJS = require('exceljs');
   const libro = new ExcelJS.Workbook(); libro.creator = 'ADA';
   const hoja = libro.addWorksheet('Requisitos');
   hoja.columns = [{ header: 'N.º', width: 6 }, { header: 'Requisito', width: 50 }, { header: 'Clasificación', width: 24 }, { header: 'Situación', width: 60 }, { header: 'Documentos pertinentes', width: 36 },
-    { header: 'Evidencia (cita textual)', width: 60 }, { header: 'Archivos por revisar a mano', width: 45 }, { header: 'Qué falta o qué revisar', width: 55 }, { header: 'Estado declarado en la lista', width: 18 }, { header: 'Cambio respecto de la auditoría', width: 45 }];
+    { header: 'Evidencia (cita textual)', width: 60 }, { header: 'Archivos por revisar a mano', width: 45 }, { header: 'Qué falta o qué revisar', width: 55 }, { header: 'Estado declarado en la lista', width: 18 }, { header: 'Cambio respecto de la auditoría', width: 45 }, { header: 'Copias en la carpeta (enlaces)', width: 50 }];
   hoja.getRow(1).font = { bold: true };
   for (const f of r.filas) {
     const af = (f.evidencias || []).filter((e) => e.aporta !== 'en_contra');
     hoja.addRow([f.requisito, una(f.texto_requisito), f.clasificacion, f.justificacion, [...new Set(af.map((e) => e.archivo))].join('\n'),
       (f.evidencias || []).map((e) => `${e.aporta === 'en_contra' ? '(en contra) ' : ''}«${corta(e.cita, 400)}» — ${e.archivo}${e.ubicacion ? `, ${una(e.ubicacion)}` : ''}`).join('\n'),
-      (f.por_revisar || []).map((x) => `${x.archivo}: ${x.motivo}`).join('\n'), f.accion || '', f.estado_declarado || '', f.cambio ? `Antes: ${f.antes.clasificacion}. ${cerrar(f.cambio)}` : '']);
+      (f.por_revisar || []).map((x) => `${x.archivo}: ${x.motivo}`).join('\n'), f.accion || '', f.estado_declarado || '', f.cambio ? `Antes: ${f.antes.clasificacion}. ${cerrar(f.cambio)}` : '',
+      copias.filter((c) => String(c.requisito).replace(/^0+/, '') === String(f.requisito).replace(/^0+/, '')).map((c) => `${c.copia_nombre}${c.url ? ` — ${c.url}` : ''}`).join('\n')]);
   }
   const fmt = (h) => h.eachRow((row) => { row.alignment = { wrapText: true, vertical: 'top' }; });
   fmt(hoja); hoja.views = [{ state: 'frozen', ySplit: 1 }];
+  const ha = libro.addWorksheet('Documentos por requisito');
+  ha.columns = [{ header: 'Requisito', width: 10 }, { header: 'Archivo', width: 42 }, { header: 'A. Existe y está ubicado', width: 16 }, { header: 'B. Leído y verificado', width: 30 }, { header: 'C. Pertinente al requisito', width: 40 },
+    { header: 'D. Completo o parcial', width: 40 }, { header: 'E. Copia', width: 40 }, { header: 'Enlace a la copia', width: 45 }, { header: 'Evidencia o qué revisar', width: 60 }];
+  ha.getRow(1).font = { bold: true };
+  for (const x of documentosAE(r, { copias, plan: plan || (r.plan && r.plan.plan) })) ha.addRow(x);
+  fmt(ha);
   const hm = libro.addWorksheet('Por revisar a mano');
   hm.columns = [{ header: 'Requisito', width: 10 }, { header: 'Archivo', width: 44 }, { header: 'Motivo', width: 60 }, { header: 'Qué revisar', width: 60 }]; hm.getRow(1).font = { bold: true };
   for (const f of r.filas) for (const x of f.por_revisar || []) hm.addRow([f.requisito, x.archivo, x.motivo, x.que_revisar]);
@@ -2706,15 +2793,14 @@ async function coherenciaExpediente(r, { excelBuf, md, wordBuf, plan, inventario
   const problemas = [];
   const descart = new Set(r.descartadas.map((d) => `${d.requisito}|${d.archivo}`));
   if (r.filas.length !== total) problemas.push(`hay ${r.filas.length} requisitos y la auditoría tiene ${total}`);
-  const genericas = genericasDeFilas(r.filas, r.expediente || '');
-  const idsLista = new Set(r.filas.map((f) => String(Number(String(f.requisito).match(/^\d+/) || NaN))));
+  const M = modeloPertinencia(r.filas, r.expediente || '');
   for (const f of r.filas) {
     if (!ORDEN_REVISION.includes(f.presentacion)) problemas.push(`${f.requisito}: clasificación desconocida`);
     for (const t of [f.justificacion, f.accion, ...(f.por_revisar || []).map((x) => x.motivo)]) if (t && INTERNO.test(t)) problemas.push(`${f.requisito}: texto con un mensaje técnico`);
     if (!['listo', 'no_aplica'].includes(f.presentacion) && !una(f.accion)) problemas.push(`${f.requisito}: no dice qué falta`);
     for (const e of f.evidencias || []) {
       if (!e.verificada) problemas.push(`${f.requisito}: evidencia sin verificar`);
-      if (pertinencia(f, e, e.archivo, genericas, idsLista, r.numeracion.usar).nivel === 'descartado') problemas.push(`${f.requisito}: evidencia no pertinente («${e.archivo}»)`);
+      if (pertinencia(f, e, e.archivo, M).nivel === 'descartado' && !e.promovida_ok) problemas.push(`${f.requisito}: evidencia no pertinente («${e.archivo}»)`);
       if (descart.has(`${f.requisito}|${e.archivo}`)) problemas.push(`${f.requisito}: «${e.archivo}» está descartado y aparece como evidencia`);
     }
     if (f.presentacion === 'no_encontrado' && ((f.evidencias || []).some((e) => e.aporta !== 'en_contra') || (f.por_revisar || []).length)) problemas.push(`${f.requisito}: NO ENCONTRADO pero hay documentos relacionados`);
@@ -2722,7 +2808,7 @@ async function coherenciaExpediente(r, { excelBuf, md, wordBuf, plan, inventario
   }
   for (const c of plan.plan) {
     const f = r.filas.find((x) => x.requisito === c.requisito);
-    const ok = f && ((f.evidencias || []).some((e) => e.archivo_id === c.archivo_id && e.aporta !== 'en_contra') || (f.por_revisar || []).some((x) => x.archivo_id === c.archivo_id && x.tipo !== 'leido_sin_cita'));
+    const ok = f && ((f.evidencias || []).some((e) => e.archivo_id === c.archivo_id && e.aporta !== 'en_contra') || (f.por_revisar || []).some((x) => x.archivo_id === c.archivo_id));
     if (!ok) problemas.push(`plan: «${c.archivo}» para ${c.requisito} no tiene respaldo en la revisión`);
     if (descart.has(`${c.requisito}|${c.archivo}`)) problemas.push(`plan: «${c.archivo}» para ${c.requisito} estaba descartado`);
     if (f && ['no_encontrado', 'no_aplica_pc'].includes(f.presentacion)) problemas.push(`plan: copia para ${c.requisito}, que es ${f.clasificacion}`);
@@ -2741,11 +2827,56 @@ async function coherenciaExpediente(r, { excelBuf, md, wordBuf, plan, inventario
   const { comprobarWord } = require('./archivos');
   const c = await comprobarWord(wordBuf, { titulo: 'Expediente revisado', contenido: md }, { estricto: true });
   if (!c.ok) problemas.push(...c.problemas.slice(0, 3).map((x) => `Word: ${x}`));
-  if (INTERNO.test(md.replace(/## 6\. Método y límites[\s\S]*$/, ''))) problemas.push('Word: contiene mensajes técnicos');
+  if (INTERNO.test(md.replace(/## 7\. Método y límites[\s\S]*$/, ''))) problemas.push('Word: contiene mensajes técnicos');
   const secciones = md.split(/\n### /).slice(1);
   for (const d of r.descartadas) { const sec = secciones.find((x) => x.startsWith(`${d.requisito} —`)); if (sec && sec.split('\n').some((x) => /^- (Evidencia|En contra) \(/.test(x) && x.includes(`(${d.archivo}`))) problemas.push(`Word: «${d.archivo}» aparece como evidencia de ${d.requisito}`); }
   void inventario;
   return { ok: !problemas.length, problemas: [...new Set(problemas)].slice(0, 40), comprobado_en: new Date().toISOString(), parrafos_word: c.parrafos };
+}
+// Excel y Word finales de un trabajo de copias que sale de una revisión: los mismos 22 requisitos de la revisión, con
+// los enlaces de TODAS las copias de la carpeta (las anteriores y las nuevas). Se suben como archivos nuevos
+// («revisión N»), sin pisar los entregables anteriores.
+async function entregableRevisado(tipo, { previos, o, trabajoId }) {
+  const [f] = await qPrincipal('SELECT datos_cifrado FROM revisiones_expediente WHERE id = ?', [o.revision.id]);
+  const d = Cifrado.descifrarJSON(f.datos_cifrado);
+  const res = previos.find((x) => x.clave === 'carpeta_resultados' && x.resultado).resultado;
+  const nuevas = previos.filter((x) => x.clave.startsWith('copiar:') && x.resultado).map((x) => x.resultado).filter((c) => c.estado_copia === 'ok');
+  const copias = [...(o.copias_existentes || [])];
+  for (const c of nuevas) if (!copias.some((x) => x.copia_id === c.copia_id)) copias.push({ requisito: String(c.requisito), archivo_id: c.archivo_id, archivo: c.archivo, copia_id: c.copia_id, copia_nombre: c.copia_nombre, url: c.url || '' });
+  const r = { filas: d.filas, descartadas: d.descartadas, sinEvidencia: d.sin_evidencia, numeracion: d.numeracion, reanalisis: d.reanalisis, version: o.revision.version, expediente: d.expediente, copias_finales: copias };
+  const Drive = require('./drive');
+  if (tipo === 'excel') {
+    const buf = await excelExpediente(r, { trabajoId: o.auditoria_trabajo, expediente: d.expediente, inventario: [], lectura: {}, copias, plan: [] });
+    const up = await Drive.subirAResultados({ encargo: o.encargo, resultadosId: res.id, rol: `excel-r${o.revision.version}`, nombre: `${o.resultados_nombre} — Matriz de requisitos (revisión ${o.revision.version}).xlsx`, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', datos: buf });
+    return { resultado: { nombre: 'organizado.xlsx', xlsx_b64: buf.toString('base64'), filas: d.filas.length, drive: up }, costo: 0 };
+  }
+  const md = informeExpedienteMd(r, { trabajoId: o.auditoria_trabajo, expediente: d.expediente, carpeta: o.carpeta_docs });
+  const { crearWord, comprobarWord } = require('./archivos');
+  const buf = await crearWord({ titulo: 'Expediente organizado', contenido: md });
+  const c = await comprobarWord(buf, { titulo: 'Expediente organizado', contenido: md }, { estricto: true });
+  if (!c.ok) throw new Error(`el Word quedó incompleto: ${c.problemas.slice(0, 2).join('; ')}`);
+  const up = await Drive.subirAResultados({ encargo: o.encargo, resultadosId: res.id, rol: `informe-r${o.revision.version}`, nombre: `${o.resultados_nombre} — Resumen (revisión ${o.revision.version}).docx`, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', datos: buf });
+  return { resultado: { nombre: 'organizado.docx', docx_b64: buf.toString('base64'), md, drive: up }, costo: 0 };
+}
+// Copias ya hechas para esta auditoría (aprobaciones anteriores): carpeta de resultados, encargo y cada copia con su
+// enlace. Se reutilizan: el plan nuevo no las duplica y las copias adicionales van a la MISMA carpeta.
+async function copiasPrevias(trabajoId) {
+  const ts = await qPrincipal("SELECT id, estado, objetivo_cifrado FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria' AND titulo LIKE 'Organizar expediente%' AND creado_en >= (SELECT creado_en FROM trabajos WHERE id = ?) ORDER BY creado_en", [usuario().id, trabajoId]);
+  let carpeta = null; let encargo = null; const copias = []; const omitidas = new Set();
+  for (const t of ts) {
+    let o; try { o = Cifrado.descifrarJSON(t.objetivo_cifrado) || {}; } catch (_) { continue; }
+    if (o.modo !== 'copias' || o.auditoria_trabajo !== trabajoId) continue;
+    for (const k of o.omitidas || []) omitidas.add(k);
+    const pasos = await qPrincipal("SELECT clave, tipo, estado, resultado_cifrado FROM trabajo_pasos WHERE trabajo_id = ? AND tipo IN ('org_carpeta', 'org_copiar') AND estado = 'hecho'", [t.id]);
+    for (const p of pasos) {
+      let r; try { r = Cifrado.descifrarJSON(p.resultado_cifrado) || {}; } catch (_) { continue; }
+      if (p.tipo === 'org_carpeta' && r.id && !carpeta) { carpeta = { id: r.id, nombre: r.nombre, url: r.url || null }; encargo = o.encargo; } // la primera carpeta es la del expediente
+      if (p.tipo === 'org_copiar' && r.estado_copia === 'ok' && !copias.some((c) => c.copia_id === r.copia_id)) copias.push({ requisito: String(r.requisito), archivo_id: r.archivo_id, archivo: r.archivo, copia_id: r.copia_id, copia_nombre: r.copia_nombre, url: r.url || '', clase: r.clase });
+    }
+  }
+  // Lo que se omitió en una aprobación y luego se copió en otra deja de estar «omitido».
+  for (const c of copias) omitidas.delete(`${String(c.requisito).replace(/^0+/, '')}:${c.archivo_id}`);
+  return { carpeta, encargo, copias, omitidas: [...omitidas] };
 }
 // Revisión completa de un expediente auditado: sin IA, sin Drive, sin copiar. Guarda una versión nueva y, si la
 // comprobación de coherencia pasa, reemplaza el plan de copias pendiente por uno nuevo (que sigue exigiendo contraseña).
@@ -2776,26 +2907,29 @@ async function revisarExpediente(trabajoId, { origen = 'manual' } = {}) {
       archivos: (f.por_revisar || []).filter((x) => x.tipo === 'leido_sin_cita' && !x.sensible).map((x) => x.archivo), costo_estimado_usd: Number((medio * 1.5).toFixed(4)) }));
   const [{ v }] = await qPrincipal('SELECT COALESCE(MAX(version), 0) AS v FROM revisiones_expediente WHERE trabajo_id = ?', [trabajoId]);
   const r = { ...rev, version: Number(v) + 1, expediente, reanalisis: { requisitos: candidatos, costo_estimado_usd: Number(candidatos.reduce((a, x) => a + x.costo_estimado_usd, 0).toFixed(4)) } };
-  const plan = planDeCopias(r.filas, inventario, { revisadas: true, descartadas: r.descartadas, sinEvidencia: r.sinEvidencia });
+  const previas = await copiasPrevias(trabajoId);
+  const plan = planDeCopias(r.filas, inventario, { revisadas: true, descartadas: r.descartadas, sinEvidencia: r.sinEvidencia, copiasExistentes: previas.copias, omitidas: previas.omitidas });
+  r.plan = plan; r.previas = previas;
   const md = informeExpedienteMd(r, { trabajoId, expediente, carpeta: objetivo.carpeta });
   const { crearWord } = require('./archivos');
   const wordBuf = await crearWord({ titulo: 'Expediente revisado', contenido: md });
-  const excelBuf = await excelExpediente(r, { trabajoId, expediente, inventario, lectura });
+  const excelBuf = await excelExpediente(r, { trabajoId, expediente, inventario, lectura, copias: previas.copias, plan: plan.plan });
   const coherencia = await coherenciaExpediente(r, { excelBuf, md, wordBuf, plan, inventario, total: final.matriz.filas.length });
   const resumen = Object.fromEntries(ORDEN_REVISION.map((k) => [k, r.filas.filter((f) => f.presentacion === k).map((f) => f.requisito)]));
   const cambios = r.filas.filter((f) => f.cambio).map((f) => ({ requisito: f.requisito, antes: f.antes.clasificacion, ahora: f.clasificacion, motivo: f.cambio }));
   const id = crypto.randomUUID();
-  const datos = { filas: r.filas, descartadas: r.descartadas, sin_evidencia: r.sinEvidencia, numeracion: r.numeracion, reanalisis: r.reanalisis, coherencia, resumen, cambios, md, origen, expediente };
+  const datos = { filas: r.filas, descartadas: r.descartadas, sin_evidencia: r.sinEvidencia, numeracion: r.numeracion, reanalisis: r.reanalisis, coherencia, resumen, cambios, md, origen, expediente, inventario_n: inventario.length, carpeta_resultados: previas.carpeta, copias_existentes: previas.copias, copias_sin_respaldo: plan.copiasSinRespaldo, plan: plan.plan.map((c) => ({ requisito: c.requisito, archivo_id: c.archivo_id, archivo: c.archivo, nombre_copia: c.nombre_copia, pertinencia: c.pertinencia, opcional: !!c.opcional, sensible: !!c.sensible, ya_copiada: c.ya_copiada || null })) };
   await qPrincipal('INSERT INTO revisiones_expediente (id, usuario_id, trabajo_id, version, estado, datos_cifrado, excel_cifrado, word_cifrado, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [id, usuario().id, trabajoId, r.version, coherencia.ok ? 'lista' : 'con_problemas', Cifrado.cifrarJSON(datos), Cifrado.cifrar(excelBuf.toString('base64')), Cifrado.cifrar(wordBuf.toString('base64')), new Date()]);
   let planId = null;
   if (coherencia.ok) {
     // El plan anterior (si lo había y seguía pendiente) se reemplaza: nunca quedan dos planes para la misma auditoría.
-    const previas = await qPrincipal("SELECT id, datos_cifrado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]);
-    for (const x of previas) { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); if (d.tipo === 'plan_copias' && d.auditoria_trabajo === trabajoId) await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), x.id]); } catch (_) {} }
+    const planesPendientes = await qPrincipal("SELECT id, datos_cifrado FROM auditoria_propuestas WHERE usuario_id = ? AND estado = 'pendiente'", [usuario().id]);
+    for (const x of planesPendientes) { try { const d = Cifrado.descifrarJSON(x.datos_cifrado); if (d.tipo === 'plan_copias' && d.auditoria_trabajo === trabajoId) await qPrincipal("UPDATE auditoria_propuestas SET estado = 'descartada', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), x.id]); } catch (_) {} }
     planId = crypto.randomUUID();
     const dp = { tipo: 'plan_copias', auditoria_trabajo: trabajoId, expediente, perfil: objetivo.perfil || null, carpeta_docs: objetivo.carpeta,
-      resultados_nombre: (objetivo.organizar && objetivo.organizar.nombre) || `ADA — ${expediente} — Documentos organizados`, plan: plan.plan, sin_copia: plan.sinCopia, descartadas: plan.descartadas, ajustes: plan.ajustes, sin_evidencia: plan.sinEvidencia,
+      resultados_nombre: (previas.carpeta && previas.carpeta.nombre) || (objetivo.organizar && objetivo.organizar.nombre) || `ADA — ${expediente} — Documentos organizados`, plan: plan.plan, sin_copia: plan.sinCopia, descartadas: plan.descartadas, ajustes: plan.ajustes, sin_evidencia: plan.sinEvidencia,
+      ...(previas.encargo ? { encargo_previo: previas.encargo, carpeta_existente: previas.carpeta, copias_existentes: previas.copias, copias_sin_respaldo: plan.copiasSinRespaldo } : {}),
       requisitos: r.filas.length, version_plan: 3, revision: { id, version: r.version }, regenerado_en: new Date().toISOString(), entregables: { excel: { listo: true, filas: r.filas.length, revisado: true }, informe: { listo: true, comprobado: true, revisado: true } } };
     await qPrincipal('INSERT INTO auditoria_propuestas (id, usuario_id, conversacion_id, estado, datos_cifrado, tarjeta_estado, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [planId, usuario().id, objetivo.propuesta ? objetivo.propuesta.conversacion_id : null, 'pendiente', Cifrado.cifrarJSON(dp), 'por_mostrar', new Date(), new Date()]);
@@ -2871,8 +3005,8 @@ async function regenerarPlan(id) {
 }
 function tarjetaPlanCopias(id, datos, estado) {
   return { id, estado, tipo: 'plan_copias', expediente: datos.expediente, resultados_nombre: datos.resultados_nombre, auditoria_trabajo: datos.auditoria_trabajo, requisitos: datos.requisitos,
-    plan: datos.plan, sin_copia: datos.sin_copia, descartadas: datos.descartadas || [], sin_evidencia: datos.sin_evidencia || [], ajustes: datos.ajustes || {}, version_plan: datos.version_plan || 1, entregables: datos.entregables || null, regenerado_en: datos.regenerado_en || null, revision: datos.revision || null,
-    copias: datos.plan.filter((f) => !f.opcional && !f.sensible).length, sensibles: datos.plan.filter((f) => f.sensible).length, opcionales: datos.plan.filter((f) => f.opcional).length, trabajo_id: datos.trabajo_id || null };
+    plan: datos.plan, sin_copia: datos.sin_copia, descartadas: datos.descartadas || [], sin_evidencia: datos.sin_evidencia || [], carpeta_existente: datos.carpeta_existente || null, copias_existentes: datos.copias_existentes || [], copias_sin_respaldo: datos.copias_sin_respaldo || [], ajustes: datos.ajustes || {}, version_plan: datos.version_plan || 1, entregables: datos.entregables || null, regenerado_en: datos.regenerado_en || null, revision: datos.revision || null,
+    copias: datos.plan.filter((f) => !f.opcional && !f.sensible && !f.ya_copiada).length, sensibles: datos.plan.filter((f) => f.sensible).length, opcionales: datos.plan.filter((f) => f.opcional).length, trabajo_id: datos.trabajo_id || null };
 }
 // Aprobar las copias: contraseña del propietario (autorización de ESCRITURA separada de la de lectura), filas elegidas,
 // y los archivos sensibles solo si se marcan uno a uno. Crea el trabajo de copias; no hay IA ni costo.
@@ -2883,11 +3017,12 @@ async function aprobarCopias(propuestaId, { password, omitir = [], incluir_sensi
   if (p.datos.tipo !== 'plan_copias') throw err('Esta tarjeta no es un plan de copias', 409);
   if (p.estado !== 'pendiente') throw err(`La tarjeta ya está "${p.estado}"`, 409);
   // Sensibles y opcionales (apoyo, relacionados sin cita) solo si se marcan uno a uno; nunca por defecto.
-  const sel = p.datos.plan.filter((f) => !omitir.includes(f.clave) && (!(f.sensible || f.opcional) || incluirSensibles.includes(f.clave)));
+  const sel = p.datos.plan.filter((f) => !f.ya_copiada && !omitir.includes(f.clave) && (!(f.sensible || f.opcional) || incluirSensibles.includes(f.clave)));
   if (!sel.length) throw err('No quedó ninguna copia seleccionada', 400);
   const r = await qPrincipal("UPDATE auditoria_propuestas SET estado = 'aprobando', actualizado_en = ? WHERE id = ? AND estado = 'pendiente'", [new Date(), propuestaId]);
   if (!r.affectedRows) throw err('La tarjeta cambió mientras la aprobabas', 409);
-  const objetivo = { modo: 'copias', encargo: propuestaId, expediente: p.datos.expediente, resultados_nombre: p.datos.resultados_nombre, carpeta_docs: p.datos.carpeta_docs, carpeta: p.datos.carpeta_docs,
+  const omitidasAhora = p.datos.plan.filter((f) => !f.ya_copiada && !sel.includes(f)).map((f) => `${f.requisito}:${f.archivo_id}`);
+  const objetivo = { modo: 'copias', encargo: p.datos.encargo_previo || propuestaId, omitidas: omitidasAhora, ...(p.datos.copias_existentes ? { copias_existentes: p.datos.copias_existentes } : {}), expediente: p.datos.expediente, resultados_nombre: p.datos.resultados_nombre, carpeta_docs: p.datos.carpeta_docs, carpeta: p.datos.carpeta_docs,
     filas: sel, auditoria_trabajo: p.datos.auditoria_trabajo, perfil: p.datos.perfil, propuesta: { id: propuestaId, conversacion_id: p.conversacion_id },
     ajustes: p.datos.ajustes || {}, descartadas: p.datos.descartadas || [], ...(p.datos.revision ? { revision: p.datos.revision } : {}), plan_completo: p.datos.plan.map((f) => ({ requisito: f.requisito, archivo_id: f.archivo_id, archivo: f.archivo, pertinencia: f.pertinencia, acredita: f.acredita })) };
   const pasos = [{ clave: 'carpeta_resultados', tipo: 'org_carpeta', etapa: 'carpeta de resultados', entrada: {} },
@@ -3264,4 +3399,4 @@ async function revisarPendientesAlArrancar() {
     try { const r = await revisarExpediente(d.auditoria_trabajo, { origen: 'arranque' }); console.log(`Expediente ${String(d.auditoria_trabajo).slice(0, 8)} revisado al arrancar: revisión ${r.revision.version} ${r.revision.estado}`); } catch (e) { console.error(`No pude revisar ${String(d.auditoria_trabajo).slice(0, 8)} al arrancar: ${e.message}`); }
   }
 }
-module.exports = { _informeExpedienteMd: informeExpedienteMd, _excelExpediente: excelExpediente, _coherenciaExpediente: coherenciaExpediente, revisarPendientesAlArrancar, revisarExpediente, diagnosticoRevision, ultimaRevision, _revisarFilas: revisarFilas, regenerarPlan, _planDeCopias: planDeCopias, _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { _copiasPrevias: copiasPrevias, _informeExpedienteMd: informeExpedienteMd, _excelExpediente: excelExpediente, _coherenciaExpediente: coherenciaExpediente, revisarPendientesAlArrancar, revisarExpediente, diagnosticoRevision, ultimaRevision, _revisarFilas: revisarFilas, regenerarPlan, _planDeCopias: planDeCopias, _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

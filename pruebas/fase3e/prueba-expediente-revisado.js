@@ -1,85 +1,107 @@
-// Caso real Botiquín Andaluz (trabajo dd8008fd) reproducido: la carpeta tiene archivos numerados para el expediente
-// SEREMI ANTERIOR (08_gas, 17_ficha clínica, 04_arriendo, 05_plano…), la auditoría asoció mal algunas citas y una
-// evaluación terminó con «respuesta cortada». La revisión (sin IA) debe dejar los 22 requisitos coherentes y el Excel,
-// el Word y el plan de copias sin ninguna asociación descartada.
+// Caso REAL dd8008fd (Botiquín Andaluz), reproducido con los nueve problemas que mostró el diagnóstico real: archivos
+// numerados para el expediente SEREMI anterior, citas que solo PIDEN un documento, listados de otro tema, evaluaciones
+// incompletas y dos copias que ya existen en la carpeta de resultados. Sin IA ni Drive.
 process.env.ADA_CLAVE_DATOS = 'x'.repeat(40); process.env.DATABASE_URL = 'mysql://ada:ada@localhost:3306/ada';
 const A = require('../../src/auditoria');
 const { crearWord } = require('../../src/archivos');
 const ok = (c, m) => { console.log((c ? 'ok - ' : 'FALLA: ') + m); if (!c) process.exitCode = 1; };
 const T = (req, subir) => `Requisito: ${req}. Qué subir para Andaluz: ${subir}.`;
 const ev = (archivo_id, archivo, cita, aporta = 'a_favor') => ({ archivo_id, archivo, cita, verificada: true, aporta, ubicacion: 'página 1' });
-const GAS = ev('GAS', '08_NO_APLICA_Instalaciones_de_gas.pdf', 'Declaración TC6: el local no cuenta con instalación de gas.');
-const FORM = ev('FORM', 'Formulario_complementario.pdf', 'Formulario complementario de la solicitud, con el inicio de actividades indicado.');
 const REQ = {
-  1: ['Solicitud de autorización de botiquín firmada', 'Solicitud firmada por el representante legal'], 2: ['Inicio de actividades en el SII', 'Certificado de inicio de actividades del SII'],
-  3: ['Escritura de constitución de la sociedad', 'Escritura pública'], 4: ['Dominio o uso del inmueble', 'Contrato de arriendo o escritura del inmueble'],
-  5: ['Plano con ubicación del botiquín', 'Plano a escala del local'], 6: ['Recepción definitiva municipal', 'Certificado de recepción definitiva'],
-  7: ['Certificado de número municipal', 'Certificado de número emitido por la municipalidad'], 8: ['Nombramiento del químico farmacéutico', 'Resolución de nombramiento'],
-  9: ['Instalación de gas', 'Declaración TC6 firmada (no hay instalación de gas)'], 10: ['Registro de temperatura del refrigerador', 'Registro mensual de temperaturas'],
-  11: ['Agua potable', 'Certificado de dotación de agua potable'], 12: ['Libro de control de estupefacientes', 'Libro foliado'], 13: ['Sala de espera', 'Fotografías de la sala'],
-  14: ['Bodega de inflamables', 'Declaración'], 15: ['Calibración del termómetro', 'Certificado de calibración'], 16: ['Programa de capacitación del personal', 'Programa anual'],
-  17: ['Cédula de identidad del representante legal', 'Copia de la cédula por ambos lados'], 18: ['Condiciones sanitarias del local', 'Declaración de condiciones sanitarias'],
-  19: ['Procedimiento de dispensación', 'Procedimiento escrito'], 20: ['Procedimiento de reclamos', 'Procedimiento de reclamos de usuarios'], 21: ['Póliza de seguro', 'Póliza vigente'], 22: ['Ascensor', 'Certificado de ascensor'],
+  1: ['Formulario complementario', 'Formulario complementario descargable, lleno y firmado por el representante legal'],
+  2: ['Inicio de actividades en el SII', 'Certificado de inicio de actividades del SII'],
+  3: ['Escritura de constitución de la sociedad', 'Escritura pública con sus modificaciones'],
+  4: ['Dominio o uso del inmueble', 'Contrato de arriendo o escritura que acredite el uso del inmueble'],
+  5: ['Plano del local', 'Plano con la ubicación del botiquín, el refrigerador y las vías de evacuación'],
+  6: ['Recepción definitiva municipal', 'Certificado de recepción definitiva'],
+  7: ['Certificado de número municipal', 'Certificado de número emitido por la municipalidad'],
+  8: ['Nombramiento del químico farmacéutico', 'Resolución de nombramiento del químico farmacéutico'],
+  9: ['Instalación de gas', 'Declaración TC6 firmada (no hay instalación de gas)'],
+  10: ['Registro de temperatura del refrigerador', 'Registro mensual de temperaturas del refrigerador'],
+  11: ['Agua potable', 'Boleta de agua o certificado de dotación de agua potable'],
+  12: ['Libro de control de estupefacientes', 'Libro foliado de estupefacientes'],
+  13: ['Sala de espera', 'Fotografías de la sala de espera'],
+  14: ['Bodega de inflamables', 'Declaración de bodega de inflamables'],
+  15: ['Calibración del termómetro', 'Certificado de calibración del termómetro'],
+  16: ['Listado del personal del botiquín', 'Nómina del personal con sus funciones'],
+  17: ['Cédula de identidad del encargado', 'Copia de la cédula de identidad del encargado por ambos lados'],
+  18: ['Condiciones sanitarias del local', 'Declaración de condiciones sanitarias'],
+  19: ['Equipamiento y mobiliario', 'Listado de equipamiento y mobiliario del botiquín'],
+  20: ['Procedimiento de reclamos', 'Procedimiento de reclamos de usuarios'],
+  21: ['Listado de medicamentos', 'Listado de medicamentos que mantendrá el botiquín'],
+  22: ['Botiquín naviero', 'Certificado de la autoridad marítima (solo botiquines navieros)'],
 };
 const NOAPLICA = ['6', '7', '11', '13', '14', '22'];
-const base = (n, presentacion, extra = {}) => ({ requisito: String(n), texto_requisito: T(...REQ[n]), presentacion, clasificacion: { listo: 'LISTO', modificar: 'PARCIAL', revisar: 'REQUIERE REVISIÓN', no_encontrado: 'NO ENCONTRADO', no_aplica: 'NO APLICA' }[presentacion], estado: presentacion === 'listo' ? 'cumple' : 'sin_evidencia', justificacion: 'Evaluado por la IA.', accion: presentacion === 'listo' ? '' : 'Conseguir el documento.', evidencias: [], ...extra });
+const FORM = ev('FORM', '01_Formulario_complementario_Andaluz_firmado.pdf', 'Adjuntar boleta de agua potable del último mes.');
+const TC6 = ev('TC6', '08.1_Declaracion_TC6_Andaluz_firmada.pdf', 'Declaración TC6: el local no cuenta con instalación de gas.');
+const PERS = ev('PERS', 'Listado_personal.pdf', 'Listado del personal: químico farmacéutico y auxiliar.');
+const EQUI = ev('EQUI', 'Listado_equipamiento.pdf', 'Listado de equipamiento: refrigerador, estanterías y mesón.');
+const lbl = { listo: 'LISTO', modificar: 'PARCIAL', revisar: 'REQUIERE REVISIÓN', no_encontrado: 'NO ENCONTRADO', no_aplica: 'NO APLICA' };
+const base = (n, presentacion, extra = {}) => ({ requisito: String(n), texto_requisito: T(...REQ[n]), presentacion, clasificacion: lbl[presentacion], estado: presentacion === 'listo' ? 'cumple' : 'sin_evidencia', justificacion: 'Evaluado por la IA.', accion: presentacion === 'listo' ? '' : 'Conseguir el documento.', evidencias: [], ...extra });
+const fallo = (n) => ({ ...base(n, 'revisar'), estado: 'no_evaluado', justificacion: 'No se pudo verificar la evidencia: formato: respuesta cortada', accion: 'Revisar este requisito manualmente: ADA no pudo verificar la evidencia con citas textuales.' });
 const filas = [
-  base(1, 'listo', { evidencias: [ev('SOL', '01_Solicitud_autorizacion.pdf', 'Solicitud de autorización de botiquín firmada por el representante legal.')] }),
-  base(2, 'listo', { evidencias: [ev('SII', '02_Inicio_actividades_SII.pdf', 'Certificado de inicio de actividades emitido por el SII.'), FORM] }),
-  base(3, 'listo', { evidencias: [ev('ESC', '03_Escritura_constitucion.pdf', 'Escritura de constitución de la sociedad.')] }),
-  base(4, 'no_encontrado'), base(5, 'no_encontrado'), base(6, 'no_encontrado'),
-  base(7, 'no_aplica', { justificacion: 'El documento de gas indica que no aplica.', evidencias: [GAS] }),
+  base(1, 'no_encontrado'),
+  base(2, 'listo', { evidencias: [ev('SII', '02_Inicio_actividades_SII.pdf', 'Certificado de inicio de actividades emitido por el SII.')] }),
+  fallo(3), fallo(4), base(5, 'no_encontrado'), base(6, 'no_encontrado'),
+  base(7, 'no_aplica', { justificacion: 'La declaración indica que no aplica.', evidencias: [TC6] }),
   base(8, 'listo', { evidencias: [ev('QF', 'Nombramiento_QF.pdf', 'Resolución de nombramiento del químico farmacéutico.')] }),
-  base(9, 'no_encontrado'),
-  base(10, 'listo', { evidencias: [ev('TEMP', 'Registro_temperatura.pdf', 'Registro de temperatura del refrigerador: 4 °C.')] }),
-  base(11, 'no_encontrado', { evidencias: [GAS, FORM] }),
-  { ...base(12, 'revisar'), estado: 'no_evaluado', justificacion: 'No se pudo verificar la evidencia: formato: respuesta cortada; formato: respuesta cortada', accion: 'Revisar este requisito manualmente: ADA no pudo verificar la evidencia con citas textuales.' },
-  base(13, 'no_encontrado'), base(14, 'no_encontrado'), base(15, 'no_encontrado'),
-  base(16, 'listo', { evidencias: [ev('CAP', 'Programa_capacitacion.pdf', 'Programa anual de capacitación del personal.')] }),
-  base(17, 'listo', { evidencias: [ev('FICHA', '17_Ficha_clinica_paciente.pdf', 'Nombre del paciente y número de ficha.')] }),
-  base(18, 'modificar', { justificacion: 'Falta la firma.', accion: 'Firmar la declaración.', evidencias: [ev('COND', 'Declaracion_condiciones_sanitarias.pdf', 'Declaro que el local cumple las condiciones sanitarias.')] }),
-  base(19, 'listo', { evidencias: [ev('DISP', 'Procedimiento_dispensacion.pdf', 'Procedimiento de dispensación de medicamentos.')] }),
-  base(20, 'listo', { evidencias: [ev('RECL', 'Procedimiento_reclamos.pdf', 'Procedimiento de reclamos de usuarios.')] }),
-  base(21, 'no_encontrado'), base(22, 'no_encontrado'),
+  base(9, 'no_encontrado'), fallo(10),
+  base(11, 'listo', { evidencias: [FORM] }),
+  base(12, 'listo', { evidencias: [ev('EST', 'Libro_estupefacientes.pdf', 'Libro foliado de control de estupefacientes.')] }),
+  base(13, 'no_encontrado'), base(14, 'no_encontrado'), fallo(15),
+  base(16, 'listo', { evidencias: [PERS] }),
+  base(17, 'no_encontrado'), fallo(18),
+  base(19, 'listo', { evidencias: [EQUI] }), fallo(20),
+  base(21, 'listo', { evidencias: [PERS, EQUI] }),
+  base(22, 'no_encontrado'),
 ];
 const inventario = [
-  ['SOL', '01_Solicitud_autorizacion.pdf'], ['SII', '02_Inicio_actividades_SII.pdf'], ['ESC', '03_Escritura_constitucion.pdf'], ['ARR', '04_CONTRATOS DE ARRIENDO.pdf'], ['PL', '05_plano1erPiso_merged.pdf'],
-  ['GAS', '08_NO_APLICA_Instalaciones_de_gas.pdf'], ['FORM', 'Formulario_complementario.pdf'], ['QF', 'Nombramiento_QF.pdf'], ['TEMP', 'Registro_temperatura.pdf'], ['CAP', 'Programa_capacitacion.pdf'],
-  ['FICHA', '17_Ficha_clinica_paciente.pdf', 'excluido: posible dato sensible'], ['COND', 'Declaracion_condiciones_sanitarias.pdf'], ['DISP', 'Procedimiento_dispensacion.pdf'], ['RECL', 'Procedimiento_reclamos.pdf'],
-  ['S12', '12_Protocolo_esterilizacion.pdf'], ['S21', '21_Sala_de_procedimientos.pdf'], ['S31', '31_LIBRO_RECLAMOS.pdf'], ['S43', '43_Plan_de_emergencia.pdf'], ['S19', '19_Registro_de_capacitaciones.pdf'],
+  ['FORM', '01_Formulario_complementario_Andaluz_firmado.pdf'], ['SII', '02_Inicio_actividades_SII.pdf'], ['ESC', '03_Escritura_sociedad.pdf'], ['ARR', '04_CONTRATOS DE ARRIENDO.pdf'],
+  ['PL', '05_plano1erPiso_merged.pdf'], ['TC6', '08.1_Declaracion_TC6_Andaluz_firmada.pdf'], ['QF', 'Nombramiento_QF.pdf'], ['TEMP', '10_Registro_temperaturas_2026.pdf'],
+  ['EST', 'Libro_estupefacientes.pdf'], ['TERM', 'Certificado_calibracion_termometro.pdf'], ['PERS', 'Listado_personal.pdf'], ['FICHA', '17_Ficha_clinica_universal.pdf', 'excluido: posible dato sensible'],
+  ['COND', '18_Declaracion_condiciones_sanitarias.pdf'], ['EQUI', 'Listado_equipamiento.pdf'], ['RECL', 'Procedimiento_reclamos_usuarios.pdf'],
+  ['S12', '12_Protocolo_esterilizacion.pdf'], ['S21', '21_Sala_de_procedimientos.pdf'], ['S31', '31_LIBRO_RECLAMOS.pdf'], ['S43', '43_Plan_de_emergencia.pdf'],
 ].map(([id, nombre, estado]) => ({ id, nombre, estado: estado || 'incluido' }));
 const requisitos = filas.map((f) => ({ id: f.requisito, estado_declarado: NOAPLICA.includes(f.requisito) ? 'No aplica' : 'Listo' }));
 const lectura = Object.fromEntries(inventario.map((a) => [a.id, a.id === 'PL' ? 'sin_texto' : 'ok']));
+const vistos = { 1: new Set(['FORM']), 13: new Set(['S21']) }; // la IA examinó el formulario para el 1 y no halló «descargable»/«lleno»
+const existentes = [{ requisito: '02', archivo_id: 'SII', copia_id: 'c1', copia_nombre: '02_Inicio_actividades_SII.pdf', url: 'https://drive/c1' }, { requisito: '08', archivo_id: 'QF', copia_id: 'c2', copia_nombre: '08_Nombramiento_QF.pdf', url: 'https://drive/c2' }];
 (async () => {
-  const vistos = { 13: new Set(['S21']), 20: new Set(['RECL', 'S31']) }; // la IA ya examinó la «sala de procedimientos» para la sala de espera
   const r0 = A._revisarFilas(filas, inventario, { requisitos, expediente: 'Autorización Botiquín Andaluz', lectura, vistos });
   const F = (n) => r0.filas.find((f) => f.requisito === String(n));
-  ok(!r0.numeracion.usar, `la numeración de los archivos (expediente SEREMI anterior) se detecta como ajena y se ignora (${r0.numeracion.iguales}/${r0.numeracion.casos})`);
-  ok(F(7).presentacion === 'no_aplica_pc' && !F(7).evidencias.length && r0.descartadas.some((d) => d.requisito === '7' && d.archivo_id === 'GAS'), `7 (número municipal): el documento de gas no es evidencia → ${F(7).clasificacion}`);
-  ok(F(9).presentacion === 'revisar' && F(9).evidencias.some((e) => e.archivo_id === 'GAS' && e.reubicada_desde === '7') && /TC6|gas/i.test(F(9).accion), `9 (gas): la declaración TC6 se reubica para revisar → ${F(9).clasificacion}: ${F(9).accion}`);
-  ok(F(4).presentacion === 'revisar' && F(4).por_revisar.some((x) => x.archivo_id === 'ARR'), `4 (dominio del inmueble): el contrato de arriendo se examina → ${F(4).clasificacion}`);
-  ok(F(5).presentacion === 'revisar' && F(5).por_revisar.some((x) => x.archivo_id === 'PL' && x.tipo === 'sin_texto'), `5 (plano): el plano sin texto se identifica con lo que hay que mirar → ${F(5).clasificacion}`);
-  ok(F(17).presentacion !== 'listo' && !F(17).evidencias.length && !F(17).por_revisar.some((x) => x.archivo_id === 'FICHA') && r0.descartadas.some((d) => d.requisito === '17' && d.archivo_id === 'FICHA'), `17 (cédula): la ficha clínica no la acredita ni se relaciona por su número → ${F(17).clasificacion}`);
-  ok(F(11).presentacion === 'no_aplica_pc' && !F(11).evidencias.length, `11 (agua potable): sin documentos ajenos → ${F(11).clasificacion}`);
-  ok(F(2).presentacion === 'listo' && F(2).evidencias.find((e) => e.archivo_id === 'SII').pertinencia === 'principal' && F(2).evidencias.find((e) => e.archivo_id === 'FORM').pertinencia === 'apoyo', '2 (SII): certificado principal, formulario solo de apoyo');
-  ok(F(12).presentacion === 'revisar' && F(12).evaluacion_incompleta && !/respuesta cortada|formato:/i.test(F(12).justificacion + F(12).accion), `12: la evaluación incompleta se dice en lenguaje claro: «${F(12).justificacion}»`);
-  ok(['6', '13', '14', '22'].every((n) => F(n).presentacion === 'no_aplica_pc') && F(21).presentacion === 'no_encontrado' && F(15).presentacion === 'no_encontrado', 'declarados «No aplica» sin nada que los contradiga → POR CONFIRMAR; 15 y 21 realmente no encontrados');
-  ok(r0.filas.every((f) => !['listo', 'no_aplica'].includes(f.presentacion) ? f.accion.length > 10 : true), 'todo lo que no está listo dice qué falta');
-  // Entregables + comprobación de coherencia (lo mismo que hace el servidor antes de entregar).
-  const r = { ...r0, version: 1, expediente: 'Autorización Botiquín Andaluz', reanalisis: { requisitos: [{ requisito: '12', motivo: 'la evaluación automática no se completó.', archivos: [], costo_estimado_usd: 0.03 }], costo_estimado_usd: 0.03 } };
-  const plan = A._planDeCopias(r.filas, inventario, { revisadas: true, descartadas: r.descartadas, sinEvidencia: r.sinEvidencia });
+  const pr = (n, id) => (F(n).por_revisar || []).find((x) => x.archivo_id === id);
+  const usa = (n, id) => (F(n).evidencias || []).some((e) => e.archivo_id === id && e.aporta !== 'en_contra');
+  ok(F(1).presentacion === 'revisar' && pr(1, 'FORM') && pr(1, 'FORM').fuerte, `1: reconoce el formulario existente → ${F(1).clasificacion}: ${F(1).accion}`);
+  ok(F(4).presentacion === 'revisar' && pr(4, 'ARR') && /uso del inmueble/.test(pr(4, 'ARR').que_revisar), `4: contrato de arriendo candidato con qué verificar → ${pr(4, 'ARR') && pr(4, 'ARR').que_revisar}`);
+  ok(F(5).presentacion === 'revisar' && pr(5, 'PL') && pr(5, 'PL').tipo === 'sin_texto' && /refrigerador/.test(pr(5, 'PL').que_revisar) && /evacuaci/.test(pr(5, 'PL').que_revisar), `5: plano existente, revisión visual exacta → ${pr(5, 'PL') && pr(5, 'PL').que_revisar}`);
+  ok(F(9).presentacion === 'revisar' && usa(9, 'TC6') && /firma/i.test(F(9).accion) && !usa(7, 'TC6'), `9: considera la declaración TC6 y pide verificar la firma → ${F(9).accion}`);
+  ok(!usa(11, 'FORM') && r0.descartadas.some((d) => d.requisito === '11' && /solo pide/.test(d.motivo)) && F(11).presentacion === 'no_aplica_pc', `11: el formulario que PIDE la boleta no es prueba de agua potable → ${F(11).clasificacion}`);
+  ok(!usa(17, 'FICHA') && !pr(17, 'FICHA') && F(17).presentacion === 'no_encontrado', `17: la ficha clínica no se relaciona con la cédula → ${F(17).clasificacion}`);
+  ok(!usa(21, 'PERS') && !usa(21, 'EQUI') && r0.descartadas.filter((d) => d.requisito === '21').length === 2 && usa(16, 'PERS') && usa(19, 'EQUI'), `21: los listados de personal y equipamiento no acreditan medicamentos (siguen en 16 y 19) → ${F(21).clasificacion}`);
+  ok(F(22).presentacion === 'no_aplica_pc' && /No aplica/.test(F(22).justificacion), `22: no aplica, por confirmar → ${F(22).justificacion}`);
+  const inc = ['3', '10', '15', '18', '20'].map((n) => F(n));
+  ok(inc.every((f) => f.presentacion === 'revisar' && f.evaluacion_incompleta && (f.por_revisar || []).length && /Abrir «/.test(f.accion) && !/respuesta cortada|formato:/.test(f.justificacion + f.accion)), `3, 10, 15, 18 y 20: evaluación incompleta con archivo y dato a verificar → ${inc.map((f) => `${f.requisito}: ${(f.por_revisar[0] || {}).archivo}`).join('; ')}`);
+  ok(F(2).presentacion === 'listo' && F(8).presentacion === 'listo' && F(12).presentacion === 'listo', '2, 8 y 12 siguen LISTOS con su evidencia pertinente');
+  ok(r0.filas.every((f) => !(f.presentacion === 'no_encontrado' && (f.por_revisar || []).length)), 'ningún NO ENCONTRADO tiene un documento existente relacionado');
+  // Plan, entregables y comprobación (lo que hace el servidor antes de entregar), con dos copias ya existentes.
+  const r = { ...r0, version: 2, expediente: 'Autorización Botiquín Andaluz', reanalisis: { requisitos: [], costo_estimado_usd: 0 } };
+  const plan = A._planDeCopias(r.filas, inventario, { revisadas: true, descartadas: r.descartadas, sinEvidencia: r.sinEvidencia, copiasExistentes: existentes });
+  r.plan = plan; r.previas = { copias: existentes };
+  const P = (n, id) => plan.plan.find((c) => c.requisito === String(n) && c.archivo_id === id);
+  ok(P(2, 'SII').ya_copiada && P(8, 'QF').ya_copiada && plan.plan.filter((c) => !c.ya_copiada && ((c.requisito === '2' && c.archivo_id === 'SII') || (c.requisito === '8' && c.archivo_id === 'QF'))).length === 0, 'plan: las 2 copias existentes se reconocen y no se duplican');
+  ok(P(1, 'FORM') && P(1, 'FORM').opcional && /PENDIENTE/.test(P(1, 'FORM').nombre_copia) && P(9, 'TC6') && /PENDIENTE/.test(P(9, 'TC6').nombre_copia) && P(5, 'PL') && P(4, 'ARR'), `plan: copias adicionales PENDIENTE: ${plan.plan.filter((c) => !c.ya_copiada).map((c) => c.nombre_copia).join(', ')}`);
+  ok(!P(7, 'TC6') && !P(11, 'FORM') && !P(21, 'PERS') && !P(21, 'EQUI') && !plan.plan.some((c) => c.archivo_id === 'FICHA'), 'plan: nada de gas en 7, formulario en 11, listados en 21 ni ficha clínica');
   const md = A._informeExpedienteMd(r, { trabajoId: 'dd8008fd-prueba', expediente: 'Autorización Botiquín Andaluz', carpeta: { nombre: 'Andaluz_Botiquin' } });
   const wordBuf = await crearWord({ titulo: 'Expediente revisado', contenido: md });
-  const excelBuf = await A._excelExpediente(r, { trabajoId: 'dd8008fd-prueba', expediente: 'Autorización Botiquín Andaluz', inventario, lectura });
+  const excelBuf = await A._excelExpediente(r, { trabajoId: 'dd8008fd-prueba', expediente: 'Autorización Botiquín Andaluz', inventario, lectura, copias: existentes, plan: plan.plan });
   const c = await A._coherenciaExpediente(r, { excelBuf, md, wordBuf, plan, inventario, total: 22 });
-  ok(c.ok, `coherencia: Excel, Word y plan concuerdan (${c.problemas.join('; ') || 'sin problemas'})`);
-  ok(!plan.plan.some((x) => x.requisito === '7' || x.requisito === '11' || (x.requisito === '17' && x.archivo_id === 'FICHA')) && plan.plan.some((x) => x.requisito === '9' && x.archivo_id === 'GAS' && x.clase === 'pendiente') && plan.plan.some((x) => x.requisito === '5' && x.archivo_id === 'PL' && x.opcional), 'plan: nada para 7, 11 ni la ficha en 17; TC6 como PENDIENTE en 9; plano desmarcado en 5');
-  ok(!/respuesta cortada|formato:/i.test(md) && /## 3\. Documentos que ADA no pudo comprobar con texto/.test(md) && /05_plano1erPiso_merged\.pdf/.test(md), 'Word: sin mensajes técnicos y con la lista exacta de documentos que no se pudieron comprobar');
-  // La comprobación detecta errores: si una asociación descartada se cuela como evidencia, no se entrega.
-  const malo = { ...r, filas: r.filas.map((f) => (f.requisito === '7' ? { ...f, presentacion: 'no_aplica', evidencias: [{ ...GAS, pertinencia: 'principal' }] } : f)) };
-  const mdM = A._informeExpedienteMd(malo, { trabajoId: 'dd8008fd-prueba', expediente: 'X' });
-  const c2 = await A._coherenciaExpediente(malo, { excelBuf: await A._excelExpediente(malo, { trabajoId: 'dd8008fd-prueba', expediente: 'X', inventario, lectura }), md: mdM, wordBuf: await crearWord({ titulo: 'Expediente revisado', contenido: mdM }), plan, inventario, total: 22 });
-  ok(!c2.ok && c2.problemas.some((x) => /7: evidencia no pertinente|descartado y aparece/.test(x)), `la comprobación rechaza una asociación descartada que reaparece (${c2.problemas.slice(0, 2).join('; ')})`);
+  ok(c.ok, `coherencia de Excel, Word y plan (${c.problemas.join('; ') || 'sin problemas'})`);
+  const ExcelJS = require('exceljs'); const lib = new ExcelJS.Workbook(); await lib.xlsx.load(excelBuf);
+  const hAE = lib.getWorksheet('Documentos por requisito'); const filasAE = []; hAE.eachRow((row, i) => { if (i > 1) filasAE.push(row.values.slice(1).map((x) => String(x == null ? '' : x))); });
+  const ae = (n, arch) => filasAE.find((x) => x[0] === String(n) && x[1] === arch);
+  ok(ae(5, '05_plano1erPiso_merged.pdf')[3].startsWith('no: sin texto') && /por confirmar/.test(ae(5, '05_plano1erPiso_merged.pdf')[4]) && /^copiada|^ya copiada/.test(ae(2, '02_Inicio_actividades_SII.pdf')[6]) && ae(2, '02_Inicio_actividades_SII.pdf')[7] === 'https://drive/c1' && /^no: /.test(ae(21, 'Listado_personal.pdf')[4]),
+    'Excel: A (existe), B (leído), C (pertinente), D (completo/parcial) y E (copia con enlace) por separado');
+  ok(new Set(filasAE.map((x) => x[0])).size === 22 && /## 4\. Copias en la carpeta de resultados/.test(md) && md.includes('https://drive/c1'), 'Excel y Word cubren los 22 requisitos e incluyen los enlaces de las copias');
   if (process.env.VER) for (const f of r.filas) console.log(`${f.requisito} ${f.clasificacion} | ${f.justificacion} | ${f.accion}`);
   setTimeout(() => process.exit(), 100);
 })();
