@@ -273,7 +273,7 @@ const DESCARGABLES = {
   },
   diagnostico_expediente: async (id, u) => {
     if (!u.admin) return null;
-    const d = await Auditoria.diagnosticoRevision(id);
+    const d = await Auditoria.diagnosticoActualizado(id);
     return { nombre: `diagnostico-expediente-${String(id).slice(0, 8)}-v${d.revision}.json`, mime: 'application/json; charset=utf-8', datos: Buffer.from(JSON.stringify(d, null, 2), 'utf8') };
   },
   documento: async (id) => {

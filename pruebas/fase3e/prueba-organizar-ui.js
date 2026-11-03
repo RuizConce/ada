@@ -98,6 +98,19 @@ const PASS = 'clave-org-ui';
     const [dx] = await Promise.all([p.waitForEvent('download'), fin.locator('text=Descargar Excel').click()]);
     const [dw] = await Promise.all([p.waitForEvent('download'), fin.locator('text=Descargar Word').click()]);
     ok(/\.xlsx$/.test(dx.suggestedFilename()) && /\.docx$/.test(dw.suggestedFilename()), `descargas: ${dx.suggestedFilename()} · ${dw.suggestedFilename()}`);
+    // Pantalla principal: botón fijo «Descargar diagnóstico del Botiquín» (aunque la tarjeta de la auditoría ya no esté).
+    // Si la última revisión es de reglas anteriores, se rehace antes (sin IA, sin copias).
+    const tAud2 = sql("SELECT t.id FROM trabajos t WHERE EXISTS (SELECT 1 FROM trabajo_pasos p WHERE p.trabajo_id = t.id AND p.tipo = 'aud_informe') ORDER BY t.creado_en DESC LIMIT 1");
+    sql(`UPDATE trabajos SET terminado_en = NOW() - INTERVAL 2 DAY WHERE id = '${tAud2}'`);
+    const revAntes = Number(sql(`SELECT MAX(version) FROM revisiones_expediente WHERE trabajo_id = '${tAud2}'`));
+    const copiasAntes = sql("SELECT COUNT(*) FROM trabajos WHERE titulo LIKE 'Organizar expediente%'"); const iaAntes = sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id = '${tAud2}'`);
+    await p.reload(); await p.waitForTimeout(1500); await p.$eval('.hoja-fondo', (e) => e.click()).catch(() => {});
+    await p.waitForSelector('text=Descargar diagnóstico del Botiquín', { timeout: 10000 });
+    await foto(p, '6-diagnostico');
+    const [dd] = await Promise.all([p.waitForEvent('download'), p.click('text=Descargar diagnóstico del Botiquín')]);
+    const diag = JSON.parse(require('fs').readFileSync(await dd.path(), 'utf8'));
+    ok(/^diagnostico-expediente-/.test(dd.suggestedFilename()) && diag.requisitos.length === 22 && diag.algoritmo >= 2 && Array.isArray(diag.plan_de_copias) && diag.coherencia.ok, `botón en la pantalla principal → ${dd.suggestedFilename()} (revisión ${diag.revision}, reglas ${diag.algoritmo}, 22 requisitos, coherente)`);
+    ok(sql("SELECT COUNT(*) FROM trabajos WHERE titulo LIKE 'Organizar expediente%'") === copiasAntes && sql(`SELECT COUNT(*) FROM llamadas_ia WHERE trabajo_id = '${tAud2}'`) === iaAntes && Number(sql(`SELECT MAX(version) FROM revisiones_expediente WHERE trabajo_id = '${tAud2}'`)) >= revAntes, 'el diagnóstico no ejecuta IA ni crea copias');
     ok(await p.evaluate(() => document.documentElement.scrollWidth <= 390), 'sin desplazamiento horizontal');
   } catch (e) { ok(false, `excepción: ${e.message}`); await foto(p, 'error'); }
   await b.close(); srv.kill(); drive.kill();

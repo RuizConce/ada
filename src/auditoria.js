@@ -2920,7 +2920,7 @@ async function revisarExpediente(trabajoId, { origen = 'manual' } = {}) {
   const resumen = Object.fromEntries(ORDEN_REVISION.map((k) => [k, r.filas.filter((f) => f.presentacion === k).map((f) => f.requisito)]));
   const cambios = r.filas.filter((f) => f.cambio).map((f) => ({ requisito: f.requisito, antes: f.antes.clasificacion, ahora: f.clasificacion, motivo: f.cambio }));
   const id = crypto.randomUUID();
-  const datos = { filas: r.filas, descartadas: r.descartadas, sin_evidencia: r.sinEvidencia, numeracion: r.numeracion, reanalisis: r.reanalisis, coherencia, resumen, cambios, md, origen, expediente, inventario_n: inventario.length, carpeta_resultados: previas.carpeta, copias_existentes: previas.copias, copias_sin_respaldo: plan.copiasSinRespaldo, plan: plan.plan.map((c) => ({ requisito: c.requisito, archivo_id: c.archivo_id, archivo: c.archivo, nombre_copia: c.nombre_copia, pertinencia: c.pertinencia, opcional: !!c.opcional, sensible: !!c.sensible, ya_copiada: c.ya_copiada || null })) };
+  const datos = { filas: r.filas, descartadas: r.descartadas, sin_evidencia: r.sinEvidencia, numeracion: r.numeracion, reanalisis: r.reanalisis, coherencia, resumen, cambios, md, origen, expediente, algoritmo: ALGORITMO_REVISION, inventario_n: inventario.length, carpeta_resultados: previas.carpeta, copias_existentes: previas.copias, copias_sin_respaldo: plan.copiasSinRespaldo, plan: plan.plan.map((c) => ({ requisito: c.requisito, archivo_id: c.archivo_id, archivo: c.archivo, nombre_copia: c.nombre_copia, pertinencia: c.pertinencia, opcional: !!c.opcional, sensible: !!c.sensible, ya_copiada: c.ya_copiada || null })) };
   await qPrincipal('INSERT INTO revisiones_expediente (id, usuario_id, trabajo_id, version, estado, datos_cifrado, excel_cifrado, word_cifrado, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [id, usuario().id, trabajoId, r.version, coherencia.ok ? 'lista' : 'con_problemas', Cifrado.cifrarJSON(datos), Cifrado.cifrar(excelBuf.toString('base64')), Cifrado.cifrar(wordBuf.toString('base64')), new Date()]);
   let planId = null;
@@ -2958,7 +2958,9 @@ async function diagnosticoRevision(trabajoId) {
     requisitos: d.filas.map((x) => ({ n: x.requisito, requisito: minimizar(corta(x.texto_requisito, 200)).texto, clasificacion: x.clasificacion, antes: x.antes.clasificacion, declarado: x.estado_declarado,
       evidencias: (x.evidencias || []).map((e) => ({ archivo: e.archivo, pertinencia: e.pertinencia, aporta: e.aporta, cita: minimizar(corta(e.cita, 160)).texto })), por_revisar: (x.por_revisar || []).map((y) => ({ archivo: y.archivo, tipo: y.tipo })),
       descartadas: x.descartadas, situacion: minimizar(x.justificacion).texto, que_hacer: minimizar(x.accion).texto })),
-    reanalisis: d.reanalisis };
+    reanalisis: d.reanalisis, algoritmo: d.algoritmo || 1, generado: f.creado_en,
+    carpeta_resultados: d.carpeta_resultados ? d.carpeta_resultados.nombre : null, copias_existentes: (d.copias_existentes || []).map((c) => ({ requisito: c.requisito, copia: c.copia_nombre })),
+    plan_de_copias: (d.plan || []).map((c) => ({ requisito: c.requisito, archivo: c.archivo, copia: c.nombre_copia, pertinencia: c.pertinencia, ya_copiada: !!c.ya_copiada, marcada_por_defecto: !c.opcional && !c.sensible && !c.ya_copiada, sensible: c.sensible })) };
 }
 // Entregables del expediente coherentes con el plan revisado: sin las evidencias descartadas por no pertinentes y con
 // los «No aplica» de la lista que la auditoría no contradijo marcados «por confirmar» (no como faltantes).
@@ -3303,13 +3305,38 @@ async function pendientes({ conversacionId } = {}) {
   return out;
 }
 
+// Expedientes auditados recientes (para el botón de la pantalla principal «Descargar diagnóstico…»).
+async function expedientesRecientes() {
+  const ts = await qPrincipal("SELECT id, titulo, terminado_en, objetivo_cifrado FROM trabajos WHERE usuario_id = ? AND tipo = 'auditoria' AND estado = 'completado' AND terminado_en > ? AND titulo NOT LIKE 'Organizar expediente%' ORDER BY terminado_en DESC LIMIT 20", [usuario().id, new Date(Date.now() - 60 * 864e5)]);
+  const out = [];
+  for (const t of ts) {
+    let o; try { o = Cifrado.descifrarJSON(t.objetivo_cifrado) || {}; } catch (_) { continue; }
+    if (o.modo === 'requisitos' || o.modo === 'copias' || !(o.perfil === 'expediente' || o.organizar)) continue;
+    const rv = await ultimaRevision(t.id).catch(() => null);
+    out.push({ id: t.id, expediente: o.expediente || (o.carpeta && o.carpeta.nombre) || t.titulo, terminado_en: t.terminado_en, revision: rv ? rv.version : null });
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+// Diagnóstico SIEMPRE con las reglas vigentes: si la última revisión es de reglas anteriores (o no hay), se rehace
+// antes (sin IA, sin Drive, sin copiar). Nunca se repite la auditoría.
+async function diagnosticoActualizado(trabajoId) {
+  const f = await ultimaRevision(trabajoId);
+  let alDia = false;
+  if (f) { try { alDia = (Cifrado.descifrarJSON(f.datos_cifrado).algoritmo || 1) >= ALGORITMO_REVISION; } catch (_) { alDia = false; } }
+  if (!alDia) await revisarExpediente(trabajoId, { origen: 'diagnostico' });
+  return diagnosticoRevision(trabajoId);
+}
 async function activas() {
   const filas = await qPrincipal(`SELECT t.id FROM trabajos t JOIN auditoria_propuestas p ON p.trabajo_id = t.id WHERE t.usuario_id = ? AND t.tipo = 'auditoria'
     AND (t.estado IN ('ejecutando','pausado','pausado_presupuesto','bloqueado','esperando_aprobacion') OR (t.estado = 'completado' AND t.terminado_en > ?)) ORDER BY t.creado_en DESC LIMIT 3`,
   [usuario().id, new Date(Date.now() - 6 * 3600e3)]);
+  const props = await pendientes();
+  // La auditoría de un plan de copias pendiente sigue visible aunque haya terminado hace más de 6 horas.
+  const ids = [...new Set([...filas.map((f) => f.id), ...props.filter((p) => p.tipo === 'plan_copias' && p.auditoria_trabajo).map((p) => p.auditoria_trabajo)])];
   const out = [];
-  for (const f of filas) { try { out.push(await avance(f.id)); } catch (_) {} }
-  return { trabajos: out, propuestas: await pendientes() };
+  for (const id of ids) { try { out.push(await avance(id)); } catch (_) {} }
+  return { trabajos: out, propuestas: props, expedientes: await expedientesRecientes() };
 }
 
 const H = require('./herramientas');
@@ -3401,4 +3428,4 @@ async function revisarPendientesAlArrancar() {
     try { const r = await revisarExpediente(d.auditoria_trabajo, { origen: 'arranque' }); console.log(`Expediente ${String(d.auditoria_trabajo).slice(0, 8)} revisado al arrancar: revisión ${r.revision.version} ${r.revision.estado}`); } catch (e) { console.error(`No pude revisar ${String(d.auditoria_trabajo).slice(0, 8)} al arrancar: ${e.message}`); }
   }
 }
-module.exports = { _copiasPrevias: copiasPrevias, _informeExpedienteMd: informeExpedienteMd, _excelExpediente: excelExpediente, _coherenciaExpediente: coherenciaExpediente, revisarPendientesAlArrancar, revisarExpediente, diagnosticoRevision, ultimaRevision, _revisarFilas: revisarFilas, regenerarPlan, _planDeCopias: planDeCopias, _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };
+module.exports = { diagnosticoActualizado, expedientesRecientes, _copiasPrevias: copiasPrevias, _informeExpedienteMd: informeExpedienteMd, _excelExpediente: excelExpediente, _coherenciaExpediente: coherenciaExpediente, revisarPendientesAlArrancar, revisarExpediente, diagnosticoRevision, ultimaRevision, _revisarFilas: revisarFilas, regenerarPlan, _planDeCopias: planDeCopias, _informeMarkdown: informeMarkdown, _tablaDeNorma: tablaDeNorma, aprobarCopias, planDeCopias, requisitosDeTrabajo, guardarListaDeTrabajo, terminadas, idDeCarpeta, guardarLista, listas, archivarLista, autorizarCarpeta, carpetas, revocarCarpeta, _buscarFrase: buscarFraseEnNorma, buscarEnNorma, _listaRango: listaRango, rehacerLista, borrarExtracciones, minimizar, informe, constancia, crear, estimacion, listar, excel, proponer, aprobarPropuesta, descartarPropuesta, avance, activas, pendientes, marcarTarjeta, estadoParaConversacion, TARJETA, CONFIG_PROVISIONAL, CONFIGS, fragmentar, pertinentes, citaVerificada, costosDe };

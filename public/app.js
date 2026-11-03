@@ -230,6 +230,15 @@
     }
     for (const a of autorizaciones) cont.appendChild(tarjetaAutorizacion(a));
     if (consentimientoPendiente) cont.appendChild(tarjetaConsentimiento(consentimientoPendiente));
+    // Atajo fijo: diagnóstico del expediente auditado (se rehace con las reglas vigentes si hace falta; sin IA ni copias).
+    const fijo = $('#atajo-expediente'); fijo.innerHTML = ''; fijo.hidden = !expedientesRecientes.length;
+    for (const x of expedientesRecientes.slice(0, 1)) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'principal atajo-diagnostico';
+      b.textContent = /botiqu/i.test(x.expediente) ? 'Descargar diagnóstico del Botiquín' : `Descargar diagnóstico de «${x.expediente}»`;
+      b.title = `Auditoría ${x.id.slice(0, 8)} · sin IA, sin costo, sin copias`;
+      b.addEventListener('click', () => descargar('diagnostico_expediente', x.id, b));
+      fijo.appendChild(b);
+    }
     for (const p of propuestasAuditoria) cont.appendChild(tarjetaPropuestaAuditoria(p));
     for (const a of encargosAuditoria.values()) cont.appendChild(tarjetaEncargoAuditoria(a));
   }
@@ -238,6 +247,7 @@
   // ADA propone; nada empieza ni se gasta hasta tocar "Aprobar". El avance viene de la base (real, no estimado).
   const TARJETAS_SOPORTADAS = ['auditoria_propuesta@1']; // el servidor solo promete tarjetas que esta versión sabe dibujar
   let propuestasAuditoria = [];
+  let expedientesRecientes = [];
   const encargosAuditoria = new Map();
   let audChatTimer = null;
   const usdAud = (n) => `US$${Number(n || 0).toFixed(4).replace('.', ',')}`;
@@ -1005,6 +1015,7 @@
       for (const a of r.trabajos || []) if (!cerradas.includes(a.id)) encargosAuditoria.set(a.id, a);
       // Propuestas pendientes: vuelven siempre (no se pueden "cerrar", solo aprobar o descartar).
       for (const p of r.propuestas || []) if (!propuestasAuditoria.some((x) => x.id === p.id)) propuestasAuditoria.push(p);
+      expedientesRecientes = r.expedientes || [];
       pintarEntregas();
       if ((r.trabajos || []).length) seguirAuditorias();
     } catch (_) {}

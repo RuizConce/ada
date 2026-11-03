@@ -642,3 +642,6 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aud-sensible-fila { border-color: rgba(248,113,113,.55); }
 .aud-plan-falta p { margin: 2px 0; overflow-wrap: anywhere; }
 .boton-enlace { display: inline-flex; align-items: center; justify-content: center; padding: 10px 14px; border-radius: 12px; text-decoration: none; }
+
+.atajo-expediente { padding: 0 16px 8px; }
+.atajo-diagnostico { display: block; width: 100%; margin: 0; padding: 12px 14px; font-weight: 600; border-radius: 12px; border: 0; background: linear-gradient(90deg, var(--verde), var(--verde-2)); color: #04140d; }
