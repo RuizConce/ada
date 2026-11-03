@@ -3017,6 +3017,26 @@ async function revisarExpediente(trabajoId, { origen = 'manual' } = {}) {
 const claveNombre = (n) => norm(String(n || '')).replace(/\.[a-z0-9]{2,5}$/, '').replace(/[^a-z0-9ñ]+/g, '');
 // El número con que el archivo venía en OTRO trámite («03_», «3.1») no se arrastra al nombre de la copia.
 const sinNumeroInicial = (n) => String(n || '').replace(/^\s*\d{1,3}(\.\d{1,2})?[\s_.\-)]*(?=[A-Za-zÁÉÍÓÚÑáéíóúñ])/, '') || String(n || '');
+// Texto del archivo ya guardado por la auditoría (cifrado en la base; nunca se registra en los logs). Si no hay, las
+// citas verificadas de ese archivo. Sin Drive ni IA.
+async function textoGuardado(archivoId, respaldo = '') {
+  try {
+    const [f] = await qPrincipal('SELECT texto_cifrado FROM extracciones WHERE usuario_id = ? AND archivo_id = ? AND texto_cifrado IS NOT NULL ORDER BY id DESC LIMIT 1', [usuario().id, String(archivoId)]);
+    if (f) { const c = JSON.parse(Cifrado.descifrar(f.texto_cifrado)); const tx = c.tipo === 'texto' ? c.texto : JSON.stringify(c.hojas || c); if (tx) return tx; }
+  } catch (_) { /* sin texto guardado */ }
+  return respaldo || null;
+}
+// Fragmento corto alrededor de la coincidencia, con datos personales enmascarados; una instrucción («adjuntar…») no cuenta.
+function buscarFragmento(texto, re) {
+  const t = String(texto).replace(/\s+/g, ' ');
+  const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+  for (const m of t.matchAll(g)) {
+    const frag = t.slice(Math.max(0, m.index - 70), m.index + m[0].length + 70).trim();
+    if (INSTRUCCION.test(frag) && !/n[uú]mero|folio|N[°º]/i.test(m[0])) continue;
+    return Object.assign(new String(minimizar(frag).texto), { crudo: frag });
+  }
+  return null;
+}
 async function prepararLote(trabajoId, { clave, nombre, requisitos, asignaciones }, { origen = 'manual' } = {}) {
   const [t] = await qPrincipal('SELECT * FROM trabajos WHERE id = ? AND usuario_id = ?', [trabajoId, usuario().id]);
   if (!t || t.tipo !== 'auditoria' || t.estado !== 'completado') throw err('La auditoría de origen no está completa', 409);
@@ -3029,11 +3049,48 @@ async function prepararLote(trabajoId, { clave, nombre, requisitos, asignaciones
   const filasRev = rv ? Cifrado.descifrarJSON(rv.datos_cifrado).filas : (final.matriz ? final.matriz.filas : []);
   const filaDe = (n) => filasRev.find((f) => String(f.requisito) === String(n)) || {};
   const plan = []; const sinCopia = []; const noEncontrados = [];
+  // Citas verificadas de la auditoría por archivo (contenido real, ya enmascarado), por si no hay texto guardado.
+  const citasPorArchivo = {};
+  for (const fr of (final.matriz ? final.matriz.filas : [])) for (const e of fr.evidencias || []) if (e.verificada && e.archivo_id) (citasPorArchivo[e.archivo_id] = citasPorArchivo[e.archivo_id] || []).push(e.cita || '');
+  const citasDe = (id) => (citasPorArchivo[id] || []).join('\n');
   for (const n of requisitos) {
     const f = filaDe(n); const qv = f.texto_requisito ? queVerificar(f) : '';
     const asig = (asignaciones || []).filter((a) => String(a.requisito) === String(n));
     let candidatos = [];
     for (const a of asig) {
+      if (a.tipo === 'buscar_contenido') {
+        // Por CONTENIDO (texto ya guardado de la auditoría o citas verificadas) y, como apoyo, por nombre. Sin IA ni Drive.
+        const reC = a.contenido ? new RegExp(a.contenido, 'i') : null; const reN = a.nombres ? new RegExp(a.nombres, 'i') : null; const reX = a.excluir ? new RegExp(a.excluir, 'i') : null;
+        const enc = [];
+        let sinTexto = 0;
+        for (const x of inventario) {
+          if (x.estado === 'duplicado exacto' || /acceso directo|fuente de requisitos/.test(x.estado || '')) continue;
+          if (reX && reX.test(norm(x.nombre))) continue;
+          const tx = await textoGuardado(x.id, citasDe(x.id));
+          if (!tx) sinTexto += 1;
+          const m = reC && tx ? buscarFragmento(tx, reC) : null;
+          const porNombre = !!(reN && reN.test(norm(x.nombre)));
+          if (m) enc.push({ x, a: { ...a, tipo: a.clase || 'pendiente', opcional: a.marcar === false || a.clase === 'respaldo' || !!(a.marcar_si && !new RegExp(a.marcar_si, 'i').test(m.crudo)), nota: `su contenido lo menciona: «${m}»${a.marcar_si && !new RegExp(a.marcar_si, 'i').test(m.crudo) ? ' (sin un número de trámite visible: desmarcado)' : ''}` } });
+          else if (porNombre && !tx) enc.push({ x, a: { ...a, tipo: a.clase || 'pendiente', opcional: true, nota: `relacionado solo por su nombre; ADA no tiene su texto guardado para comprobar el contenido` } });
+        }
+        if (!enc.length) { sinCopia.push({ requisito: String(n), texto: f.texto_requisito || '', estado: a.si_no || 'FALTA', accion: `${a.si_no === 'NO APLICA — POR CONFIRMAR' ? `No hay ${a.descripcion || 'documento'} en la carpeta: queda «No aplica — por confirmar».` : `No se encontró ${a.descripcion || 'el documento'} en el contenido ni en los nombres de la carpeta de origen: conseguirlo. ADA no lo inventa.`}${sinTexto ? ` (${sinTexto === 1 ? '1 archivo sin texto guardado no se pudo' : `${sinTexto} archivos sin texto guardado no se pudieron`} revisar por contenido.)` : ''}` }); continue; }
+        candidatos.push(...enc);
+        continue;
+      }
+      if (a.tipo === 'grupo') {
+        // Un mismo antecedente en varios archivos: principal, anexos y versiones alternativas.
+        for (const it of a.archivos) {
+          const k = claveNombre(it.archivo);
+          const x = inventario.find((y) => claveNombre(y.nombre) === k) || inventario.find((y) => claveNombre(y.nombre).includes(k) || k.includes(claveNombre(y.nombre)));
+          if (!x) { noEncontrados.push(it.archivo); sinCopia.push({ requisito: String(n), texto: f.texto_requisito || '', estado: 'FALTA', accion: `«${it.archivo}» no está en la carpeta de origen autorizada.` }); continue; }
+          const tx = await textoGuardado(x.id, citasDe(x.id));
+          const m = a.contenido && tx ? buscarFragmento(tx, new RegExp(a.contenido, 'i')) : null;
+          const ROL = { principal: 'documento principal', anexo: 'anexo del mismo antecedente', alternativa: 'versión alternativa del mismo documento' };
+          candidatos.push({ x, a: { ...a, tipo: 'pendiente', rol: it.rol, opcional: it.rol === 'alternativa', falta: it.falta || a.falta,
+            nota: `${ROL[it.rol] || it.rol}${it.nota ? ` (${it.nota})` : ''}${m ? `; su contenido dice: «${m}»` : tx ? '' : '; sin texto guardado: comprobar su contenido a la vista'}` } });
+        }
+        continue;
+      }
       if (a.tipo === 'buscar') {
         const re = new RegExp(a.patron, 'i');
         const enc = inventario.filter((x) => re.test(norm(x.nombre)) && x.estado !== 'duplicado exacto' && !/acceso directo/.test(x.estado || ''));
@@ -3048,11 +3105,12 @@ async function prepararLote(trabajoId, { clave, nombre, requisitos, asignaciones
     }
     for (const { x, a } of candidatos) {
       const prefijo = a.tipo === 'respaldo' ? 'RESPALDO_' : 'PENDIENTE_';
-      const nombreCopia = `${pad2(n)}_${prefijo}${limpiarNombre(ocultarRutNombre(sinNumeroInicial(x.nombre)))}`;
+      const extraRol = a.rol === 'anexo' ? 'ANEXO_' : a.rol === 'alternativa' ? 'ALTERNATIVA_' : '';
+      const nombreCopia = `${pad2(n)}_${prefijo}${extraRol}${limpiarNombre(ocultarRutNombre(sinNumeroInicial(x.nombre)))}`;
       const ya = previas.copias.find((c) => c.archivo_id === x.id && String(c.requisito).replace(/^0+/, '') === String(n));
       const sensible = /sensible/.test(x.estado || '') || esSensible(x.nombre);
       plan.push({ clave: `${n}:${x.id}`, requisito: String(n), estado: a.tipo === 'respaldo' ? 'RESPALDO (opcional)' : (f.clasificacion || 'REQUIERE REVISIÓN'), clase: a.tipo === 'respaldo' ? 'respaldo' : 'pendiente',
-        archivo_id: x.id, archivo: ocultarRutNombre(x.nombre), nombre_copia: ya ? ya.copia_nombre : nombreCopia, cita: '', ubicacion: '', sensible, pertinencia: a.tipo === 'respaldo' ? 'respaldo' : 'indicado',
+        archivo_id: x.id, archivo: ocultarRutNombre(x.nombre), nombre_copia: ya ? ya.copia_nombre : nombreCopia, cita: '', ubicacion: '', sensible, pertinencia: a.tipo === 'respaldo' ? 'respaldo' : 'indicado', ...(a.rol ? { rol: a.rol } : {}),
         ...(a.tipo === 'respaldo' || a.opcional || sensible ? { opcional: true } : {}), ...(ya ? { ya_copiada: { nombre: ya.copia_nombre, url: ya.url || '' } } : {}),
         acredita: `${a.nota ? `${a.nota.charAt(0).toUpperCase()}${a.nota.slice(1)}.` : 'Indicado por ti para este requisito.'}${a.tipo === 'respaldo' ? ' Copia de respaldo: márcala solo si quieres incluirla.' : ''}`,
         falta: a.falta || (qv ? `Comprobar: ${qv}.` : '') });
@@ -3080,6 +3138,22 @@ const LOTES = [
     { requisito: 5, tipo: 'pendiente', archivo: '05_ plano1erPiso_merged.pdf', falta: 'Comprobar a la vista que el plano marca el botiquín, el refrigerador y las vías de evacuación.' },
     { requisito: 6, tipo: 'respaldo', archivo: '03_ Recepción obras.pdf', nota: 'documento existente (en el trámite de Estética era el n.º 3); en el Botiquín el requisito 6 está «No aplica — por confirmar»' },
     { requisito: 7, tipo: 'respaldo', archivo: '3.1Certificado numero.pdf', nota: 'candidato del requisito 7 (certificado de número municipal)' },
+  ] },
+  { clave: 'botiquin-andaluz-8-12', trabajo: 'dd8008fd', nombre: 'Botiquín Andaluz — requisitos 8 al 12', requisitos: [8, 9, 10, 11, 12], asignaciones: [
+    { requisito: 8, tipo: 'buscar_contenido', descripcion: 'el comprobante de la solicitud sanitaria con su número de trámite',
+      contenido: 'n[uú]mero de (tr[aá]mite|solicitud|folio)|seremi en l[ií]nea|solicitud de autorizaci[oó]n sanitaria|n[°º]\\s*(de\\s*)?(tr[aá]mite|solicitud|folio)|folio\\s*n',
+      nombres: 'comprobante|solicitud|tramite|seremi|doc_?inicial|documento_?firmado', excluir: 'formulario|convenio|protocolo|manual|reglamento|plan de', marcar_si: '\\d{4,}' },
+    { requisito: 9, tipo: 'grupo', contenido: 'tc6|instalaci[oó]n(es)? de gas|gas (natural|licuado)', falta: 'Comprobar que la declaración TC6 esté firmada por la representante legal (ADA no verifica firmas; el nombre del archivo no basta).', archivos: [
+      { archivo: '08.1_Declaracion_TC6_Andaluz_firmada.pdf', rol: 'principal', nota: 'declaración TC6' },
+      { archivo: '08_NO_APLICA_Instalaciones_de_gas.pdf', rol: 'alternativa', nota: 'declaración de que no hay instalaciones de gas; la auditoría no vio la firma en su texto' } ] },
+    { requisito: 10, tipo: 'grupo', contenido: 'te ?1|instalaci[oó]n el[eé]ctrica|electricidad|no modifica', falta: 'Comprobar que la declaración TE1 y sus anexos correspondan al mismo inmueble y estén firmados (ADA no verifica firmas).', archivos: [
+      { archivo: '07_Declaracion_TE1_Andaluz_firmada.pdf', rol: 'principal', nota: 'declaración TE1' },
+      { archivo: '7_T1 no modifica.pdf', rol: 'anexo', nota: 'declaración de que la instalación eléctrica no se modifica' },
+      { archivo: '7.1_te_1_box_.pdf', rol: 'anexo', nota: 'TE1 del box' } ] },
+    { requisito: 11, tipo: 'buscar_contenido', clase: 'respaldo', marcar: false, si_no: 'NO APLICA — POR CONFIRMAR', descripcion: 'una boleta de agua',
+      contenido: 'boleta.{0,40}agua|aguas del altiplano|consumo de agua|m3 consumidos', nombres: 'boleta|agua', excluir: 'formulario|instalaciones_?de_?gas|convenio' },
+    { requisito: 12, tipo: 'buscar_contenido', descripcion: 'un contrato o convenio de control de plagas',
+      contenido: 'control de plagas|desratizaci|fumigaci|desinsectaci', nombres: 'plaga|fumig|desratiz|desinsect', excluir: 'laboratorio|traslado|reprocesamiento|formulario' },
   ] },
 ];
 async function prepararLotesAlArrancar() {

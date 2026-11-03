@@ -261,6 +261,25 @@ const esperar = async (id, hasta = ['completado', 'bloqueado', 'cancelado', 'pau
       ok(ap.d.copias === 3 && fin3.estado === 'completado' && en2.length === en0 + 3 && new Set(en2.map((f) => f.name)).size === en2.length && ['04_PENDIENTE_Titulo_QF.pdf', '05_PENDIENTE_Listado_medicamentos.pdf', '06_RESPALDO_Horario_funcionamiento.pdf'].every((n) => en2.some((f) => f.name === n)),
         `aprobado el lote: 3 copias agregadas a la misma carpeta, sin duplicados (${fin3.estado} ${fin3.motivo || ''})`);
     }
+    // ---- Tercer lote: búsqueda por CONTENIDO (texto guardado), grupos principal/anexo/alternativa, respaldo opcional y FALTA.
+    {
+      const tA = plan.auditoria_trabajo;
+      const cuenta = async () => (await (await fetch(`http://localhost:9933/drive/v3/files?q=${encodeURIComponent(`'${resId}' in parents and trashed = false`)}&pageSize=200`)).json()).files.filter((f) => f.appProperties && f.appProperties.ada_origen).length;
+      const c0 = await cuenta();
+      const lo = await post(`/api/auditorias/${tA}/lote`, { clave: 'prueba-8-12', nombre: 'Botiquín — requisitos 8 al 12', requisitos: [8, 9, 10, 11, 12], asignaciones: [
+        { requisito: 8, tipo: 'buscar_contenido', descripcion: 'el procedimiento de reclamos', contenido: 'reclamos de usuarios', excluir: 'formulario', marcar_si: 'usuarios' },
+        { requisito: 9, tipo: 'grupo', contenido: 'temperatura', archivos: [{ archivo: 'Registro_temperatura_enero.pdf', rol: 'principal' }, { archivo: 'Registro_temperatura_febrero.pdf', rol: 'anexo' }, { archivo: 'Programa_capacitacion.pdf', rol: 'alternativa' }] },
+        { requisito: 11, tipo: 'buscar_contenido', clase: 'respaldo', marcar: false, si_no: 'NO APLICA — POR CONFIRMAR', descripcion: 'una boleta de agua', contenido: 'agua potable', excluir: 'formulario' },
+        { requisito: 12, tipo: 'buscar_contenido', descripcion: 'un convenio de control de plagas', contenido: 'control de plagas', nombres: 'plaga', excluir: 'laboratorio' } ] });
+      const L = (await api('/api/auditorias/propuestas')).d.find((x) => x.tipo === 'plan_copias' && x.auditoria_trabajo === tA);
+      const R = (n) => L.plan.filter((f) => f.requisito === String(n));
+      const r9 = R(9); if (process.env.VER) console.log('L3', JSON.stringify(L.plan.map((f) => [f.requisito, f.rol, f.opcional, f.nombre_copia, f.acredita.slice(0, 80)])), JSON.stringify(L.sin_copia));
+      ok(lo.status === 200 && L.lote.nombre === 'Botiquín — requisitos 8 al 12' && R(8).length >= 1 && R(8).every((f) => /su contenido lo menciona/i.test(f.acredita))
+        && r9.find((f) => f.rol === 'principal' && !f.opcional) && r9.find((f) => f.rol === 'anexo' && !f.opcional && /_PENDIENTE_ANEXO_/.test(f.nombre_copia)) && r9.find((f) => f.rol === 'alternativa' && f.opcional)
+        && R(11).length === 1 && R(11)[0].opcional && /RESPALDO/.test(R(11)[0].nombre_copia) && L.sin_copia.some((x) => x.requisito === '12' && x.estado === 'FALTA') && !R(10).length,
+        `lote 8–12: contenido (8: ${R(8).map((f) => f.archivo).join(', ')}), grupo del 9 (principal, anexo, alternativa desmarcada), 11 respaldo desmarcado, 12 FALTA (${lo.status} ${lo.d.error || ''})`);
+      ok((await cuenta()) === c0, 'preparar el tercer lote no crea ninguna copia');
+    }
     // ---- Seguridad en la capa de Drive ----
     Object.assign(process.env, { ADA_DRIVE_URL: 'http://localhost:9933', DATABASE_URL: ENV.DATABASE_URL, ADA_CLAVE_DATOS: CLAVE, ADA_EXTRACCIONES: 'prueba', ADA_DRIVE_CARPETAS_LECTURA: '', ADA_DRIVE_CARPETA_PRUEBA: 'carpeta-prueba' });
     const Drive = require('../../src/drive'); await Drive.recargarCarpetas();
